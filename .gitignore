@@ -45,3 +45,5 @@ backend/storage/ai_price/*
 *.swp
 .DS_Store
 Thumbs.db
+
+pg-runtime/
