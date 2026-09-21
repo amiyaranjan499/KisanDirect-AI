@@ -31,12 +31,17 @@ jobs:
         env:
           PYTHONPATH: .
           DATABASE_URL: postgresql+psycopg://kisandirect:kisandirect@localhost:5432/kisandirect
+          TEST_DATABASE_URL: postgresql+psycopg://kisandirect:kisandirect@localhost:5432/kisandirect_test
           JWT_SECRET_KEY: ci-only-secret-with-at-least-32-characters
-        run: cd backend && alembic upgrade head
+        run: |
+          PGPASSWORD=kisandirect psql -h localhost -U kisandirect -d postgres -c "CREATE DATABASE kisandirect_test"
+          cd backend
+          DATABASE_URL="$TEST_DATABASE_URL" alembic upgrade head
       - name: Test
         env:
           PYTHONPATH: .
           DATABASE_URL: postgresql+psycopg://kisandirect:kisandirect@localhost:5432/kisandirect
+          TEST_DATABASE_URL: postgresql+psycopg://kisandirect:kisandirect@localhost:5432/kisandirect_test
           JWT_SECRET_KEY: ci-only-secret-with-at-least-32-characters
         run: pytest -q
 

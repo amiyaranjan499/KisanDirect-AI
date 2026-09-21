@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     api_port: int = 8000
     api_v1_prefix: str = "/api/v1"
     database_url: str = ""
+    test_database_url: str = ""
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = Field(default=30, gt=0)

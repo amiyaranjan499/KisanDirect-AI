@@ -67,6 +67,13 @@ The frontend normally runs at `http://localhost:5173` and uses `http://127.0.0.1
 
 ## Verify
 
+Backend tests require an isolated `TEST_DATABASE_URL`. It must be set, must be migrated, and must differ from `DATABASE_URL`:
+
+```powershell
+$env:DATABASE_URL='postgresql+psycopg://user:password@localhost:5432/kisandirect'
+$env:TEST_DATABASE_URL='postgresql+psycopg://user:password@localhost:5432/kisandirect_test'
+```
+
 ```powershell
 cd backend
 $env:PYTHONPATH='..'
