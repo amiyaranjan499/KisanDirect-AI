@@ -1,0 +1,4 @@
+import { useEffect, useState } from "react";
+import { getConsumerDashboardReviews } from "../services/api";
+
+export default function ConsumerReviews({ onBack }) { const [reviews, setReviews] = useState(null); const [error, setError] = useState(""); useEffect(() => { getConsumerDashboardReviews().then(setReviews).catch((e) => setError(e.message)); }, []); const items = Array.isArray(reviews) ? reviews : reviews?.items || []; return <section className="detail-view"><button className="back-button" onClick={onBack}>Back</button><h1>Your reviews</h1>{error ? <div className="error">{error}</div> : !reviews ? <div className="loading">Loading...</div> : items.length ? <div className="review-list">{items.map((review) => <article className="review-card" key={review.id}><b>{review.rating} / 5</b><p>{review.comment}</p></article>)}</div> : <div className="empty">No reviews yet.</div>}</section>; }

@@ -1,0 +1,4 @@
+import { useEffect, useState } from "react";
+import { listNotifications } from "../services/api";
+
+export default function ConsumerNotifications({ onBack }) { const [data, setData] = useState(null); const [error, setError] = useState(""); useEffect(() => { listNotifications().then(setData).catch((e) => setError(e.message)); }, []); const items = data?.items || []; return <section className="detail-view"><button className="back-button" onClick={onBack}>Back</button><h1>Notifications</h1>{error ? <div className="error">{error}</div> : !data ? <div className="loading">Loading...</div> : items.length ? <div className="notification-list">{items.map((item) => <article className="notification-item" key={item.id}><b>{item.title}</b><p>{item.message}</p></article>)}</div> : <div className="empty">No notifications.</div>}</section>; }

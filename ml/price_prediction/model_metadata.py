@@ -1,0 +1,5 @@
+MODEL_NAME = "fair-price-random-forest"
+MODEL_VERSION = "unavailable"
+MODEL_STATUS = "MODEL_UNAVAILABLE"
+ARCHITECTURE = "RandomForestRegressor"
+TARGET = "fair crop price"

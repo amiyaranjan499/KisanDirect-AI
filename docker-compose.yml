@@ -1,0 +1,37 @@
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: kisandirect
+      POSTGRES_USER: kisandirect
+      POSTGRES_PASSWORD: kisandirect-local
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg://kisandirect:kisandirect-local@postgis:5432/kisandirect
+      JWT_SECRET_KEY: change-this-to-a-long-random-secret
+      CORS_ORIGINS: '["http://localhost:8080"]'
+    depends_on:
+      - postgis
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+
+volumes:
+  postgres_data:

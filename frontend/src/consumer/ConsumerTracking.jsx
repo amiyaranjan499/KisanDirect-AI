@@ -1,0 +1,4 @@
+import { useEffect, useState } from "react";
+import { orderRequest } from "../services/api";
+
+export default function ConsumerTracking({ onBack }) { const [orders, setOrders] = useState(null); const [error, setError] = useState(""); useEffect(() => { orderRequest("/orders").then(setOrders).catch((e) => setError(e.message)); }, []); const items = Array.isArray(orders) ? orders : orders?.items || []; return <section className="detail-view"><button className="back-button" onClick={onBack}>Back</button><h1>Order tracking</h1>{error ? <div className="error">{error}</div> : !orders ? <div className="loading">Loading...</div> : items.length ? <div className="review-list">{items.map((order) => <article className="review-card" key={order.id}><b>Order {order.id.slice(0, 8)}</b><span>{order.status}</span></article>)}</div> : <div className="empty">No orders to track.</div>}</section>; }

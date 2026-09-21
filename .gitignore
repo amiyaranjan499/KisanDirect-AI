@@ -1,0 +1,47 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node and frontend builds
+node_modules/
+dist/
+build/
+.vite/
+
+# Environment files and local secrets
+.env
+.env.*
+!.env.example
+
+# Local databases and generated artifacts
+*.sqlite3
+*.db
+ml/models/*
+!ml/models/.gitkeep
+ml/datasets/*
+!ml/datasets/.gitkeep
+
+# Uploaded farmer media
+backend/storage/uploads/*
+!backend/storage/uploads/.gitkeep
+backend/storage/ai_quality/*
+!backend/storage/ai_quality/.gitkeep
+backend/storage/ai_price/*
+!backend/storage/ai_price/.gitkeep
+
+# IDE and OS files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

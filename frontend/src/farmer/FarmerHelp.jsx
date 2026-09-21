@@ -1,0 +1,1 @@
+export default function FarmerHelp({ onBack }) { return <section className="detail-view"><button className="back-button" onClick={onBack}>Back</button><h1>Farmer help</h1><div className="panel-block"><p>Manage listings, review incoming orders, and keep stock quantities current.</p><p>For account or platform issues, contact the administrator.</p></div></section>; }

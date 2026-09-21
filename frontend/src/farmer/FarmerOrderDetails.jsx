@@ -1,0 +1,4 @@
+import { useEffect, useState } from "react";
+import { listFarmerDashboardOrders } from "../services/api";
+
+export default function FarmerOrderDetails({ onBack }) { const [data, setData] = useState(null); const [error, setError] = useState(""); useEffect(() => { listFarmerDashboardOrders().then(setData).catch((e) => setError(e.message)); }, []); const items = Array.isArray(data) ? data : data?.items || []; return <section className="detail-view"><button className="back-button" onClick={onBack}>Back</button><h1>Order details</h1>{error ? <div className="error">{error}</div> : !data ? <div className="loading">Loading...</div> : items.length ? <div className="review-list">{items.map((order) => <article className="review-card" key={order.id}><b>Order {order.id.slice(0, 8)}</b><span>{order.status} · {order.total_amount ?? order.amount ?? ""}</span></article>)}</div> : <div className="empty">No orders yet.</div>}</section>; }

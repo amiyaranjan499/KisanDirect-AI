@@ -1,0 +1,82 @@
+export const stateLanguages = {
+  "Andhra Pradesh": { languages: ["te", "ur"], recommended: "te" },
+  "Arunachal Pradesh": { languages: ["en", "hi", "local"], recommended: "en" },
+  Assam: { languages: ["as", "bn", "bodo"], recommended: "as" },
+  Bihar: { languages: ["hi", "ur", "mai"], recommended: "hi" },
+  Chhattisgarh: { languages: ["hi", "chhattisgarhi"], recommended: "hi" },
+  Goa: { languages: ["kok", "mr", "en"], recommended: "kok" },
+  Gujarat: { languages: ["gu", "hi"], recommended: "gu" },
+  Haryana: { languages: ["hi", "pa"], recommended: "hi" },
+  "Himachal Pradesh": { languages: ["hi", "sa", "pa", "pahari"], recommended: "hi" },
+  Jharkhand: { languages: ["hi", "ur", "sat", "bn", "ho", "mundari"], recommended: "hi" },
+  Karnataka: { languages: ["kn", "en", "ur"], recommended: "kn" },
+  Kerala: { languages: ["ml", "en", "ta"], recommended: "ml" },
+  "Madhya Pradesh": { languages: ["hi", "mr", "ur"], recommended: "hi" },
+  Maharashtra: { languages: ["mr", "hi", "ur", "gu"], recommended: "mr" },
+  Manipur: { languages: ["mni", "en", "hi"], recommended: "mni" },
+  Meghalaya: { languages: ["en", "khasi", "garo", "bn"], recommended: "en" },
+  Mizoram: { languages: ["lus", "en", "hi"], recommended: "lus" },
+  Nagaland: { languages: ["en", "nagamese", "hi", "naga"], recommended: "en" },
+  Odisha: { languages: ["or", "hi", "en"], recommended: "or" },
+  Punjab: { languages: ["pa", "hi", "en"], recommended: "pa" },
+  Rajasthan: { languages: ["hi", "rajasthani", "ur"], recommended: "hi" },
+  Sikkim: { languages: ["ne", "en", "sikkimese", "lepcha", "hi"], recommended: "ne" },
+  "Tamil Nadu": { languages: ["ta", "en", "te", "ml", "kn"], recommended: "ta" },
+  Telangana: { languages: ["te", "ur", "hi"], recommended: "te" },
+  Tripura: { languages: ["bn", "kokborok", "en", "hi"], recommended: "bn" },
+  "Uttar Pradesh": { languages: ["hi", "ur", "awadhi", "bhojpuri", "braj"], recommended: "hi" },
+  Uttarakhand: { languages: ["hi", "garhwali", "kumaoni", "sa"], recommended: "hi" },
+  "West Bengal": { languages: ["bn", "ne", "hi", "ur"], recommended: "bn" },
+};
+
+export const languageOptions = {
+  en: "English",
+  hi: "हिन्दी",
+  or: "ଓଡ଼ିଆ",
+  te: "తెలుగు",
+  kn: "ಕನ್ನಡ",
+  ta: "தமிழ்",
+  ml: "മലയാളം",
+  mr: "मराठी",
+  bn: "বাংলা",
+  gu: "ગુજરાતી",
+  pa: "ਪੰਜਾਬੀ",
+  as: "অসমীয়া",
+  ne: "नेपाली",
+  kok: "कोंकणी",
+  mai: "मैथिली",
+  sat: "संथाली",
+  mni: "মৈতৈলোন",
+  lus: "Mizo",
+  ur: "اردو",
+  bodo: "Bodo",
+  chhattisgarhi: "Chhattisgarhi",
+  sa: "संस्कृतम्",
+  pahari: "Pahari",
+  ho: "Ho",
+  mundari: "Mundari",
+  garo: "Garo",
+  khasi: "Khasi",
+  nagamese: "Nagamese",
+  naga: "Naga languages",
+  rajasthani: "Rajasthani",
+  sikkimese: "Sikkimese/Bhutia",
+  lepcha: "Lepcha",
+  kokborok: "Kokborok",
+  awadhi: "Awadhi",
+  bhojpuri: "Bhojpuri",
+  braj: "Braj",
+  garhwali: "Garhwali",
+  kumaoni: "Kumaoni",
+  local: "Local languages",
+};
+
+export const states = Object.keys(stateLanguages);
+
+export function recommendedLanguage(state) {
+  return stateLanguages[state]?.recommended || "en";
+}
+
+export function languagesForState(state) {
+  return stateLanguages[state]?.languages || Object.keys(languageOptions);
+}
