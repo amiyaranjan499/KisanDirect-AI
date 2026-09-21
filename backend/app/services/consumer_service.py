@@ -5,7 +5,6 @@ from sqlalchemy import text
 
 from backend.app.models import DeliveryStatus, OrderStatus, PaymentStatus
 from backend.app.repositories.consumer_repository import ConsumerRepository
-from backend.app.repositories.notifications_repository import NotificationRepository
 from backend.app.repositories.orders_repository import OrdersRepository
 from backend.app.schemas.consumer import (
     ConsumerDashboardActivityResponse,
@@ -16,11 +15,11 @@ from backend.app.schemas.consumer import (
     ConsumerDashboardReviewResponse,
     ConsumerDashboardSummaryResponse,
     ConsumerProfileResponse,
-    FarmerMarketplaceResponse,
     ConsumerProfileUpdate,
+    FarmerMarketplaceResponse,
     MarketplaceListingFilters,
-    MarketplacePage,
     MarketplaceListingResponse,
+    MarketplacePage,
 )
 from backend.app.schemas.farmer import LocationInput
 from backend.app.schemas.nearby import NearbyFarmerPage, NearbyFarmerResponse

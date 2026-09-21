@@ -9,7 +9,6 @@ from backend.app.core.config import Settings
 
 @lru_cache(maxsize=1)
 def _cached_engine(database_url: str, app_env: str):
-    from sqlalchemy.ext.asyncio import create_async_engine
 
     kwargs = {"pool_pre_ping": True}
     if app_env.lower() == "test":

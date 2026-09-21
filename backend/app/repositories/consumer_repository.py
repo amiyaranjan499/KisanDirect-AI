@@ -5,7 +5,16 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.models import AIPricePrediction, AIQualityPrediction, AvailabilityStatus, Consumer, Crop, CropListing, Farmer, Review
+from backend.app.models import (
+    AIPricePrediction,
+    AIQualityPrediction,
+    AvailabilityStatus,
+    Consumer,
+    Crop,
+    CropListing,
+    Farmer,
+    Review,
+)
 
 
 class ConsumerRepository:

@@ -4,14 +4,24 @@ from decimal import Decimal
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.app.core.config import Settings
 from backend.app.core.security import create_access_token, hash_password
 from backend.app.database.session import build_engine
 from backend.app.main import create_app
-from backend.app.models import Cart, CartItem, Consumer, Crop, CropListing, Farmer, Order, OrderItem, User, UserRole, AvailabilityStatus
+from backend.app.models import (
+    AvailabilityStatus,
+    Cart,
+    Consumer,
+    Crop,
+    CropListing,
+    Farmer,
+    Order,
+    User,
+    UserRole,
+)
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())

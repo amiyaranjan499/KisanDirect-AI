@@ -8,7 +8,6 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.app.core.config import Settings
-from backend.app.core.security import hash_password
 from backend.app.database.session import build_engine
 from backend.app.main import create_app
 from backend.app.models import User

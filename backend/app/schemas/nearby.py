@@ -2,8 +2,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from backend.app.schemas.farmer import LocationInput
 from backend.app.schemas.consumer import MarketplaceListingResponse
+from backend.app.schemas.farmer import LocationInput
 
 
 class NearbyFarmerResponse(BaseModel):

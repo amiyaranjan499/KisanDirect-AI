@@ -1,18 +1,24 @@
-from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.database.session import get_db_session
 from backend.app.core.config import get_settings
+from backend.app.database.session import get_db_session
 from backend.app.dependencies import get_current_user
 from backend.app.models import User, UserRole
 from backend.app.repositories.consumer_repository import ConsumerRepository
 from backend.app.repositories.notifications_repository import NotificationRepository
 from backend.app.repositories.orders_repository import OrdersRepository
-from backend.app.schemas.orders import CartItemCreate, CartItemUpdate, CartResponse, OrderPage, OrderResponse, OrderStatusUpdate
+from backend.app.schemas.orders import (
+    CartItemCreate,
+    CartItemUpdate,
+    CartResponse,
+    OrderPage,
+    OrderResponse,
+    OrderStatusUpdate,
+)
 from backend.app.schemas.payments import PaymentResponse, TestPaymentRequest
 from backend.app.services.notifications_service import NotificationsService
 from backend.app.services.orders_service import OrdersService

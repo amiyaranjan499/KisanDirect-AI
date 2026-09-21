@@ -12,7 +12,19 @@ from backend.app.core.config import Settings
 from backend.app.core.security import create_access_token, hash_password
 from backend.app.database.session import build_engine
 from backend.app.main import create_app
-from backend.app.models import Consumer, Crop, CropListing, Delivery, Farmer, Order, OrderItem, OrderStatus, User, UserRole, AvailabilityStatus
+from backend.app.models import (
+    AvailabilityStatus,
+    Consumer,
+    Crop,
+    CropListing,
+    Delivery,
+    Farmer,
+    Order,
+    OrderItem,
+    OrderStatus,
+    User,
+    UserRole,
+)
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())

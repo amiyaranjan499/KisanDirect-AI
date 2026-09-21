@@ -8,12 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.security import decode_access_token
-from backend.app.models.user import UserRole
 from backend.app.database.session import get_db_session
+from backend.app.models.user import UserRole
 from backend.app.repositories.sqlalchemy_user_repository import SqlAlchemyUserRepository
 from backend.app.repositories.user_repository import DatabaseNotConfiguredError, UserRepository
 from backend.app.services.auth_service import AuthenticationService
-
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 

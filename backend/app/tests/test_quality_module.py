@@ -16,7 +16,6 @@ from backend.app.database.session import build_engine
 from backend.app.main import create_app
 from backend.app.models import AIQualityPrediction, Crop, CropImage, CropListing, Farmer, User, UserRole
 
-
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 

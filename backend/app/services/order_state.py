@@ -2,7 +2,6 @@ from collections.abc import Mapping
 
 from backend.app.models import DeliveryStatus, FulfillmentMethod, OrderStatus
 
-
 ORDER_TRANSITIONS: Mapping[OrderStatus, frozenset[OrderStatus]] = {
     OrderStatus.PENDING: frozenset({OrderStatus.CONFIRMED, OrderStatus.CANCELLED}),
     OrderStatus.CONFIRMED: frozenset({OrderStatus.PROCESSING, OrderStatus.CANCELLED}),

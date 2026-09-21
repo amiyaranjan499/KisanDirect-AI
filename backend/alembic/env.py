@@ -1,14 +1,14 @@
 import asyncio
-from logging.config import fileConfig
 import sys
+from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from backend.app.core.config import Settings
-from backend.app.models.base import Base
 from backend.app.models import domain  # noqa: F401
+from backend.app.models.base import Base
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())

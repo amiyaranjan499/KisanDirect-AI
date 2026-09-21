@@ -1,11 +1,10 @@
 from pathlib import Path
 from uuid import UUID
 
-from ml.crop_quality.inference import CropQualityInference
-from ml.crop_quality.preprocessing import CropQualityPreprocessor, InvalidCropImageError
-
 from backend.app.repositories.quality_repository import QualityRepository
 from backend.app.schemas.quality import QualityPredictionResponse
+from ml.crop_quality.inference import CropQualityInference
+from ml.crop_quality.preprocessing import CropQualityPreprocessor, InvalidCropImageError
 
 
 class QualityService:

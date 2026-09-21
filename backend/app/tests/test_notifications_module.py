@@ -18,7 +18,6 @@ from backend.app.models import (
     CropListing,
     Farmer,
     Notification,
-    NotificationType,
     Order,
     OrderItem,
     OrderStatus,

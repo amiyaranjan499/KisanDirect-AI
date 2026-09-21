@@ -5,7 +5,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.config import get_settings
 from backend.app.database.session import get_db_session
 from backend.app.dependencies import get_current_user
 from backend.app.models import User, UserRole

@@ -1,8 +1,7 @@
 import asyncio
 import sys
-from pathlib import Path
-
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,7 +12,20 @@ if sys.platform == "win32":
 
 from backend.app.core.config import get_settings
 from backend.app.database.session import dispose_engine
-from backend.app.routers import admin, auth, consumers, farmers, fulfillment, health, marketplace, notifications, orders, price, quality, reviews
+from backend.app.routers import (
+    admin,
+    auth,
+    consumers,
+    farmers,
+    fulfillment,
+    health,
+    marketplace,
+    notifications,
+    orders,
+    price,
+    quality,
+    reviews,
+)
 
 
 def create_app() -> FastAPI:

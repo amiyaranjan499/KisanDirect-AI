@@ -1,13 +1,22 @@
-from collections.abc import Sequence
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import inspect
 
-from backend.app.models import AvailabilityStatus, Cart, CartItem, Consumer, CropListing, Farmer, Order, OrderItem, OrderStatus, Payment, PaymentStatus, User
+from backend.app.models import (
+    AvailabilityStatus,
+    Cart,
+    CartItem,
+    CropListing,
+    Farmer,
+    Order,
+    OrderItem,
+    OrderStatus,
+    Payment,
+    PaymentStatus,
+)
 from backend.app.services.order_state import ORDER_TRANSITIONS, assert_transition
 
 

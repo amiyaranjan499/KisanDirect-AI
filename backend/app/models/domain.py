@@ -6,20 +6,22 @@ from uuid import UUID, uuid4
 
 from geoalchemy2 import Geography
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
-    Enum as SqlEnum,
     ForeignKey,
     Index,
     Integer,
-    JSON,
     Numeric,
     String,
     Text,
-    Uuid,
     UniqueConstraint,
+    Uuid,
     func,
+)
+from sqlalchemy import (
+    Enum as SqlEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

@@ -1,14 +1,10 @@
-from collections.abc import Iterable
 from uuid import UUID
 
-from geoalchemy2.elements import WKTElement
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.models import (
-    AIPricePrediction,
-    AIQualityPrediction,
     Crop,
     CropImage,
     CropListing,

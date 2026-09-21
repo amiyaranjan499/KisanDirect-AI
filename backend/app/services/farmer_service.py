@@ -4,16 +4,16 @@ from uuid import UUID, uuid4
 
 from geoalchemy2.elements import WKTElement
 
-from backend.app.models import AvailabilityStatus, CropListing, Farmer, Order, OrderStatus
+from backend.app.models import AvailabilityStatus, CropListing, Order
 from backend.app.repositories.farmer_repository import FarmerRepository
 from backend.app.schemas.farmer import (
     CropImageResponse,
     CropListingCreate,
     CropListingResponse,
     CropListingUpdate,
+    DashboardAIPredictionResponse,
     DashboardAIQualityAssessmentResponse,
     DashboardAISummaryResponse,
-    DashboardAIPredictionResponse,
     DashboardAnalyticsActivityResponse,
     DashboardAnalyticsResponse,
     DashboardListingResponse,

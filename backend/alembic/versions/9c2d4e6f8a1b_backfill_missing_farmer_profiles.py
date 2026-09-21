@@ -6,7 +6,6 @@ Revises: 8f7a1c2d4e6b
 
 from alembic import op
 
-
 revision = "9c2d4e6f8a1b"
 down_revision = "8f7a1c2d4e6b"
 branch_labels = None

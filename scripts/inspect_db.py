@@ -1,7 +1,10 @@
 import asyncio
+
+from sqlalchemy import text
+
 from backend.app.core.config import Settings
 from backend.app.database.session import build_engine
-from sqlalchemy import text
+
 
 async def main():
     engine = build_engine(Settings())

@@ -9,7 +9,12 @@ from backend.app.database.session import get_db_session
 from backend.app.dependencies import get_current_user
 from backend.app.models import User, UserRole
 from backend.app.repositories.consumer_repository import ConsumerRepository
-from backend.app.schemas.consumer import MarketplaceListingFilters, MarketplacePage, MarketplaceListingResponse, FarmerMarketplaceResponse
+from backend.app.schemas.consumer import (
+    FarmerMarketplaceResponse,
+    MarketplaceListingFilters,
+    MarketplaceListingResponse,
+    MarketplacePage,
+)
 from backend.app.schemas.nearby import NearbyFarmerPage
 from backend.app.services.consumer_service import ConsumerService
 

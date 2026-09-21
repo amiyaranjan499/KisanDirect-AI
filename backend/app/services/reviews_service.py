@@ -1,8 +1,8 @@
 from uuid import UUID
 
 from backend.app.models import NotificationType, OrderStatus, Review
-from backend.app.repositories.reviews_repository import ReviewsRepository
 from backend.app.repositories.consumer_repository import ConsumerRepository
+from backend.app.repositories.reviews_repository import ReviewsRepository
 from backend.app.schemas.reviews import FarmerRatingSummary, ReviewCreate, ReviewListPage, ReviewResponse, ReviewUpdate
 
 

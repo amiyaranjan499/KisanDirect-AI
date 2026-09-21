@@ -1,11 +1,9 @@
-from decimal import Decimal
 from uuid import UUID
-
-from ml.price_prediction.feature_engineering import build_price_features
-from ml.price_prediction.inference import FairPriceInference
 
 from backend.app.repositories.price_repository import PriceRepository
 from backend.app.schemas.price import PricePredictionQuery, PricePredictionResponse
+from ml.price_prediction.feature_engineering import build_price_features
+from ml.price_prediction.inference import FairPriceInference
 
 
 class PriceService:

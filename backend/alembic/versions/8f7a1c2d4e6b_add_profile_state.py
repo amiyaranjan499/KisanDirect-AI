@@ -1,8 +1,7 @@
 """add profile state"""
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision = "8f7a1c2d4e6b"
 down_revision = "7ef7b1fb84c2"

@@ -6,10 +6,9 @@ Create Date: 2026-09-07 11:35:36.821420
 """
 from typing import Sequence, Union
 
-from alembic import op
 import geoalchemy2
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = '914896346774'
 down_revision: Union[str, Sequence[str], None] = None

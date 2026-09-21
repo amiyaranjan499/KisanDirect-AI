@@ -1,7 +1,7 @@
 """add structured address and delivery snapshot fields"""
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "a4e6c8d1f203"
 down_revision = "9c2d4e6f8a1b"

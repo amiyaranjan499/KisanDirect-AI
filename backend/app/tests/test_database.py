@@ -6,9 +6,8 @@ from sqlalchemy import inspect, text
 
 from backend.app.core.config import Settings
 from backend.app.database.session import build_engine
-from backend.app.models.base import Base
 from backend.app.models import CropListing, Farmer, User
-
+from backend.app.models.base import Base
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())

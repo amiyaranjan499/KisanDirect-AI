@@ -11,10 +11,10 @@ if sys.platform == "win32":
 
 from sqlalchemy import select
 
+from backend.app.core.config import get_settings
 from backend.app.core.security import hash_password
 from backend.app.database.session import build_session_factory
 from backend.app.models import Admin, User, UserRole
-from backend.app.core.config import get_settings
 
 
 async def create_admin(email: str, password: str) -> None:

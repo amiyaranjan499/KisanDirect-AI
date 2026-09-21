@@ -1,10 +1,9 @@
-from uuid import UUID
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from backend.app.models.user import UserRole
-
 
 RegistrationRole = Literal[UserRole.FARMER, UserRole.CONSUMER]
 

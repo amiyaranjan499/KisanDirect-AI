@@ -9,7 +9,6 @@ from backend.app.core.config import Settings
 from backend.app.models.user import UserRole
 from backend.app.schemas.auth import TokenData
 
-
 _password_hash = PasswordHash.recommended()
 
 

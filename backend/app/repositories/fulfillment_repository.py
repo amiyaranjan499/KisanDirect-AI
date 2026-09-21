@@ -4,7 +4,17 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.models import Consumer, CropListing, Delivery, DeliveryStatus, FulfillmentMethod, Farmer, Order, OrderItem, OrderStatus, PaymentStatus
+from backend.app.models import (
+    CropListing,
+    Delivery,
+    DeliveryStatus,
+    Farmer,
+    FulfillmentMethod,
+    Order,
+    OrderItem,
+    OrderStatus,
+    PaymentStatus,
+)
 from backend.app.services.order_state import DELIVERY_TRANSITIONS, ORDER_TRANSITIONS, assert_transition
 
 
