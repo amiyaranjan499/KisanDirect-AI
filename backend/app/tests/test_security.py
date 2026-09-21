@@ -2,7 +2,7 @@ from datetime import timedelta
 
 import pytest
 
-from backend.app.core.config import Settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.security import (
     create_access_token,
     decode_access_token,
@@ -53,3 +53,18 @@ def test_jwt_requires_configured_secret() -> None:
 
     with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
         create_access_token("user-id", UserRole.CONSUMER, settings)
+
+
+def test_sandbox_defaults_and_production_rejection(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-only-secret-key-with-at-least-32-characters")
+    monkeypatch.delenv("ENABLE_SANDBOX_PAYMENTS", raising=False)
+    get_settings.cache_clear()
+    assert get_settings().enable_sandbox_payments is True
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ENABLE_SANDBOX_PAYMENTS", "true")
+    get_settings.cache_clear()
+    with pytest.raises(RuntimeError, match="ENABLE_SANDBOX_PAYMENTS"):
+        get_settings()
+    get_settings.cache_clear()

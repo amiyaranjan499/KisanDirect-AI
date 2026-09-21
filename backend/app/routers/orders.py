@@ -127,7 +127,7 @@ async def update_order_status(order_id: UUID, payload: OrderStatusUpdate, curren
 
 @router.post("/payments/test/{order_id}", response_model=PaymentResponse, status_code=status.HTTP_201_CREATED)
 async def initiate_test_payment(order_id: UUID, payload: TestPaymentRequest, current_user: Annotated[User, Depends(require_consumer)], service: Annotated[OrdersService, Depends(get_orders_service)]) -> PaymentResponse:
-    if get_settings().app_env.lower() != "development":
+    if not get_settings().enable_sandbox_payments:
         raise HTTPException(status_code=404, detail="Test endpoint is disabled")
     try:
         return await service.initiate_test_payment(current_user.id, order_id, payload.outcome)
@@ -139,6 +139,8 @@ async def initiate_test_payment(order_id: UUID, payload: TestPaymentRequest, cur
 
 @router.get("/payments/test/{payment_id}", response_model=PaymentResponse)
 async def get_test_payment(payment_id: UUID, current_user: Annotated[User, Depends(require_consumer)], service: Annotated[OrdersService, Depends(get_orders_service)]) -> PaymentResponse:
+    if not get_settings().enable_sandbox_payments:
+        raise HTTPException(status_code=404, detail="Test endpoint is disabled")
     try:
         return await service.get_test_payment(current_user.id, payment_id)
     except LookupError as exc:

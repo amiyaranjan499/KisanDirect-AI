@@ -53,6 +53,8 @@ python scripts/create_admin.py
 
 Demo data can be loaded idempotently with `python scripts/seed_data.py`. Demo credentials are for local development only and must be changed before shared use.
 
+Sandbox payments and test notification creation are enabled by default only in `development` and `test`. Set `ENABLE_SANDBOX_PAYMENTS=false` to disable them; production rejects the setting when it is true.
+
 ### Frontend
 
 In a second terminal:

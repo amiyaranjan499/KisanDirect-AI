@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     database_url: str = ""
     test_database_url: str = ""
     jwt_secret_key: str = ""
+    enable_sandbox_payments: bool | None = None
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = Field(default=30, gt=0)
     cors_origins: list[str] = Field(
@@ -31,6 +32,10 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
+    if settings.enable_sandbox_payments is None:
+        settings.enable_sandbox_payments = settings.app_env.lower() in {"development", "test"}
+    if settings.app_env.lower() == "production" and settings.enable_sandbox_payments:
+        raise RuntimeError("ENABLE_SANDBOX_PAYMENTS cannot be true in production")
     if settings.app_env.lower() != "development" and settings.jwt_secret_key in {
         "",
         "change-this-to-a-long-random-secret",

@@ -79,7 +79,7 @@ async def test_create_notification(
     current_user: Annotated[User, Depends(require_user)],
     service: Annotated[NotificationsService, Depends(get_notifications_service)],
 ) -> NotificationResponse:
-    if get_settings().app_env.lower() != "development":
+    if not get_settings().enable_sandbox_payments:
         raise HTTPException(status_code=404, detail="Test endpoint is disabled")
     target_user_id = payload.user_id or current_user.id
     if current_user.id != target_user_id:
