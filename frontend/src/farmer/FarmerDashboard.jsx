@@ -1,1 +1,10 @@
-export { FarmerDashboard as default } from "../app/App";
+import { useEffect, useState } from "react";
+import { getFarmerDashboardSummary, listFarmerDashboardListings, listFarmerDashboardOrders } from "../services/farmerApi";
+
+export default function FarmerDashboard() {
+	const [data, setData] = useState(null); const [error, setError] = useState("");
+	useEffect(() => { Promise.all([getFarmerDashboardSummary(), listFarmerDashboardListings(), listFarmerDashboardOrders()]).then(([summary, listings, orders]) => setData({ summary, listings, orders })).catch((requestError) => setError(requestError.message)); }, []);
+	if (error) return <section className="detail-view"><div className="error">{error}</div></section>;
+	if (!data) return <section className="detail-view"><div className="loading">Loading dashboard...</div></section>;
+	return <section className="detail-view farmer-dashboard"><div className="farmer-hero"><span className="eyebrow">Farmer dashboard</span><h1>Healthy crops. Better prices.</h1><p>Manage your farm, orders, and earnings in one place.</p></div><div className="detail-stats"><div><b>{data.summary.total_listings}</b><span>Total listings</span></div><div><b>{data.summary.active_listings}</b><span>Active listings</span></div><div><b>{data.summary.total_orders_received}</b><span>Orders received</span></div><div><b>₹{Number(data.summary.total_sales || 0).toFixed(2)}</b><span>Gross sales</span></div></div><h2>Recent orders</h2><div className="review-list">{data.orders.length ? data.orders.map((order) => <article className="review-card" key={order.id}><b>{order.consumer_name || "Consumer"}</b><span>{order.status}</span><p>₹{order.total_amount}</p></article>) : <div className="empty">No orders yet.</div>}</div><h2>Listings</h2><div className="listing-grid">{data.listings.length ? data.listings.map((listing) => <article className="listing-card" key={listing.id}><div className="card-body"><h3>{listing.crop_name}</h3><p>{listing.quantity} {listing.unit}</p><b>₹{listing.asking_price}</b></div></article>) : <div className="empty">No listings yet.</div>}</div></section>;
+}
