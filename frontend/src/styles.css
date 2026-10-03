@@ -3627,6 +3627,15 @@ h4,
   color: #102a25;
 }
 
+.auth-register-shell {
+  background: linear-gradient(90deg, rgba(5, 46, 29, 0.54), rgba(5, 46, 29, 0.08)), url("/assets/images/image8.png") center / cover;
+}
+
+.auth-register-shell .auth-reference-card {
+  right: 50%;
+  transform: translate(50%, calc(-50% + 16px));
+}
+
 .auth-reference-carousel,
 .auth-reference-carousel .carousel-inner,
 .auth-reference-carousel .carousel-item {

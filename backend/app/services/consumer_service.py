@@ -31,10 +31,12 @@ class ConsumerService:
         repository: ConsumerRepository,
         orders_repository: OrdersRepository | None = None,
         notification_service=None,
+        payment_method_repository=None,
     ) -> None:
         self.repository = repository
         self.orders_repository = orders_repository
         self.notification_service = notification_service
+        self.payment_method_repository = payment_method_repository
 
     async def get_profile(self, user_id: UUID) -> ConsumerProfileResponse:
         consumer = await self.repository.get_profile(user_id)
@@ -199,6 +201,78 @@ class ConsumerService:
             "total": notification_payload["total"],
             "items": recent,
             "unread_count": sum(1 for notification in notifications if not notification["is_read"]),
+        }
+
+    async def list_payment_methods(self, user_id: UUID):
+        if self.payment_method_repository is None:
+            raise LookupError("Payment methods are unavailable")
+        consumer = await self.payment_method_repository.get_consumer(user_id)
+        if consumer is None:
+            raise LookupError("Consumer profile not found")
+        methods = await self.payment_method_repository.list_for_consumer(consumer.id)
+        return [self._payment_method_response(method) for method in methods]
+
+    async def add_payment_method(self, user_id: UUID, payload):
+        if self.payment_method_repository is None:
+            raise LookupError("Payment methods are unavailable")
+        consumer = await self.payment_method_repository.get_consumer(user_id)
+        if consumer is None:
+            raise LookupError("Consumer profile not found")
+
+        method_type = str(payload.type).upper()
+        if method_type not in {"CARD", "UPI"}:
+            raise ValueError("Payment method type must be CARD or UPI")
+
+        raw_value = str(payload.value).strip()
+        if method_type == "CARD":
+            digits = "".join(ch for ch in raw_value if ch.isdigit())
+            if len(digits) < 4:
+                raise ValueError("Card number is invalid")
+            masked_value = f"•••• •••• •••• {digits[-4:]}"
+            last4 = digits[-4:]
+        else:
+            if "@" not in raw_value:
+                raise ValueError("UPI handle must include '@'")
+            masked_value = raw_value
+            last4 = None
+
+        from backend.app.models import PaymentMethod as PaymentMethodModel
+
+        model = PaymentMethodModel(
+            consumer_id=consumer.id,
+            method_type=method_type,
+            provider=payload.provider.strip(),
+            masked_value=masked_value,
+            last4=last4,
+            provider_reference=None,
+        )
+        saved = await self.payment_method_repository.create(model)
+        return self._payment_method_response(saved)
+
+    async def remove_payment_method(self, user_id: UUID, payment_method_id: UUID | str):
+        if self.payment_method_repository is None:
+            raise LookupError("Payment methods are unavailable")
+        consumer = await self.payment_method_repository.get_consumer(user_id)
+        if consumer is None:
+            raise LookupError("Consumer profile not found")
+        method = await self.payment_method_repository.get_for_consumer(consumer.id, UUID(str(payment_method_id)))
+        if method is None:
+            raise LookupError("Payment method not found")
+        deleted = await self.payment_method_repository.delete(method)
+        return self._payment_method_response(deleted)
+
+    @staticmethod
+    def _payment_method_response(method) -> dict:
+        return {
+            "id": method.id,
+            "consumer_id": method.consumer_id,
+            "type": method.method_type,
+            "provider": method.provider,
+            "masked_value": method.masked_value,
+            "last4": method.last4,
+            "provider_reference": method.provider_reference,
+            "created_at": method.created_at,
+            "updated_at": method.updated_at,
         }
 
     def _dashboard_order_response(self, order) -> ConsumerDashboardOrderResponse:

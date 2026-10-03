@@ -16,7 +16,7 @@ const emptyForm = {
   address_line: "",
 };
 
-export default function ConsumerProfile({ onBack, onDashboard, onNavigate }) {
+export default function ConsumerProfile({ onBack, onDashboard, onNavigate, onLogout }) {
   const { t } = useI18n();
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -91,7 +91,7 @@ export default function ConsumerProfile({ onBack, onDashboard, onNavigate }) {
 
   return (
     <section className="detail-view profile-page consumer-profile-page">
-      <div className="profile-heading">
+      <div className="profile-heading consumer-profile-header">
         <div>
           <button className="back-button" onClick={onBack}>← {t("back")}</button>
           <span className="eyebrow">Consumer profile</span>
@@ -99,18 +99,7 @@ export default function ConsumerProfile({ onBack, onDashboard, onNavigate }) {
           <p>Keep your contact and delivery details ready for checkout.</p>
         </div>
 
-        <div className="profile-actions">
-          <button className="secondary-button" onClick={onDashboard}>{t("consumerDashboard")}</button>
-          {!editing && (
-            <button className="primary-button" onClick={() => { setMessage(""); setEditing(true); }}>
-              {t("edit")}
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="profile-shortcuts consumer-panel">
-        {[['bi-bag-check', 'My Orders', 'orders'], ['bi-bell', 'Notification Settings', 'notifications'], ['bi-star', 'My Reviews', 'reviews'], ['bi-gear', 'Language & Settings', 'settings']].map(([icon, label, type]) => <button key={type} onClick={() => onNavigate?.(type)}><span><i className={`bi ${icon}`} /> {label}</span><i className="bi bi-chevron-right" /></button>)}
+        <div className="profile-actions">{!editing && <button className="primary-button" onClick={() => { setMessage(""); setEditing(true); }}><i className="bi bi-pencil" /> {t("edit")}</button>}</div>
       </div>
 
       {message && <div className={message.includes("success") ? "success" : "error"}>{message}</div>}
@@ -122,7 +111,7 @@ export default function ConsumerProfile({ onBack, onDashboard, onNavigate }) {
             <div>
               <span className="eyebrow">Registered buyer</span>
               <h2>{profile?.name}</h2>
-              <p>{profile?.address || "No saved address provided."}</p>
+              <p>{[profile?.phone, profile?.email].filter(Boolean).join(" · ") || "Contact details not provided."}</p>
             </div>
           </div>
 
@@ -200,6 +189,17 @@ export default function ConsumerProfile({ onBack, onDashboard, onNavigate }) {
           </div>
         </form>
       )}
+
+      {!editing && <div className="consumer-profile-menu">
+        <button className="consumer-profile-row" onClick={() => { setMessage(""); setEditing(true); }}><span className="profile-row-icon"><i className="bi bi-geo-alt" /></span><span><b>Addresses</b><small>{profile?.address_line || profile?.address || "Add a delivery address"}</small></span><i className="bi bi-chevron-right" /></button>
+        <button className="consumer-profile-row" onClick={() => onNavigate?.("payment-methods")}><span className="profile-row-icon"><i className="bi bi-credit-card" /></span><span><b>Payment Methods</b><small>Manage saved cards and UPI</small></span><i className="bi bi-chevron-right" /></button>
+        <button className="consumer-profile-row" onClick={() => onNavigate?.("orders")}><span className="profile-row-icon"><i className="bi bi-receipt" /></span><span><b>My Orders</b><small>Track and manage orders</small></span><i className="bi bi-chevron-right" /></button>
+        <button className="consumer-profile-row" onClick={() => setMessage("Reviews are available on completed purchases from each listing detail page.")}><span className="profile-row-icon"><i className="bi bi-star-fill" /></span><span><b>My Reviews</b><small>Reviews you have written</small></span><i className="bi bi-chevron-right" /></button>
+        <button className="consumer-profile-row" onClick={() => onNavigate?.("notifications")}><span className="profile-row-icon"><i className="bi bi-bell" /></span><span><b>Notifications</b><small>Order and platform updates</small></span><i className="bi bi-chevron-right" /></button>
+        <button className="consumer-profile-row" onClick={() => onNavigate?.("settings")}><span className="profile-row-icon"><i className="bi bi-gear" /></span><span><b>Settings</b><small>Profile and app preferences</small></span><i className="bi bi-chevron-right" /></button>
+        <button className="consumer-profile-row" onClick={() => setMessage("Help and support are not configured in the current backend.")}><span className="profile-row-icon"><i className="bi bi-question-circle" /></span><span><b>Help & Support</b><small>FAQs and contact</small></span><i className="bi bi-chevron-right" /></button>
+        <button className="consumer-logout-row" onClick={onLogout}><i className="bi bi-box-arrow-right" /><b>Logout</b></button>
+      </div>}
     </section>
   );
 }

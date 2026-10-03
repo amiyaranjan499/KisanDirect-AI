@@ -14,6 +14,8 @@ This documentation describes the implemented Phase-I system. It is written from 
 - [Technology Stack](technology-stack.md)
 - [Limitations](limitations.md)
 - [Future Enhancements](future-enhancements.md)
+- [Current-State Analysis](ANALYSIS.md)
+- [Zepto-Style Quick-Commerce Roadmap](ZEPTO_ROADMAP.md)
 
 ## API Documentation
 

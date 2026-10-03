@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from backend.app.schemas.farmer import LocationInput
 
@@ -120,6 +120,40 @@ class ConsumerDashboardSummaryResponse(BaseModel):
     unread_notification_count: int
     recent_orders: list[ConsumerDashboardOrderResponse] = Field(default_factory=list)
     recent_activity: list[ConsumerDashboardActivityResponse] = Field(default_factory=list)
+
+
+class PaymentMethodCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    type: str = Field(
+        ...,
+        validation_alias=AliasChoices("type", "method_type"),
+        serialization_alias="type",
+        pattern=r"^(CARD|UPI)$",
+    )
+    provider: str = Field(..., min_length=1, max_length=80)
+    value: str = Field(..., min_length=3, max_length=255)
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return str(value).upper()
+
+
+class PaymentMethodResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    consumer_id: UUID
+    type: str
+    provider: str
+    masked_value: str
+    last4: str | None = None
+    provider_reference: str | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class MarketplaceListingResponse(BaseModel):

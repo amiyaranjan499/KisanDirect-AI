@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { loginUser, registerUser } from "../services/api";
+import { Link } from "react-router-dom";
+import { loginUser } from "../services/api";
 import { languageOptions } from "../i18n/stateLanguages";
 
 export default function AuthPanel({ onAuthenticated, language, setLanguage, t = (key) => key }) {
-  const [role, setRole] = useState("CONSUMER");
-  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [activeSlide, setActiveSlide] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -50,21 +51,7 @@ export default function AuthPanel({ onAuthenticated, language, setLanguage, t = 
     setLoading(true);
 
     try {
-      if (!phone.trim()) {
-        setError("Enter your mobile number to continue.");
-        return;
-      }
-
-      const fallbackEmail = `${phone.replace(/\D/g, "")}@kisan.direct`;
-      const password = "Welcome123";
-      let token;
-      try {
-        token = await loginUser({ email: fallbackEmail, password });
-      } catch (requestError) {
-        if (!/Invalid email or password/i.test(requestError.message)) throw requestError;
-        await registerUser({ email: fallbackEmail, password, role });
-        token = await loginUser({ email: fallbackEmail, password });
-      }
+      const token = await loginUser({ email, password });
       onAuthenticated(token.access_token);
     } catch (requestError) {
       setError(requestError.message || "Unable to authenticate.");
@@ -119,33 +106,20 @@ export default function AuthPanel({ onAuthenticated, language, setLanguage, t = 
       <section className="auth-reference-card" id="login">
         <div className="reference-card-logo"><img src="/assets/logos/KisanDirect%20Ai%20logo.png" alt="KisanDirect AI" /></div>
         <h2>Welcome</h2>
-        <p className="reference-card-subtitle">Choose your role and continue</p>
-
-        <div className="reference-role-grid">
-          <button type="button" className={`reference-role ${role === "CONSUMER" ? "active" : ""}`} onClick={() => setRole("CONSUMER")}>
-            <span className="reference-role-icon"><i className="bi bi-basket2-fill" aria-hidden="true"></i></span>
-            <strong>Consumer</strong>
-            <small>Buy fresh produce</small>
-          </button>
-          <button type="button" className={`reference-role ${role === "FARMER" ? "active" : ""}`} onClick={() => setRole("FARMER")}>
-            <span className="reference-role-icon"><i className="bi bi-person-badge-fill" aria-hidden="true"></i></span>
-            <strong>Farmer</strong>
-            <small>Sell your crops</small>
-          </button>
-        </div>
+        <p className="reference-card-subtitle">Sign in with your email and password.</p>
 
         <form className="reference-login-form" onSubmit={submit}>
-          <label htmlFor="reference-phone">Enter your mobile number</label>
-          <div className="reference-phone-input">
-            <span>🇮🇳 +91</span>
-            <input id="reference-phone" type="tel" value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, "").slice(0, 10))} inputMode="numeric" placeholder="Enter mobile number" autoComplete="tel" />
-          </div>
+          <label htmlFor="reference-email">{t("auth.email")}</label>
+          <input id="reference-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
+          <label htmlFor="reference-password">{t("auth.password")}</label>
+          <input id="reference-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
           {error && <div className="error">{error}</div>}
           <button type="submit" className="reference-submit" disabled={loading}>
-            {loading ? "Working..." : <><span>Continue with OTP</span> <i className="bi bi-arrow-right" aria-hidden="true"></i></>}
+            {loading ? "Working..." : <><span>{t("auth.login")}</span> <i className="bi bi-arrow-right" aria-hidden="true"></i></>}
           </button>
         </form>
 
+        <p className="reference-card-subtitle"><Link to="/register">Create an account</Link></p>
         <p className="reference-terms">By continuing, you agree to our <a href="#terms">Terms of Use</a> and <a href="#privacy">Privacy Policy</a>.</p>
         <div className="reference-sustainability"><strong>🌿 Together for a Sustainable Future</strong><small>Better Farmers&nbsp; | &nbsp;Healthier Food&nbsp; | &nbsp;Stronger Communities</small></div>
         <a className="reference-admin-link" href="/admin/login">Admin Login</a>

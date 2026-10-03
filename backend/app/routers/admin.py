@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database.session import get_db_session
@@ -9,6 +9,7 @@ from backend.app.dependencies import get_current_user
 from backend.app.models import User, UserRole
 from backend.app.repositories.admin_repository import AdminRepository
 from backend.app.schemas.admin import (
+    AdminAnalyticsResponse,
     AdminCategoryResponse,
     AdminConsumerResponse,
     AdminDashboardSummaryResponse,
@@ -38,6 +39,18 @@ async def get_authenticated_admin(
     if current_user.role is not UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin role required")
     return current_user
+
+
+@router.get("/analytics", response_model=AdminAnalyticsResponse)
+async def analytics(
+    range: Annotated[str | None, Query(alias="range")] = "30d",
+    current_user: Annotated[User, Depends(get_authenticated_admin)] = None,
+    service: Annotated[AdminService, Depends(get_admin_service)] = None,
+) -> AdminAnalyticsResponse:
+    try:
+        return await service.analytics(range or "30d")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/dashboard/summary", response_model=AdminDashboardSummaryResponse)

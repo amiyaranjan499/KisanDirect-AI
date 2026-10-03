@@ -310,3 +310,25 @@ export function markNotificationRead(id) {
 export function markAllNotificationsRead() {
   return request("/api/v1/notifications/read-all", { method: "POST" });
 }
+
+export function getAdminAnalytics(range = "30d") {
+  const query = new URLSearchParams({ range });
+  return request(`/api/v1/admins/analytics?${query}`);
+}
+
+export function listConsumerPaymentMethods() {
+  return request("/api/v1/consumers/payment-methods");
+}
+
+export function addConsumerPaymentMethod(payload) {
+  return request("/api/v1/consumers/payment-methods", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function removeConsumerPaymentMethod(paymentMethodId) {
+  return request(`/api/v1/consumers/payment-methods/${encodeURIComponent(paymentMethodId)}`, {
+    method: "DELETE",
+  });
+}

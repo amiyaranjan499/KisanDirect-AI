@@ -9,15 +9,27 @@ function Recenter({ center }) {
 }
 
 export default function NearbyFarmers({ onFarmer }) {
-  const [location, setLocation] = useState({ latitude: "20.30", longitude: "85.80", radius_km: "25", page: 1, page_size: 6 });
+  const [location, setLocation] = useState({ latitude: "", longitude: "", radius_km: "25", page: 1, page_size: 6 });
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const center = [Number(location.latitude) || 20.3, Number(location.longitude) || 85.8];
+  const hasLocation = location.latitude !== "" && location.longitude !== "" && Number.isFinite(Number(location.latitude)) && Number.isFinite(Number(location.longitude));
+  const center = hasLocation ? [Number(location.latitude), Number(location.longitude)] : null;
 
   const search = (page = 1) => {
+    if (!hasLocation) { setError("Enter latitude and longitude or use your current location before searching."); return; }
     setLoading(true); setError("");
     nearbyFarmers({ ...location, page }).then(setData).catch((err) => setError(err.message)).finally(() => setLoading(false));
+  };
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) { setError("Location is not available in this browser."); return; }
+    setLoading(true); setError("");
+    navigator.geolocation.getCurrentPosition(
+      (position) => { setLocation((previous) => ({ ...previous, latitude: String(position.coords.latitude), longitude: String(position.coords.longitude) })); setLoading(false); },
+      () => { setError("Location permission was not granted. Enter coordinates to search."); setLoading(false); },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
   };
 
   const update = (key) => (event) => setLocation({ ...location, [key]: event.target.value });
@@ -27,9 +39,9 @@ export default function NearbyFarmers({ onFarmer }) {
       <label className="nearby-field"><span>Latitude</span><input type="number" min="-90" max="90" step=".0001" value={location.latitude} onChange={update("latitude")} placeholder="Latitude" /></label>
       <label className="nearby-field"><span>Longitude</span><input type="number" min="-180" max="180" step=".0001" value={location.longitude} onChange={update("longitude")} placeholder="Longitude" /></label>
       <label className="nearby-field"><span>Radius</span><select value={location.radius_km} onChange={update("radius_km")}><option value="5">5 km</option><option value="25">25 km</option><option value="50">50 km</option><option value="100">100 km</option><option value="250">250 km</option></select></label>
-      <button className="primary-button" onClick={() => search(1)}>Find nearby farmers</button>
+      <button className="secondary-button" type="button" onClick={useCurrentLocation}>Use current location</button><button className="primary-button" onClick={() => search(1)} disabled={!hasLocation}>Find nearby farmers</button>
     </div>
     {error && <div className="error">{error}</div>}
-    {loading ? <div className="loading">Finding farmers...</div> : <div className="nearby-layout"><MapContainer center={center} zoom={9} className="map"><Recenter center={center} /><TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" /><Marker position={center}><Popup>Your search location</Popup></Marker>{data?.items.map((farmer) => <Marker key={farmer.id} position={[farmer.location.latitude, farmer.location.longitude]}><Popup><b>{farmer.name}</b><br />{farmer.distance_km.toFixed(1)} km away</Popup></Marker>)}</MapContainer><div className="nearby-results">{data?.items.length ? data.items.map((farmer) => <article className="farmer-card nearby-farmer-card" key={farmer.id}><div><span className="eyebrow">{farmer.distance_km.toFixed(1)} km away</span><h2>{farmer.name}</h2><p className="muted">{farmer.active_listing_count} active listing{farmer.active_listing_count === 1 ? "" : "s"} · Rating: {farmer.rating ? `${farmer.rating.toFixed(1)} / 5` : "Unavailable"}</p></div><button className="farmer-link" onClick={() => onFarmer(farmer.id)}>View farm →</button></article>) : data ? <div className="empty">No active farmers found in this radius.</div> : <div className="empty">Enter a location and search to find nearby farmers.</div>}{data?.pages > 1 && <nav className="pagination"><button disabled={data.page <= 1} onClick={() => search(data.page - 1)}>Previous</button><span>Page {data.page} of {data.pages}</span><button disabled={data.page >= data.pages} onClick={() => search(data.page + 1)}>Next</button></nav>}</div></div>}
+    {loading ? <div className="loading">Finding farmers...</div> : hasLocation && data ? <div className="nearby-layout"><MapContainer center={center} zoom={9} className="map"><Recenter center={center} /><TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" /><Marker position={center}><Popup>Your search location</Popup></Marker>{data.items.map((farmer) => <Marker key={farmer.id} position={[farmer.location.latitude, farmer.location.longitude]}><Popup><b>{farmer.name}</b><br />{farmer.distance_km.toFixed(1)} km away</Popup></Marker>)}</MapContainer><div className="nearby-results">{data.items.length ? data.items.map((farmer) => <article className="farmer-card nearby-farmer-card" key={farmer.id}><div><span className="eyebrow">{farmer.distance_km.toFixed(1)} km away</span><h2>{farmer.name}</h2><p className="muted">{farmer.active_listing_count} active listing{farmer.active_listing_count === 1 ? "" : "s"} · Rating: {farmer.rating ? `${farmer.rating.toFixed(1)} / 5` : "Unavailable"}</p></div><button className="farmer-link" onClick={() => onFarmer(farmer.id)}>View farm →</button></article>) : <div className="empty">No active farmers found in this radius.</div>}{data.pages > 1 && <nav className="pagination"><button disabled={data.page <= 1} onClick={() => search(data.page - 1)}>Previous</button><span>Page {data.page} of {data.pages}</span><button disabled={data.page >= data.pages} onClick={() => search(data.page + 1)}>Next</button></nav>}</div></div> : <div className="empty"><h2>Choose a real location</h2><p>Use your current location or enter coordinates to find nearby farmers.</p></div>}
   </section>;
 }

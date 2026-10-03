@@ -137,6 +137,34 @@ class AdminNotificationResponse(BaseModel):
     created_at: datetime
 
 
+class AdminAnalyticsActivityResponse(BaseModel):
+    id: UUID | None = None
+    type: str
+    title: str
+    message: str
+    created_at: datetime
+
+
+class AdminAnalyticsTrendPoint(BaseModel):
+    label: str
+    total_orders: int = 0
+    total_sales: Decimal = Decimal("0.00")
+
+
+class AdminAnalyticsResponse(BaseModel):
+    range: str
+    total_users: int
+    active_users: int
+    total_orders: int
+    total_sales: Decimal
+    pending_orders: int
+    confirmed_orders: int
+    completed_orders: int
+    cancelled_orders: int
+    recent_activity: list[AdminAnalyticsActivityResponse] = Field(default_factory=list)
+    revenue_by_day: list[AdminAnalyticsTrendPoint] = Field(default_factory=list)
+
+
 class AdminUserStatusUpdate(BaseModel):
     is_active: bool = Field(default=True)
 

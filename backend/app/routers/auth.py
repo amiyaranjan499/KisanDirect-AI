@@ -18,11 +18,24 @@ from backend.app.services.auth_service import AuthenticationService
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
+def _enforce_auth_rate_limit(request: Request, endpoint: str) -> None:
+    client_ip = request.client.host if request.client is not None else "unknown"
+    retry_after = request.app.state.auth_rate_limiter.check(endpoint, client_ip)
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many authentication attempts. Try again later.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
+    request: Request,
     payload: RegistrationRequest,
     auth_service: Annotated[AuthenticationService, Depends(get_auth_service)],
 ) -> UserResponse:
+    _enforce_auth_rate_limit(request, "register")
     try:
         user = await auth_service.register(payload.email, payload.password, payload.role)
     except DatabaseNotConfiguredError as exc:
@@ -88,6 +101,7 @@ async def login(
             detail="Login requires application/json or application/x-www-form-urlencoded",
         )
 
+    _enforce_auth_rate_limit(request, "login")
     try:
         user = await auth_service.authenticate(payload.email, payload.password)
     except DatabaseNotConfiguredError as exc:

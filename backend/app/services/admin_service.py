@@ -1,8 +1,13 @@
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from uuid import UUID
 
 from backend.app.models import AvailabilityStatus, OrderStatus, UserRole
 from backend.app.repositories.admin_repository import AdminRepository
 from backend.app.schemas.admin import (
+    AdminAnalyticsActivityResponse,
+    AdminAnalyticsResponse,
+    AdminAnalyticsTrendPoint,
     AdminCategoryResponse,
     AdminConsumerResponse,
     AdminDashboardSummaryResponse,
@@ -19,6 +24,68 @@ from backend.app.schemas.admin import (
 class AdminService:
     def __init__(self, repository: AdminRepository) -> None:
         self.repository = repository
+
+    @staticmethod
+    def _resolve_range(range_value: str) -> tuple[datetime, datetime, str]:
+        value = (range_value or "30d").strip().lower()
+        end = datetime.now(timezone.utc)
+        if value.endswith("d"):
+            days = int(value[:-1] or 30)
+            start = end - timedelta(days=days)
+            return start, end, value
+        if value.endswith("m"):
+            months = int(value[:-1] or 3)
+            start = end - timedelta(days=30 * months)
+            return start, end, value
+        raise ValueError("Unsupported range, use 7d, 30d, or 90d")
+
+    async def analytics(self, range_value: str = "30d") -> AdminAnalyticsResponse:
+        start, end, normalized_range = self._resolve_range(range_value)
+        orders = await self.repository.list_orders_for_range(start, end)
+        total_orders = len(orders)
+        total_sales = sum((order.total_amount for order in orders), Decimal("0.00")).quantize(Decimal("0.01"))
+        status_counts = {status.value: 0 for status in OrderStatus}
+        for order in orders:
+            status_counts[order.status.value] = status_counts.get(order.status.value, 0) + 1
+
+        revenue_by_day: dict[str, Decimal] = {}
+        for order in orders:
+            label = order.created_at.strftime("%Y-%m-%d")
+            revenue_by_day[label] = revenue_by_day.get(label, Decimal("0.00")) + order.total_amount
+
+        recent_activity = [
+            AdminAnalyticsActivityResponse(
+                id=order.id,
+                type="order",
+                title=f"Order {str(order.id)[:8]}",
+                message=f"Status changed to {order.status.value}.",
+                created_at=order.created_at,
+            )
+            for order in sorted(orders, key=lambda item: item.created_at, reverse=True)[:5]
+        ]
+
+        trend_points = [
+            AdminAnalyticsTrendPoint(
+                label=day,
+                total_orders=sum(1 for order in orders if order.created_at.strftime("%Y-%m-%d") == day),
+                total_sales=sum((order.total_amount for order in orders if order.created_at.strftime("%Y-%m-%d") == day), Decimal("0.00")).quantize(Decimal("0.01")),
+            )
+            for day in sorted(revenue_by_day)
+        ]
+
+        return AdminAnalyticsResponse(
+            range=normalized_range,
+            total_users=await self.repository.count_users_in_range(start, end),
+            active_users=await self.repository.count_active_users_in_range(start, end),
+            total_orders=total_orders,
+            total_sales=total_sales,
+            pending_orders=status_counts.get(OrderStatus.PENDING.value, 0),
+            confirmed_orders=status_counts.get(OrderStatus.CONFIRMED.value, 0),
+            completed_orders=status_counts.get(OrderStatus.COMPLETED.value, 0),
+            cancelled_orders=status_counts.get(OrderStatus.CANCELLED.value, 0),
+            recent_activity=recent_activity,
+            revenue_by_day=trend_points,
+        )
 
     async def dashboard_summary(self) -> AdminDashboardSummaryResponse:
         total_users = await self.repository.count_users()

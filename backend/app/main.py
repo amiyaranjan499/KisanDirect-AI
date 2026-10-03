@@ -11,6 +11,7 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from backend.app.core.config import get_settings
+from backend.app.core.auth_rate_limit import AuthRateLimiter
 from backend.app.database.session import dispose_engine
 from backend.app.routers import (
     admin,
@@ -37,6 +38,10 @@ def create_app() -> FastAPI:
         await dispose_engine(settings)
 
     app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+    app.state.auth_rate_limiter = AuthRateLimiter(
+        settings.auth_rate_limit_requests,
+        settings.auth_rate_limit_window_seconds,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

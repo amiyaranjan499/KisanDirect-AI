@@ -80,4 +80,4 @@ def test_postgis_and_location_columns() -> None:
 
     postgis_available, location_tables = asyncio.run(check())
     assert postgis_available
-    assert set(location_tables) == {"farmers", "crop_listings"}
+    assert set(location_tables) == {"farmers", "crop_listings", "hubs", "rider_locations"}

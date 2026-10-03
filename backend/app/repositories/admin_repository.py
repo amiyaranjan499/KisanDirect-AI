@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -55,6 +56,32 @@ class AdminRepository:
     async def count_orders_by_status(self, status: OrderStatus) -> int:
         result = await self.session.execute(select(func.count(Order.id)).where(Order.status == status))
         return int(result.scalar_one() or 0)
+
+    async def count_users_in_range(self, start: datetime, end: datetime) -> int:
+        result = await self.session.execute(
+            select(func.count(User.id)).where(User.created_at >= start, User.created_at < end)
+        )
+        return int(result.scalar_one() or 0)
+
+    async def count_active_users_in_range(self, start: datetime, end: datetime) -> int:
+        result = await self.session.execute(
+            select(func.count(User.id)).where(User.created_at >= start, User.created_at < end, User.is_active.is_(True))
+        )
+        return int(result.scalar_one() or 0)
+
+    async def list_orders_for_range(self, start: datetime, end: datetime) -> list[Order]:
+        result = await self.session.execute(
+            select(Order)
+            .options(
+                selectinload(Order.consumer).selectinload(Consumer.user),
+                selectinload(Order.payment),
+                selectinload(Order.delivery),
+                selectinload(Order.items).selectinload(OrderItem.listing).selectinload(CropListing.crop),
+            )
+            .where(Order.created_at >= start, Order.created_at < end)
+            .order_by(Order.created_at.desc())
+        )
+        return list(result.scalars().unique().all())
 
     async def total_payment_volume(self) -> Decimal:
         result = await self.session.execute(select(func.coalesce(func.sum(Order.total_amount), Decimal("0.00"))))

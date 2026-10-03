@@ -208,3 +208,73 @@ def test_consumer_profile_browse_search_filters_and_authorization() -> None:
             assert inactive.status_code == 404
     finally:
         cleanup_fixture(consumer.id, farmer_user.id, farmer.id, [item.id for item in listings], crop_names)
+
+
+def test_consumer_saved_payment_methods_are_owned_and_masked() -> None:
+    async def seed_two_consumers() -> tuple[User, User]:
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            users = [
+                User(email=f"payment-owner-{uuid4()}@example.com", hashed_password=hash_password("Test-password-123"), role=UserRole.CONSUMER),
+                User(email=f"payment-other-{uuid4()}@example.com", hashed_password=hash_password("Test-password-123"), role=UserRole.CONSUMER),
+            ]
+            session.add_all(users)
+            await session.flush()
+            consumer_profiles = [Consumer(user_id=user.id, name=f"Payment User {index}") for index, user in enumerate(users)]
+            session.add_all(consumer_profiles)
+            await session.commit()
+            await session.refresh(users[0])
+            await session.refresh(users[1])
+            await session.refresh(consumer_profiles[0])
+            await session.refresh(consumer_profiles[1])
+        await engine.dispose()
+        return users[0], users[1]
+
+    async def cleanup_consumers(users: tuple[User, User]) -> None:
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            await session.execute(delete(Consumer).where(Consumer.user_id.in_([user.id for user in users])))
+            await session.execute(delete(User).where(User.id.in_([user.id for user in users])))
+            await session.commit()
+        await engine.dispose()
+
+    owner, other = asyncio.run(seed_two_consumers())
+    try:
+        with TestClient(create_app()) as client:
+            add_response = client.post(
+                "/api/v1/consumers/payment-methods",
+                headers=auth_header(owner),
+                json={"type": "CARD", "provider": "Visa", "value": "4242424242424242"},
+            )
+            assert add_response.status_code == 201, add_response.text
+            payload = add_response.json()
+            assert payload["type"] == "CARD"
+            assert payload["masked_value"] == "•••• •••• •••• 4242" or payload["masked_value"].endswith("4242")
+            assert "4242424242424242" not in payload["masked_value"]
+            assert "4242424242424242" not in str(payload)
+
+            listed = client.get("/api/v1/consumers/payment-methods", headers=auth_header(owner))
+            assert listed.status_code == 200
+            assert len(listed.json()) == 1
+            assert listed.json()[0]["masked_value"].endswith("4242")
+
+            forbidden_delete = client.delete(
+                f"/api/v1/consumers/payment-methods/{payload['id']}",
+                headers=auth_header(other),
+            )
+            assert forbidden_delete.status_code == 404
+
+            deleted = client.delete(
+                f"/api/v1/consumers/payment-methods/{payload['id']}",
+                headers=auth_header(owner),
+            )
+            assert deleted.status_code == 200
+            assert deleted.json()["id"] == payload["id"]
+
+            after_delete = client.get("/api/v1/consumers/payment-methods", headers=auth_header(owner))
+            assert after_delete.status_code == 200
+            assert after_delete.json() == []
+    finally:
+        asyncio.run(cleanup_consumers((owner, other)))

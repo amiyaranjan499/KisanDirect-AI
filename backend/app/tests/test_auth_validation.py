@@ -4,10 +4,11 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.app.core.config import Settings
+from backend.app.core.auth_rate_limit import AuthRateLimiter
 from backend.app.database.session import build_engine
 from backend.app.main import create_app
 from backend.app.models import User
@@ -163,3 +164,87 @@ def test_unconfigured_repository_never_fakes_persistence() -> None:
             await repository.get_by_email("user@example.com")
 
     asyncio.run(check_repository())
+
+
+def test_failed_login_does_not_create_numeric_kisan_account() -> None:
+    email = f"{uuid4().int}@kisan.direct"
+
+    async def find_user() -> User | None:
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            result = await session.execute(select(User).where(User.email == email))
+            user = result.scalar_one_or_none()
+        await engine.dispose()
+        return user
+
+    async def cleanup() -> None:
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            await session.execute(delete(User).where(User.email == email))
+            await session.commit()
+        await engine.dispose()
+
+    try:
+        with TestClient(create_app()) as client:
+            response = client.post(
+                "/api/v1/auth/login",
+                json={"email": email, "password": "WrongPassword123!"},
+            )
+
+        assert response.status_code == 401
+        assert asyncio.run(find_user()) is None
+    finally:
+        asyncio.run(cleanup())
+
+
+def test_registration_requires_password_and_rejects_duplicate_email() -> None:
+    email = f"duplicate-registration-{uuid4()}@example.com"
+
+    async def cleanup() -> None:
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            await session.execute(delete(User).where(User.email == email.lower()))
+            await session.commit()
+        await engine.dispose()
+
+    try:
+        with TestClient(create_app()) as client:
+            missing_password = client.post(
+                "/api/v1/auth/register", json={"email": email, "role": "CONSUMER"}
+            )
+            created = client.post(
+                "/api/v1/auth/register",
+                json={"email": email, "password": "Password123!", "role": "CONSUMER"},
+            )
+            duplicate = client.post(
+                "/api/v1/auth/register",
+                json={"email": email, "password": "Password123!", "role": "CONSUMER"},
+            )
+
+        assert missing_password.status_code == 422
+        assert created.status_code == 201, created.text
+        assert duplicate.status_code == 409
+    finally:
+        asyncio.run(cleanup())
+
+
+def test_auth_rate_limit_returns_429_with_retry_after() -> None:
+    app = create_app()
+    app.state.auth_rate_limiter = AuthRateLimiter(max_requests=1, window_seconds=60)
+
+    with TestClient(app) as client:
+        first = client.post(
+            "/api/v1/auth/login",
+            json={"email": f"throttle-{uuid4()}@example.com", "password": "WrongPassword123!"},
+        )
+        second = client.post(
+            "/api/v1/auth/login",
+            json={"email": f"throttle-{uuid4()}@example.com", "password": "WrongPassword123!"},
+        )
+
+    assert first.status_code == 401
+    assert second.status_code == 429
+    assert int(second.headers["retry-after"]) > 0

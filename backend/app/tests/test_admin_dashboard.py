@@ -1,6 +1,6 @@
 import asyncio
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -113,7 +113,7 @@ def seed_admin_data() -> tuple:
                 order_id=order.id,
                 amount=Decimal("12.00"),
                 status=PaymentStatus.PAID,
-                provider_reference="ADMIN-PAYMENT-1",
+                provider_reference=f"ADMIN-PAYMENT-{uuid4()}",
                 payment_method="TEST_SANDBOX",
                 is_test=True,
             )
@@ -165,7 +165,16 @@ def cleanup_admin_data(data):
         factory = async_sessionmaker(engine, expire_on_commit=False)
 
         async with factory() as session:
+            consumer_order_ids = (
+                await session.execute(select(Order.id).where(Order.consumer_id == consumer_profile.id))
+            ).scalars().all()
             await session.execute(delete(Notification).where(Notification.user_id.in_([farmer_user.id, consumer_user.id, admin_user.id])))
+            await session.execute(delete(Review).where(Review.consumer_id == consumer_profile.id))
+            if consumer_order_ids:
+                await session.execute(delete(Payment).where(Payment.order_id.in_(consumer_order_ids)))
+                await session.execute(delete(Delivery).where(Delivery.order_id.in_(consumer_order_ids)))
+                await session.execute(delete(OrderItem).where(OrderItem.order_id.in_(consumer_order_ids)))
+                await session.execute(delete(Order).where(Order.id.in_(consumer_order_ids)))
             await session.execute(delete(Review).where(Review.id == review.id))
             await session.execute(delete(Payment).where(Payment.id == payment.id))
             await session.execute(delete(Delivery).where(Delivery.order_id == order.id))
@@ -242,5 +251,45 @@ def test_admin_dashboard_and_management() -> None:
 
             forbidden = client.get("/api/v1/admins/dashboard/summary", headers=auth_header(farmer_user))
             assert forbidden.status_code == 403
+    finally:
+        cleanup_admin_data(data)
+
+
+def test_admin_analytics_range_changes_results() -> None:
+    data = seed_admin_data()
+    admin_user, farmer_user, consumer_user, admin_profile_user_id, consumer_profile, farmer_profile, crop, listing, order, payment, review, notification, baseline_counts = data
+    async def create_old_order() -> None:
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            old_order = Order(
+                consumer_id=consumer_profile.id,
+                status=OrderStatus.PENDING,
+                total_amount=Decimal("18.00"),
+                created_at=datetime.now(timezone.utc) - timedelta(days=15),
+            )
+            session.add(old_order)
+            await session.flush()
+            session.add(
+                OrderItem(
+                    order_id=old_order.id,
+                    listing_id=listing.id,
+                    quantity=Decimal("1.000"),
+                    unit_price=Decimal("18.00"),
+                    subtotal=Decimal("18.00"),
+                )
+            )
+            await session.commit()
+
+    try:
+        asyncio.run(create_old_order())
+        with TestClient(create_app()) as client:
+            short = client.get("/api/v1/admins/analytics", params={"range": "7d"}, headers=auth_header(admin_user))
+            medium = client.get("/api/v1/admins/analytics", params={"range": "90d"}, headers=auth_header(admin_user))
+            assert short.status_code == 200, short.text
+            assert medium.status_code == 200, medium.text
+            assert short.json()["total_orders"] == 1
+            assert medium.json()["total_orders"] == 2
+            assert short.json()["total_sales"] != medium.json()["total_sales"]
     finally:
         cleanup_admin_data(data)

@@ -31,7 +31,7 @@ export default function ConsumerDashboard({ onBack }) {
     <section className="detail-view consumer-dashboard">
       <button className="back-button" onClick={onBack}>← {t("back")}</button>
 
-      <div className="farmer-hero consumer-hero">
+      <div className="consumer-screen-header consumer-hero">
         <span className="eyebrow">{t("consumerDashboard")}</span>
         <h1>{t("buyingActivity")}</h1>
         <p>Stay on top of orders, purchases, cart, feedback, and updates in one place.</p>

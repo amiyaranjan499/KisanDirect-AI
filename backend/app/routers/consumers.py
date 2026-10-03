@@ -10,6 +10,7 @@ from backend.app.models import User, UserRole
 from backend.app.repositories.consumer_repository import ConsumerRepository
 from backend.app.repositories.notifications_repository import NotificationRepository
 from backend.app.repositories.orders_repository import OrdersRepository
+from backend.app.repositories.payment_method_repository import PaymentMethodRepository
 from backend.app.schemas.consumer import (
     ConsumerDashboardCartSummaryResponse,
     ConsumerDashboardOrderResponse,
@@ -18,6 +19,8 @@ from backend.app.schemas.consumer import (
     ConsumerDashboardSummaryResponse,
     ConsumerProfileResponse,
     ConsumerProfileUpdate,
+    PaymentMethodCreate,
+    PaymentMethodResponse,
 )
 from backend.app.services.consumer_service import ConsumerService
 from backend.app.services.notifications_service import NotificationsService
@@ -33,6 +36,7 @@ def get_consumer_service(
         ConsumerRepository(session),
         OrdersRepository(session),
         NotificationsService(NotificationRepository(session)),
+        PaymentMethodRepository(session),
     )
 
 
@@ -117,6 +121,43 @@ async def dashboard_notifications(
 ) -> dict[str, int | list]:
     try:
         return await service.dashboard_notifications(current_user.id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/payment-methods", response_model=list[PaymentMethodResponse])
+async def list_payment_methods(
+    current_user: Annotated[User, Depends(get_authenticated_consumer)],
+    service: Annotated[ConsumerService, Depends(get_consumer_service)],
+) -> list[PaymentMethodResponse]:
+    try:
+        return await service.list_payment_methods(current_user.id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/payment-methods", response_model=PaymentMethodResponse, status_code=201)
+async def add_payment_method(
+    payload: PaymentMethodCreate,
+    current_user: Annotated[User, Depends(get_authenticated_consumer)],
+    service: Annotated[ConsumerService, Depends(get_consumer_service)],
+) -> PaymentMethodResponse:
+    try:
+        return await service.add_payment_method(current_user.id, payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.delete("/payment-methods/{payment_method_id}", response_model=PaymentMethodResponse)
+async def remove_payment_method(
+    payment_method_id: str,
+    current_user: Annotated[User, Depends(get_authenticated_consumer)],
+    service: Annotated[ConsumerService, Depends(get_consumer_service)],
+) -> PaymentMethodResponse:
+    try:
+        return await service.remove_payment_method(current_user.id, payment_method_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

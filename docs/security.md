@@ -4,7 +4,9 @@
 
 Authentication uses JWT bearer tokens. Passwords are hashed with `pwdlib`/Argon2 and are not stored in plaintext. JWT secrets, database URLs, and other environment-specific values are loaded from `.env` and are not committed or documented.
 
-The login endpoint accepts the JSON frontend contract and the OAuth2 form used by Swagger UI. Protected routes use the shared `get_current_user` dependency.
+The login endpoint accepts the JSON frontend contract and the OAuth2 form used by Swagger UI. Failed login does not create an account. Public registration requires a password and is limited to FARMER and CONSUMER; ADMIN and HUB_STAFF cannot self-register, and rider records require approval. Protected routes use the shared `get_current_user` dependency.
+
+Login and registration are rate-limited by client IP using `AUTH_RATE_LIMIT_REQUESTS` (default 5) and `AUTH_RATE_LIMIT_WINDOW_SECONDS` (default 60). The limiter is in-process and does not coordinate across workers or application instances; production deployments need shared storage or edge rate limiting. No OTP login flow is currently implemented.
 
 ## Authorization
 
@@ -30,4 +32,4 @@ Notifications are queried by authenticated user ownership. Farmer, consumer, and
 
 ## Operational Limits
 
-This is a development/local application. It does not claim production hardening, external identity management, rate limiting, deployment isolation, or a real payment gateway unless those are added separately.
+This is a development/local application. It does not claim production hardening, external identity management, distributed rate limiting, deployment isolation, or a real payment gateway unless those are added separately.

@@ -8,7 +8,8 @@ The system addresses the gap between farm production and consumer access by givi
 
 ## Implemented Features
 
-- JWT authentication and FARMER/CONSUMER/ADMIN role-based access control
+- JWT authentication for FARMER/CONSUMER/ADMIN workflows, with RIDER and HUB_STAFF roles added at the schema level; public registration remains limited to FARMER and CONSUMER
+- Password-based login and registration with configurable per-IP throttling; OTP login is not implemented
 - Farmer registration, profile, listings, images, orders, fulfillment, notifications, and dashboard
 - Consumer registration, profile, marketplace, nearby farmer search, cart, orders, reviews, notifications, and dashboard
 - AI crop quality assessment boundary with image validation and prediction history

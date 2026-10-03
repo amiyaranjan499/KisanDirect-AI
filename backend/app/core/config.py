@@ -1,3 +1,4 @@
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
@@ -17,6 +18,17 @@ class Settings(BaseSettings):
     enable_sandbox_payments: bool | None = None
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = Field(default=30, gt=0)
+    hub_service_radius_km: Decimal = Field(default=Decimal("8"), gt=0)
+    packing_minutes: int = Field(default=15, gt=0)
+    rider_speed_kmph: Decimal = Field(default=Decimal("20"), gt=0)
+    delivery_buffer_minutes: int = Field(default=10, ge=0)
+    reservation_ttl_minutes: int = Field(default=10, gt=0)
+    otp_ttl_minutes: int = Field(default=120, gt=0)
+    otp_max_attempts: int = Field(default=5, gt=0)
+    delivery_fee: Decimal = Field(default=Decimal("0.00"), ge=0)
+    platform_fee: Decimal = Field(default=Decimal("0.00"), ge=0)
+    auth_rate_limit_requests: int = Field(default=5, gt=0)
+    auth_rate_limit_window_seconds: int = Field(default=60, gt=0)
     cors_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
     )

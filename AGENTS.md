@@ -35,12 +35,29 @@ Do NOT promise "10-minute" delivery anywhere in the UI or docs.
    using row locks (SELECT ... FOR UPDATE) inside a transaction.
 7. Security: no secrets in code or committed files; no public ADMIN registration;
    rate-limit auth endpoints; sandbox/test endpoints only when APP_ENV=development.
+   Never read, print, log, or suggest values from .env files — reference config
+   only by variable name (e.g. DATABASE_URL), never its value.
 8. Do not invent facts. If a library/API detail is uncertain, say so and check the
    installed version instead of guessing.
 9. Frontend: one component per file, real routes with react-router, mobile-first,
    loading/empty/error states for every screen, i18n keys for all visible text.
-10. Add or update tests for every behaviour you add. Add docs to docs/ for every
+   Consumer, Farmer, and Admin UI code stay in separate folders
+   (frontend/src/consumer/, frontend/src/farmer/, frontend/src/admin/).
+   Never modify one role's files while working on another's.
+10. Before creating any new function/component/service, search the codebase for
+    an existing one that already does it (shared across roles where sensible).
+    Only create a new file if nothing suitable exists.
+11. No mock/demo/hardcoded data in real pages or endpoints. If real logic
+    (AI quality, AI price, market price, etc.) doesn't exist yet, build it —
+    don't fake it with placeholder values.
+12. Add or update tests for every behaviour you add. Add docs to docs/ for every
     new module. Keep README.md accurate.
+13. Admin pages are read/manage views over real platform data — Users,
+    Farmers, Crop Listings, Orders, Payments, Delivery, Reviews, Analytics.
+    Any admin action that changes state (activate/deactivate user, refund
+    a payment, etc.) must go through the same service-layer rules as #5
+    (allowed-transition table, role check, audit event) — no direct
+    admin-side status writes either.
 
 ## Definition of done for any task
 - Code compiles, tests pass, migration applies on a fresh DB, `npm run build` passes.
