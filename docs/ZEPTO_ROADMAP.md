@@ -1,6 +1,9 @@
 # Zepto-Style Quick-Commerce Roadmap
 
-This roadmap describes the approved hub-based direction for KisanDirect AI. It targets local farm produce delivered from a Kisan Hub, generally in a 45-90 minute window or a selected delivery slot. It does not promise ten-minute delivery. Phase 1 introduces the schema and authentication baseline; later phases must make that schema operational through the service layer.
+This roadmap describes the approved hub-based direction for KisanDirect AI. It targets local farm produce delivered from a Kisan Hub, generally in a 45-90 minute window or a selected delivery slot. It does not promise ten-minute delivery. Phase 1 introduced the schema and authentication baseline. Phase 2 adds the
+central order lifecycle service and routes existing order, delivery, and
+sandbox-payment status changes through it. Its implementation is awaiting the
+project owner's backend test run with the configured isolated test database.
 
 ## Order Lifecycle
 
@@ -28,8 +31,8 @@ Every order, payment, or shipment transition is intended to pass through one ser
 
 ## Nine Phases
 
-1. **Data model and roles (current):** add hub/rider/shipment/slot/reservation/event models, database constraints and indexes, role values, operational settings, and secure password login/registration with configurable throttling. No checkout or transition wiring.
-2. **Transition and audit services:** define allowed order, payment, and shipment transitions; enforce actor roles/ownership; write order events; migrate existing state-change paths through the single service boundary.
+1. **Data model and roles (complete):** add hub/rider/shipment/slot/reservation/event models, database constraints and indexes, role values, operational settings, and secure password login/registration with configurable throttling.
+2. **Transition and audit services (implementation; verification pending):** define allowed order, payment, shipment, and legacy-delivery transitions; enforce actor roles/ownership; lock rows, write order events, and stage notifications in the same transaction; migrate existing status-changing paths through the single service boundary. Shipment state `PACKING` is added by `b7c4d2e9f1a0`. Run the backend suite against the isolated `TEST_DATABASE_URL` before marking complete.
 3. **Hub inventory and checkout:** establish listing-to-hub stock intake/reconciliation, reject mixed-hub carts, reserve stock transactionally with row locks and expiry, commit/release holds, and calculate configured Decimal fees on the server.
 4. **Delivery windows and promises:** create/query capacity-backed slots, protect booking counts transactionally, and calculate promised windows using configured packing, rider-speed, radius, and buffer values.
 5. **Hub operations:** implement hub and staff provisioning/authorization, pick lists, packing workflow, and shipment readiness without bypassing transition/audit rules.

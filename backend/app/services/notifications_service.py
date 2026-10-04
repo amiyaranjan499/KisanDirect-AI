@@ -74,6 +74,42 @@ class NotificationsService:
         )
         return await self.repository.create(notification)
 
+    async def stage(
+        self,
+        *,
+        user_id: UUID,
+        notification_type: NotificationType,
+        title: str,
+        message: str,
+        related_entity_type: str | None = None,
+        related_entity_id: UUID | None = None,
+        deduplicate: bool = True,
+    ) -> Notification:
+        if deduplicate:
+            existing = await self.repository.find_recent_duplicate(
+                user_id=user_id,
+                notification_type=notification_type,
+                title=title,
+                message=message,
+                related_entity_type=related_entity_type,
+                related_entity_id=related_entity_id,
+            )
+            if existing is not None:
+                return existing
+
+        return self.repository.add_without_commit(
+            Notification(
+                user_id=user_id,
+                notification_type=notification_type,
+                title=title,
+                message=message,
+                related_entity_type=related_entity_type,
+                related_entity_id=related_entity_id,
+                is_read=False,
+                read_at=None,
+            )
+        )
+
     @staticmethod
     def _response(notification: Notification) -> dict[str, object]:
         return {

@@ -13,6 +13,7 @@ from backend.app.repositories.notifications_repository import NotificationReposi
 from backend.app.schemas.fulfillment import FulfillmentCreate, FulfillmentResponse, FulfillmentStatusUpdate
 from backend.app.services.fulfillment_service import FulfillmentService
 from backend.app.services.notifications_service import NotificationsService
+from backend.app.services.order_lifecycle_service import LifecycleConflict
 
 router = APIRouter(prefix="/orders", tags=["delivery-pickup"])
 
@@ -43,6 +44,8 @@ async def create_fulfillment(order_id: UUID, payload: FulfillmentCreate, current
         return await service.create(current_user.id, order_id, payload)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -63,5 +66,7 @@ async def update_fulfillment_status(order_id: UUID, payload: FulfillmentStatusUp
         return await service.update_status(current_user.id, payload, order_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

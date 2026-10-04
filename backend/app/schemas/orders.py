@@ -67,4 +67,5 @@ class OrderPage(BaseModel):
 
 
 class OrderStatusUpdate(BaseModel):
-    status: str = Field(pattern="^(CONFIRMED|CANCELLED|COMPLETED)$")
+    status: str = Field(pattern="^(CONFIRMED|PROCESSING|CANCELLED|COMPLETED)$")
+    reason: str | None = Field(default=None, max_length=1000)

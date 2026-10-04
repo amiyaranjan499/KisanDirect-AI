@@ -21,6 +21,7 @@ class FulfillmentCreate(BaseModel):
 
 class FulfillmentStatusUpdate(BaseModel):
     status: str = Field(pattern="^(CONFIRMED|READY|OUT_FOR_DELIVERY|DELIVERED|PICKED_UP|CANCELLED)$")
+    reason: str | None = Field(default=None, max_length=1000)
 
 
 class FulfillmentResponse(BaseModel):

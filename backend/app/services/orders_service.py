@@ -5,6 +5,7 @@ from uuid import UUID
 from backend.app.models import NotificationType, Order, OrderStatus, UserRole
 from backend.app.repositories.consumer_repository import ConsumerRepository
 from backend.app.repositories.orders_repository import OrdersRepository
+from backend.app.services.order_lifecycle_service import LifecycleActor, OrderLifecycleService
 from backend.app.schemas.orders import CartItemResponse, CartResponse, OrderItemResponse, OrderPage, OrderResponse
 from backend.app.schemas.payments import PaymentResponse
 
@@ -14,6 +15,7 @@ class OrdersService:
         self.repository = repository
         self.consumer_repository = consumer_repository
         self.notification_service = notification_service
+        self.lifecycle = OrderLifecycleService(repository.session, notification_service)
 
     async def consumer_id(self, user_id: UUID) -> UUID:
         consumer = await self.consumer_repository.get_profile(user_id)
@@ -86,37 +88,41 @@ class OrdersService:
             raise LookupError("Order not found")
         return self.order_response(order, user_id if role is UserRole.FARMER else None)
 
-    async def update_status(self, user_id: UUID, role: UserRole, order_id: UUID, status: str) -> OrderResponse:
+    async def update_status(
+        self,
+        user_id: UUID,
+        role: UserRole,
+        order_id: UUID,
+        status: str,
+        reason: str | None = None,
+    ) -> OrderResponse:
         try:
             requested = OrderStatus(status)
         except ValueError as exc:
             raise ValueError("Invalid order status") from exc
-        if role is UserRole.CONSUMER:
-            if requested not in {OrderStatus.CANCELLED, OrderStatus.COMPLETED}:
-                raise PermissionError("Consumers may cancel orders or confirm receipt")
-            order = await self.repository.get_order(order_id, consumer_id=await self.consumer_id(user_id))
-            if order is None:
-                raise LookupError("Order not found")
-            if requested is OrderStatus.CANCELLED and order.status not in {OrderStatus.PENDING, OrderStatus.CONFIRMED}:
-                raise LookupError("Order cannot be cancelled")
-            if requested is OrderStatus.COMPLETED and order.status is not OrderStatus.DELIVERED:
-                raise ValueError("Receipt can only be confirmed after delivery")
-        elif role is UserRole.FARMER:
-            if requested is not OrderStatus.CONFIRMED:
-                raise PermissionError("Farmers may only confirm orders")
-            order = await self.repository.get_order(order_id, farmer_user_id=user_id)
-            if order is None:
-                raise LookupError("Order not found")
-        else:
-            raise PermissionError("Role cannot update this order")
-
-        updated = await self.repository.update_status(order, requested)
-        await self._notify_status_update(updated, role, requested)
+        await self.lifecycle.transition_order(
+            order_id,
+            LifecycleActor(user_id, role),
+            requested,
+            reason=reason,
+        )
+        updated = await self.repository.get_order(
+            order_id,
+            consumer_id=await self.consumer_id(user_id) if role is UserRole.CONSUMER else None,
+            farmer_user_id=user_id if role is UserRole.FARMER else None,
+        )
+        if updated is None:
+            raise LookupError("Order not found")
         return self.order_response(updated, user_id if role is UserRole.FARMER else None)
 
     async def initiate_test_payment(self, user_id: UUID, order_id: UUID, outcome: str) -> PaymentResponse:
-        payment = await self.repository.initiate_test_payment(await self.consumer_id(user_id), order_id, outcome)
-        await self._notify_payment_result(payment, user_id)
+        payment_id = await self.lifecycle.initiate_sandbox_payment(user_id, order_id, outcome)
+        payment = await self.repository.get_payment(
+            payment_id,
+            await self.consumer_id(user_id),
+        )
+        if payment is None:
+            raise LookupError("Payment not found")
         return PaymentResponse(id=payment.id, order_id=payment.order_id, provider_reference=payment.provider_reference, amount=payment.amount, status=payment.status.value.lower(), payment_method=payment.payment_method, is_test=payment.is_test, created_at=payment.created_at, updated_at=payment.updated_at)
 
     async def get_test_payment(self, user_id: UUID, payment_id: UUID) -> PaymentResponse:
@@ -148,47 +154,3 @@ class OrdersService:
                 related_entity_type="order",
                 related_entity_id=order.id,
             )
-
-    async def _notify_status_update(self, order, role, status: OrderStatus) -> None:
-        if self.notification_service is None:
-            return
-        if role is UserRole.CONSUMER and status is OrderStatus.CANCELLED:
-            for item in order.items:
-                await self.notification_service.create(
-                    user_id=item.listing.farmer.user_id,
-                    notification_type=NotificationType.ORDER,
-                    title="Order cancelled",
-                    message=f"Order {str(order.id)[:8]} was cancelled by the consumer.",
-                    related_entity_type="order",
-                    related_entity_id=order.id,
-                )
-        elif role is UserRole.FARMER and status in {OrderStatus.CONFIRMED, OrderStatus.COMPLETED}:
-            consumer = await self.consumer_repository.get_profile_by_id(order.consumer_id)
-            if consumer is None:
-                return
-            await self.notification_service.create(
-                user_id=consumer.user_id,
-                notification_type=NotificationType.ORDER,
-                title="Order confirmed" if status is OrderStatus.CONFIRMED else "Order completed",
-                message=f"Your order {str(order.id)[:8]} has been {status.value.lower()}.",
-                related_entity_type="order",
-                related_entity_id=order.id,
-            )
-
-    async def _notify_payment_result(self, payment, consumer_user_id: UUID) -> None:
-        if self.notification_service is None:
-            return
-        title = "Payment successful" if payment.status in {"SUCCESSFUL", "PAID"} else "Payment failed"
-        message = (
-            f"Your payment for order {str(payment.order_id)[:8]} was successful."
-            if payment.status in {"SUCCESSFUL", "PAID"}
-            else f"Your payment for order {str(payment.order_id)[:8]} failed. Please try again."
-        )
-        await self.notification_service.create(
-            user_id=consumer_user_id,
-            notification_type=NotificationType.PAYMENT,
-            title=title,
-            message=message,
-            related_entity_type="order",
-            related_entity_id=payment.order_id,
-        )

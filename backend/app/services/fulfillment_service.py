@@ -1,8 +1,9 @@
 from uuid import UUID
 
-from backend.app.models import DeliveryStatus, FulfillmentMethod, NotificationType, UserRole
+from backend.app.models import DeliveryStatus, FulfillmentMethod, UserRole
 from backend.app.repositories.consumer_repository import ConsumerRepository
 from backend.app.repositories.fulfillment_repository import FulfillmentRepository
+from backend.app.services.order_lifecycle_service import LifecycleActor, OrderLifecycleService
 from backend.app.schemas.fulfillment import FulfillmentCreate, FulfillmentResponse, FulfillmentStatusUpdate
 
 
@@ -11,6 +12,7 @@ class FulfillmentService:
         self.repository = repository
         self.consumers = consumers
         self.notification_service = notification_service
+        self.lifecycle = OrderLifecycleService(repository.session, notification_service)
 
     @staticmethod
     def response(delivery: object) -> FulfillmentResponse:
@@ -47,42 +49,15 @@ class FulfillmentService:
         return self.response(order.delivery)
 
     async def update_status(self, user_id: UUID, payload: FulfillmentStatusUpdate, order_id: UUID) -> FulfillmentResponse:
-        order = await self.repository.get_order_for_farmer(order_id, user_id)
-        if order is None or order.delivery is None:
-            raise LookupError("Fulfillment not found")
         try:
             status = DeliveryStatus(payload.status)
         except ValueError as exc:
             raise ValueError("Invalid fulfillment status") from exc
 
-        consumer_id = order.consumer_id
-        order_ref = order.id
-        updated = await self.repository.update_status(order.delivery, status, user_id)
-        await self._notify_delivery_status(consumer_id, order_ref, updated)
-        return self.response(updated)
-
-    async def _notify_delivery_status(self, consumer_id: UUID, order_id: UUID, updated_delivery) -> None:
-        if self.notification_service is None:
-            return
-        consumer = await self.consumers.get_profile_by_id(consumer_id)
-        if consumer is None:
-            return
-        title_map = {
-            DeliveryStatus.CONFIRMED: "Order confirmed",
-            DeliveryStatus.OUT_FOR_DELIVERY: "Out for delivery",
-            DeliveryStatus.DELIVERED: "Order delivered",
-            DeliveryStatus.READY: "Pickup ready",
-            DeliveryStatus.PICKED_UP: "Pickup completed",
-            DeliveryStatus.CANCELLED: "Fulfillment cancelled",
-        }
-        status = updated_delivery.status
-        if status not in title_map:
-            return
-        await self.notification_service.create(
-            user_id=consumer.user_id,
-            notification_type=NotificationType.DELIVERY,
-            title=title_map[status],
-            message=f"Your order {str(order_id)[:8]} has a delivery/pickup update: {status.value}.",
-            related_entity_type="order",
-            related_entity_id=order_id,
+        updated = await self.lifecycle.transition_delivery(
+            order_id,
+            LifecycleActor(user_id, UserRole.FARMER),
+            status,
+            reason=payload.reason,
         )
+        return self.response(updated)

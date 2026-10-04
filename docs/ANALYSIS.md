@@ -13,8 +13,9 @@ This snapshot reflects the repository after the Phase 1 schema and authenticatio
 
 - `OrdersRepository.checkout` locks the cart, validates each existing crop listing, decrements `crop_listings.quantity` immediately, and creates order lines in one transaction. It does not reserve `hub_stock`, hold stock until payment, or enforce one hub per cart.
 - `stock_reservations` and `hub_stock` are schema-only. No hold, commit, release, expiry worker, or hub stock reconciliation logic exists yet.
-- There is no `order_events` table write in the order or delivery paths. Phase 1 adds the table/model only; state changes are not yet audited there.
-- Existing order transitions use `OrderStatus` and the separate legacy order service/repository logic. Shipment statuses are new and are not wired into those transitions.
+- Order, legacy delivery, shipment, and payment status changes now go through `OrderLifecycleService`; successful transitions write `order_events` and stage notifications in the same transaction. Phase 2 implementation is pending the owner's backend verification run.
+- Legacy `Delivery` remains the API-facing fulfillment record. Its farmer delivery/pickup statuses map to aggregate order transitions through an audited compatibility cascade; it does not create a `Shipment`.
+- New shipments begin in `PACKING` (migration `b7c4d2e9f1a0`), then can become `READY_FOR_PICKUP`; shipment delivery requires the internal OTP-verified path, which has no endpoint yet.
 - The current platform fee and delivery fee are not included in checkout totals. `DELIVERY_FEE` and `PLATFORM_FEE` are now Decimal Settings with zero defaults for later use; checkout does not apply them.
 - The existing `Delivery` model stores fulfillment method, recipient/address fields, coordinates, schedule, and tracking reference. It does not represent hub assignment, rider assignment, staged shipment timestamps, or delivery OTP verification.
 
@@ -41,3 +42,7 @@ Review the returned accounts before deciding what to do. This phase does not del
 - The migration `a6f3c9d8e2b1` applies cleanly on a fresh database; the duplicate GiST index issue has been fixed.
 - The backend suite passes: 66 passed, 0 failed (confirmed by the user after the migration and test assertion fixes).
 - The frontend production build passes with `npm run build`; the API wrapper exports required by admin analytics and consumer payment methods are present.
+- Phase 2 adds migration `b7c4d2e9f1a0` for the initial shipment `PACKING` state. Apply this revision and rerun the backend suite with the isolated `TEST_DATABASE_URL` before considering Phase 2 verified.
+
+See [order-lifecycle.md](./order-lifecycle.md) for transition rules, permissions,
+legacy delivery mapping, and the lifecycle diagram.

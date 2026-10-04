@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { listFarmerDashboardOrders, updateOrderStatus } from "../services/api";
+import {
+  fulfillmentRequest,
+  listFarmerDashboardOrders,
+  updateFulfillmentStatus,
+  updateOrderStatus,
+} from "../services/api";
 
 const statusMap = {
   PENDING: "New",
@@ -11,20 +16,60 @@ const statusMap = {
   COMPLETED: "Completed",
 };
 
-const nextStatusMap = {
-  PENDING: "CONFIRMED",
-  CONFIRMED: "PROCESSING",
-  PROCESSING: "SHIPPED",
-  SHIPPED: "DELIVERED",
-  DELIVERED: "COMPLETED",
-  CANCELLED: null,
-  COMPLETED: null,
+const fulfillmentStatusMap = {
+  CONFIRMED: "Preparing",
+  READY: "Ready",
+  OUT_FOR_DELIVERY: "Out for Delivery",
+  DELIVERED: "Delivered",
+  PICKED_UP: "Delivered",
+  CANCELLED: "Cancelled",
 };
+
+function displayStatus(order, fulfillment) {
+  if (order.status === "CANCELLED") return statusMap.CANCELLED;
+  if (fulfillment?.status === "PENDING") {
+    return statusMap[order.status] || "New";
+  }
+  if (fulfillment && fulfillmentStatusMap[fulfillment.status]) {
+    return fulfillmentStatusMap[fulfillment.status];
+  }
+  return statusMap[order.status] || "New";
+}
+
+function nextAction(order, fulfillment) {
+  if (order.status === "PENDING") {
+    return { type: "order", status: "CONFIRMED", label: "Accept" };
+  }
+  if (order.status === "CONFIRMED") {
+    if (fulfillment?.status === "PENDING") {
+      return { type: "fulfillment", status: "CONFIRMED", label: "Confirm fulfillment" };
+    }
+    return { type: "order", status: "PROCESSING", label: "Start preparing" };
+  }
+  if (!fulfillment) return null;
+
+  if (fulfillment.status === "PENDING") {
+    return { type: "fulfillment", status: "CONFIRMED", label: "Confirm fulfillment" };
+  }
+  if (fulfillment.status === "CONFIRMED") {
+    return fulfillment.method === "FARMER_PICKUP"
+      ? { type: "fulfillment", status: "READY", label: "Ready for pickup" }
+      : { type: "fulfillment", status: "OUT_FOR_DELIVERY", label: "Dispatch order" };
+  }
+  if (fulfillment.status === "READY") {
+    return { type: "fulfillment", status: "PICKED_UP", label: "Mark picked up" };
+  }
+  if (fulfillment.status === "OUT_FOR_DELIVERY") {
+    return { type: "fulfillment", status: "DELIVERED", label: "Mark delivered" };
+  }
+  return null;
+}
 
 const formatMoney = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 export default function FarmerOrderDetails({ onBack }) {
   const [orders, setOrders] = useState([]);
+  const [fulfillments, setFulfillments] = useState({});
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("All");
   const [busyId, setBusyId] = useState(null);
@@ -32,7 +77,24 @@ export default function FarmerOrderDetails({ onBack }) {
   const load = async () => {
     try {
       const data = await listFarmerDashboardOrders();
-      setOrders(Array.isArray(data) ? data : data?.items || []);
+      const nextOrders = Array.isArray(data) ? data : data?.items || [];
+      const fulfillmentEntries = await Promise.all(
+        nextOrders.map(async (order) => {
+          try {
+            return [
+              order.id,
+              await fulfillmentRequest(`/orders/${order.id}/fulfillment`),
+            ];
+          } catch (requestError) {
+            if (requestError.message === "Fulfillment not found") {
+              return [order.id, null];
+            }
+            throw requestError;
+          }
+        }),
+      );
+      setOrders(nextOrders);
+      setFulfillments(Object.fromEntries(fulfillmentEntries));
     } catch (requestError) {
       setError(requestError.message || "Unable to load orders.");
     }
@@ -44,13 +106,20 @@ export default function FarmerOrderDetails({ onBack }) {
 
   const filteredOrders = useMemo(() => {
     if (filter === "All") return orders;
-    return orders.filter((order) => statusMap[order.status] === filter);
-  }, [filter, orders]);
+    return orders.filter(
+      (order) => displayStatus(order, fulfillments[order.id]) === filter,
+    );
+  }, [filter, fulfillments, orders]);
 
-  const updateOrder = async (order, status) => {
+  const updateStatus = async (order, action) => {
     try {
       setBusyId(order.id);
-      await updateOrderStatus(order.id, status);
+      setError("");
+      if (action.type === "fulfillment") {
+        await updateFulfillmentStatus(order.id, action.status);
+      } else {
+        await updateOrderStatus(order.id, action.status);
+      }
       await load();
     } catch (requestError) {
       setError(requestError.message || "Unable to update order status.");
@@ -75,6 +144,7 @@ export default function FarmerOrderDetails({ onBack }) {
           "Accepted",
           "Preparing",
           "Ready",
+          "Out for Delivery",
           "Delivered",
           "Cancelled",
         ].map((tab) => (
@@ -104,8 +174,9 @@ export default function FarmerOrderDetails({ onBack }) {
             </thead>
             <tbody>
               {filteredOrders.map((order) => {
-                const currentStatus = statusMap[order.status] || "New";
-                const nextStatus = nextStatusMap[order.status];
+                const fulfillment = fulfillments[order.id];
+                const currentStatus = displayStatus(order, fulfillment);
+                const action = nextAction(order, fulfillment);
                 const firstItem = order.items?.[0];
                 const totalQty = order.items?.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || 0;
                 return (
@@ -116,18 +187,19 @@ export default function FarmerOrderDetails({ onBack }) {
                     <td>{`${totalQty} ${firstItem?.unit || "kg"}`}</td>
                     <td>{formatMoney(order.total_amount)}</td>
                     <td>
-                      <span className={`farmer-status-pill ${currentStatus === "New" ? "new" : currentStatus === "Accepted" || currentStatus === "Ready" || currentStatus === "Delivered" ? "success" : currentStatus === "Preparing" ? "warning" : "neutral"}`}>
+                      <span className={`farmer-status-pill ${currentStatus === "New" ? "new" : currentStatus === "Accepted" || currentStatus === "Ready" || currentStatus === "Out for Delivery" || currentStatus === "Delivered" ? "success" : currentStatus === "Preparing" ? "warning" : "neutral"}`}>
                         {currentStatus}
                       </span>
                     </td>
                     <td>
-                      {currentStatus === "New" ? (
-                        <button type="button" className="farmer-small-button solid" onClick={() => updateOrder(order, "CONFIRMED")} disabled={busyId === order.id}>
-                          {busyId === order.id ? "..." : "Accept"}
-                        </button>
-                      ) : nextStatus ? (
-                        <button type="button" className="farmer-small-button secondary" onClick={() => updateOrder(order, nextStatus)} disabled={busyId === order.id}>
-                          {busyId === order.id ? "..." : "Update"}
+                      {action ? (
+                        <button
+                          type="button"
+                          className={`farmer-small-button ${action.type === "order" && action.status === "CONFIRMED" ? "solid" : "secondary"}`}
+                          onClick={() => updateStatus(order, action)}
+                          disabled={busyId === order.id}
+                        >
+                          {busyId === order.id ? "..." : action.label}
                         </button>
                       ) : (
                         <span className="muted">—</span>
@@ -143,4 +215,3 @@ export default function FarmerOrderDetails({ onBack }) {
     </section>
   );
 }
-

@@ -1,7 +1,7 @@
 from decimal import Decimal
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from sqlalchemy import func, inspect, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,11 +13,8 @@ from backend.app.models import (
     Farmer,
     Order,
     OrderItem,
-    OrderStatus,
     Payment,
-    PaymentStatus,
 )
-from backend.app.services.order_state import ORDER_TRANSITIONS, assert_transition
 
 
 class OrdersRepository:
@@ -126,7 +123,7 @@ class OrdersRepository:
             cart_items = list(item_result.scalars().all())
             if not cart_items:
                 raise ValueError("Cart is empty")
-            order = Order(consumer_id=consumer_id, status=OrderStatus.PENDING, total_amount=Decimal("0"))
+            order = Order(consumer_id=consumer_id, total_amount=Decimal("0"))
             self.session.add(order)
             await self.session.flush()
             total = Decimal("0")
@@ -181,65 +178,6 @@ class OrdersRepository:
         total = int((await self.session.execute(select(func.count()).select_from(base.subquery()))).scalar_one())
         result = await self.session.execute(base.order_by(Order.created_at.desc()).offset((page - 1) * page_size).limit(page_size).options(selectinload(Order.payment), selectinload(Order.items).selectinload(OrderItem.listing).selectinload(CropListing.crop), selectinload(Order.items).selectinload(OrderItem.listing).selectinload(CropListing.farmer)))
         return list(result.unique().scalars().all()), total
-
-    async def update_status(self, order: Order, status: OrderStatus) -> Order:
-        order_id = inspect(order).identity[0]
-        await self.session.rollback()
-        async with self.session.begin():
-            locked = await self.session.execute(select(Order).where(Order.id == order_id).with_for_update())
-            order = locked.scalar_one()
-            assert_transition(ORDER_TRANSITIONS, order.status, status)
-            order.status = status
-            if status is OrderStatus.CANCELLED:
-                await self._restore_stock(order)
-        return await self.get_order(order_id)
-
-    async def _restore_stock(self, order: Order) -> None:
-        if order.stock_restored:
-            return
-        items = await self.session.execute(
-            select(OrderItem).where(OrderItem.order_id == order.id).with_for_update()
-        )
-        for item in items.scalars():
-            listing_result = await self.session.execute(
-                select(CropListing).where(CropListing.id == item.listing_id).with_for_update()
-            )
-            listing = listing_result.scalar_one()
-            listing.quantity += item.quantity
-            if listing.availability_status is AvailabilityStatus.SOLD_OUT:
-                listing.availability_status = AvailabilityStatus.AVAILABLE
-        order.stock_restored = True
-
-    async def initiate_test_payment(self, consumer_id: UUID, order_id: UUID, outcome: str) -> Payment:
-        await self.session.rollback()
-        async with self.session.begin():
-            result = await self.session.execute(select(Order).where(Order.id == order_id, Order.consumer_id == consumer_id).with_for_update())
-            order = result.scalar_one_or_none()
-            if order is None:
-                raise LookupError("Order not found")
-            if order.status not in {OrderStatus.PENDING, OrderStatus.CONFIRMED}:
-                raise ValueError("Order is not payable")
-            payment_result = await self.session.execute(select(Payment).where(Payment.order_id == order.id).with_for_update())
-            payment = payment_result.scalar_one_or_none()
-            if payment is not None and payment.status in {PaymentStatus.PAID, PaymentStatus.SUCCESSFUL}:
-                raise ValueError("Order already has a successful payment")
-            status_map = {"success": PaymentStatus.SUCCESSFUL, "failed": PaymentStatus.FAILED, "cancelled": PaymentStatus.CANCELLED}
-            if payment is None:
-                payment = Payment(order_id=order.id, amount=order.total_amount, status=status_map[outcome], provider_reference=f"TEST-{uuid4()}", payment_method="TEST_SANDBOX", is_test=True)
-                self.session.add(payment)
-            else:
-                payment.amount = order.total_amount
-                payment.status = status_map[outcome]
-                payment.provider_reference = f"TEST-{uuid4()}"
-                payment.payment_method = "TEST_SANDBOX"
-                payment.is_test = True
-            if outcome == "success" and order.status is OrderStatus.PENDING:
-                assert_transition(ORDER_TRANSITIONS, order.status, OrderStatus.CONFIRMED)
-                order.status = OrderStatus.CONFIRMED
-            elif outcome in {"failed", "cancelled"}:
-                await self._restore_stock(order)
-            await self.session.flush()
-        return await self.get_payment(payment.id, consumer_id)
 
     async def get_payment(self, payment_id: UUID, consumer_id: UUID) -> Payment | None:
         result = await self.session.execute(select(Payment).join(Payment.order).where(Payment.id == payment_id, Order.consumer_id == consumer_id))

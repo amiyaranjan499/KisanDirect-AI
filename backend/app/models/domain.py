@@ -98,6 +98,7 @@ class RiderApprovalStatus(str, Enum):
 
 
 class ShipmentStatus(str, Enum):
+    PACKING = "PACKING"
     READY_FOR_PICKUP = "READY_FOR_PICKUP"
     RIDER_ASSIGNED = "RIDER_ASSIGNED"
     PICKED_UP = "PICKED_UP"
@@ -584,7 +585,7 @@ class Shipment(TimestampMixin, Base):
     rider_id: Mapped[UUID | None] = mapped_column(ForeignKey("riders.id", ondelete="SET NULL"))
     status: Mapped[ShipmentStatus] = mapped_column(
         enum_type(ShipmentStatus, "shipment_status"),
-        default=ShipmentStatus.READY_FOR_PICKUP,
+        default=ShipmentStatus.PACKING,
         nullable=False,
     )
     promised_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

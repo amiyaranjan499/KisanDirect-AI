@@ -22,6 +22,7 @@ from backend.app.schemas.orders import (
 from backend.app.schemas.payments import PaymentResponse, TestPaymentRequest
 from backend.app.services.notifications_service import NotificationsService
 from backend.app.services.orders_service import OrdersService
+from backend.app.services.order_lifecycle_service import LifecycleConflict
 
 router = APIRouter(tags=["cart-orders"])
 
@@ -118,9 +119,17 @@ async def order_detail(order_id: UUID, current_user: Annotated[User, Depends(get
 @router.patch("/orders/{order_id}/status", response_model=OrderResponse)
 async def update_order_status(order_id: UUID, payload: OrderStatusUpdate, current_user: Annotated[User, Depends(get_current_user)], service: Annotated[OrdersService, Depends(get_orders_service)]) -> OrderResponse:
     try:
-        return await service.update_status(current_user.id, current_user.role, order_id, payload.status)
+        return await service.update_status(
+            current_user.id,
+            current_user.role,
+            order_id,
+            payload.status,
+            reason=payload.reason,
+        )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (PermissionError, ValueError) as exc:
         raise HTTPException(status_code=403 if isinstance(exc, PermissionError) else 422, detail=str(exc)) from exc
 

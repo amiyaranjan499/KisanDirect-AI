@@ -1,6 +1,12 @@
 from collections.abc import Mapping
 
-from backend.app.models import DeliveryStatus, FulfillmentMethod, OrderStatus
+from backend.app.models import (
+    DeliveryStatus,
+    FulfillmentMethod,
+    OrderStatus,
+    PaymentStatus,
+    ShipmentStatus,
+)
 
 ORDER_TRANSITIONS: Mapping[OrderStatus, frozenset[OrderStatus]] = {
     OrderStatus.PENDING: frozenset({OrderStatus.CONFIRMED, OrderStatus.CANCELLED}),
@@ -23,6 +29,51 @@ DELIVERY_TRANSITIONS: Mapping[FulfillmentMethod, Mapping[DeliveryStatus, frozens
         DeliveryStatus.CONFIRMED: frozenset({DeliveryStatus.READY, DeliveryStatus.CANCELLED}),
         DeliveryStatus.READY: frozenset({DeliveryStatus.PICKED_UP}),
     },
+}
+
+SHIPMENT_TRANSITIONS: Mapping[ShipmentStatus, frozenset[ShipmentStatus]] = {
+    ShipmentStatus.PACKING: frozenset(
+        {ShipmentStatus.READY_FOR_PICKUP, ShipmentStatus.CANCELLED}
+    ),
+    ShipmentStatus.READY_FOR_PICKUP: frozenset(
+        {ShipmentStatus.RIDER_ASSIGNED, ShipmentStatus.CANCELLED}
+    ),
+    ShipmentStatus.RIDER_ASSIGNED: frozenset(
+        {
+            ShipmentStatus.READY_FOR_PICKUP,
+            ShipmentStatus.PICKED_UP,
+            ShipmentStatus.CANCELLED,
+        }
+    ),
+    ShipmentStatus.PICKED_UP: frozenset({ShipmentStatus.OUT_FOR_DELIVERY}),
+    ShipmentStatus.OUT_FOR_DELIVERY: frozenset(
+        {ShipmentStatus.ARRIVED, ShipmentStatus.FAILED_DELIVERY}
+    ),
+    ShipmentStatus.ARRIVED: frozenset(
+        {ShipmentStatus.DELIVERED, ShipmentStatus.FAILED_DELIVERY}
+    ),
+    ShipmentStatus.FAILED_DELIVERY: frozenset(
+        {ShipmentStatus.RETURNED, ShipmentStatus.OUT_FOR_DELIVERY}
+    ),
+    ShipmentStatus.DELIVERED: frozenset(),
+    ShipmentStatus.RETURNED: frozenset(),
+    ShipmentStatus.CANCELLED: frozenset(),
+}
+
+PAYMENT_TRANSITIONS: Mapping[PaymentStatus, frozenset[PaymentStatus]] = {
+    PaymentStatus.PENDING: frozenset(
+        {
+            PaymentStatus.PAID,
+            PaymentStatus.SUCCESSFUL,
+            PaymentStatus.FAILED,
+            PaymentStatus.CANCELLED,
+        }
+    ),
+    PaymentStatus.PAID: frozenset({PaymentStatus.REFUNDED}),
+    PaymentStatus.SUCCESSFUL: frozenset({PaymentStatus.REFUNDED}),
+    PaymentStatus.FAILED: frozenset(),
+    PaymentStatus.CANCELLED: frozenset(),
+    PaymentStatus.REFUNDED: frozenset(),
 }
 
 

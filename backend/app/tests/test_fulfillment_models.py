@@ -33,6 +33,7 @@ def test_new_role_and_fulfillment_enum_values() -> None:
     assert UserRole.RIDER.value == "RIDER"
     assert UserRole.HUB_STAFF.value == "HUB_STAFF"
     assert {status.value for status in ShipmentStatus} == {
+        "PACKING",
         "READY_FOR_PICKUP",
         "RIDER_ASSIGNED",
         "PICKED_UP",

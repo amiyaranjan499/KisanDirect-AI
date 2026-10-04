@@ -34,6 +34,10 @@ class NotificationRepository:
         await self.session.refresh(notification)
         return notification
 
+    def add_without_commit(self, notification: Notification) -> Notification:
+        self.session.add(notification)
+        return notification
+
     async def mark_read(self, notification: Notification) -> Notification:
         notification.is_read = True
         notification.read_at = notification.read_at or notification.updated_at

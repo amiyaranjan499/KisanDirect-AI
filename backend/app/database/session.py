@@ -43,4 +43,10 @@ async def get_db_session() -> AsyncIterator[AsyncSession]:
 
     session_factory = build_session_factory(get_settings())
     async with session_factory() as session:
-        yield session
+        try:
+            yield session
+        except BaseException:
+            await session.rollback()
+            raise
+        else:
+            await session.commit()
