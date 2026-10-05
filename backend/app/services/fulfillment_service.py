@@ -28,6 +28,30 @@ class FulfillmentService:
         method = FulfillmentMethod(payload.method)
         if method is FulfillmentMethod.DELIVERY and not payload.address:
             raise ValueError("Delivery address is required")
+        if order.hub_id is not None:
+            if method is not FulfillmentMethod.DELIVERY:
+                raise ValueError("Hub checkout orders require delivery fulfillment")
+            if payload.address != order.delivery_address:
+                raise ValueError("Delivery address must match the address used at checkout")
+            payload = payload.model_copy(
+                update={
+                    "latitude": (
+                        float(order.delivery_latitude)
+                        if order.delivery_latitude is not None
+                        else None
+                    ),
+                    "longitude": (
+                        float(order.delivery_longitude)
+                        if order.delivery_longitude is not None
+                        else None
+                    ),
+                    "scheduled_at": (
+                        order.delivery_slot.starts_at
+                        if order.delivery_slot is not None
+                        else None
+                    ),
+                }
+            )
         pickup_location = await self.repository.farmer_location(order_id) if method is FulfillmentMethod.FARMER_PICKUP else None
         if method is FulfillmentMethod.FARMER_PICKUP and pickup_location is None:
             raise ValueError("Farmer pickup location is unavailable")

@@ -51,11 +51,64 @@ class OrderResponse(BaseModel):
     id: UUID
     consumer_id: UUID
     status: str
+    subtotal: Decimal = Decimal("0.00")
+    delivery_fee: Decimal = Decimal("0.00")
+    platform_fee: Decimal = Decimal("0.00")
     total_amount: Decimal
+    hub_id: UUID | None = None
+    delivery_address: str | None = None
+    delivery_slot_id: UUID | None = None
+    promised_window_start: datetime | None = None
+    promised_window_end: datetime | None = None
     created_at: datetime
     updated_at: datetime
     items: list[OrderItemResponse]
     payment: "PaymentResponse | None" = None
+
+
+class CheckoutRequest(BaseModel):
+    hub_id: UUID
+    delivery_slot_id: UUID | None = None
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    address: str = Field(min_length=5, max_length=2000)
+
+
+class CheckoutUnavailableItem(BaseModel):
+    listing_id: UUID
+    crop_name: str
+    requested_quantity: Decimal
+    available_quantity: Decimal
+    unit: str
+
+
+class CheckoutSlotOption(BaseModel):
+    id: UUID
+    starts_at: datetime
+    ends_at: datetime
+    remaining_capacity: int
+
+
+class CheckoutHubOption(BaseModel):
+    id: UUID
+    name: str
+    address: str
+    distance_km: float
+    available: bool
+    unavailable_items: list[CheckoutUnavailableItem]
+    eta_min_minutes: int
+    eta_max_minutes: int
+    slots: list[CheckoutSlotOption]
+
+
+class CheckoutOptionsResponse(BaseModel):
+    item_count: int
+    subtotal: Decimal
+    delivery_fee: Decimal
+    platform_fee: Decimal
+    total: Decimal
+    reservation_ttl_minutes: int
+    hubs: list[CheckoutHubOption]
 
 
 class OrderPage(BaseModel):

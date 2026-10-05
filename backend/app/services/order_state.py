@@ -5,6 +5,7 @@ from backend.app.models import (
     FulfillmentMethod,
     OrderStatus,
     PaymentStatus,
+    ReservationStatus,
     ShipmentStatus,
 )
 
@@ -74,6 +75,19 @@ PAYMENT_TRANSITIONS: Mapping[PaymentStatus, frozenset[PaymentStatus]] = {
     PaymentStatus.FAILED: frozenset(),
     PaymentStatus.CANCELLED: frozenset(),
     PaymentStatus.REFUNDED: frozenset(),
+}
+
+RESERVATION_TRANSITIONS: Mapping[ReservationStatus, frozenset[ReservationStatus]] = {
+    ReservationStatus.HOLD: frozenset(
+        {
+            ReservationStatus.COMMITTED,
+            ReservationStatus.RELEASED,
+            ReservationStatus.EXPIRED,
+        }
+    ),
+    ReservationStatus.COMMITTED: frozenset({ReservationStatus.RELEASED}),
+    ReservationStatus.RELEASED: frozenset(),
+    ReservationStatus.EXPIRED: frozenset(),
 }
 
 

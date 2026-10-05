@@ -17,6 +17,7 @@ This documentation describes the implemented Phase-I system. It is written from 
 - [Current-State Analysis](ANALYSIS.md)
 - [Zepto-Style Quick-Commerce Roadmap](ZEPTO_ROADMAP.md)
 - [Order, Shipment, and Payment Lifecycle](order-lifecycle.md)
+- [Checkout Reservations and ETA](checkout-reservations.md)
 
 ## API Documentation
 

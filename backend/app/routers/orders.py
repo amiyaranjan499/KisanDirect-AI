@@ -15,6 +15,8 @@ from backend.app.schemas.orders import (
     CartItemCreate,
     CartItemUpdate,
     CartResponse,
+    CheckoutRequest,
+    CheckoutOptionsResponse,
     OrderPage,
     OrderResponse,
     OrderStatusUpdate,
@@ -32,6 +34,7 @@ def get_orders_service(session: Annotated[AsyncSession, Depends(get_db_session)]
         OrdersRepository(session),
         ConsumerRepository(session),
         NotificationsService(NotificationRepository(session)),
+        get_settings(),
     )
 
 
@@ -88,10 +91,27 @@ async def clear_cart(current_user: Annotated[User, Depends(require_consumer)], s
     return await service.clear_cart(current_user.id)
 
 
-@router.post("/orders", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
-async def create_order(current_user: Annotated[User, Depends(require_consumer)], service: Annotated[OrdersService, Depends(get_orders_service)]) -> OrderResponse:
+@router.get("/checkout/options", response_model=CheckoutOptionsResponse)
+async def checkout_options(
+    current_user: Annotated[User, Depends(require_consumer)],
+    service: Annotated[OrdersService, Depends(get_orders_service)],
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+) -> CheckoutOptionsResponse:
     try:
-        return await service.checkout(current_user.id)
+        return await service.checkout_options(current_user.id, latitude, longitude)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/orders", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
+async def create_order(
+    payload: CheckoutRequest,
+    current_user: Annotated[User, Depends(require_consumer)],
+    service: Annotated[OrdersService, Depends(get_orders_service)],
+) -> OrderResponse:
+    try:
+        return await service.checkout(current_user.id, payload)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

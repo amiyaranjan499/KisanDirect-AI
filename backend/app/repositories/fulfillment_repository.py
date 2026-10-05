@@ -22,7 +22,7 @@ class FulfillmentRepository:
 
     async def get_order_for_consumer(self, order_id: UUID, consumer_id: UUID) -> Order | None:
         result = await self.session.execute(
-            select(Order).where(Order.id == order_id, Order.consumer_id == consumer_id).options(selectinload(Order.delivery), selectinload(Order.payment), selectinload(Order.items))
+            select(Order).where(Order.id == order_id, Order.consumer_id == consumer_id).options(selectinload(Order.delivery), selectinload(Order.delivery_slot), selectinload(Order.payment), selectinload(Order.items))
         )
         return result.scalar_one_or_none()
 

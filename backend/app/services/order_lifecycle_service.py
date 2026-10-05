@@ -1,21 +1,29 @@
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal, ROUND_CEILING
 from uuid import UUID, uuid4
 
-from sqlalchemy import or_, select
+from geoalchemy2 import Geography
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.core.config import Settings
 from backend.app.models import (
     AvailabilityStatus,
+    Cart,
+    CartItem,
     Consumer,
     CropListing,
     Delivery,
+    DeliverySlot,
     DeliveryStatus,
     Farmer,
     HubStaff,
+    Hub,
+    HubStatus,
     HubStock,
     NotificationType,
     Order,
@@ -24,10 +32,12 @@ from backend.app.models import (
     OrderStatus,
     Payment,
     PaymentStatus,
+    ReservationStatus,
     Rider,
     RiderApprovalStatus,
     Shipment,
     ShipmentStatus,
+    StockReservation,
     User,
     UserRole,
 )
@@ -37,6 +47,7 @@ from backend.app.services.order_state import (
     DELIVERY_TRANSITIONS,
     ORDER_TRANSITIONS,
     PAYMENT_TRANSITIONS,
+    RESERVATION_TRANSITIONS,
     SHIPMENT_TRANSITIONS,
     assert_transition,
 )
@@ -70,6 +81,290 @@ class OrderLifecycleService:
         self.session = session
         self.notifications = notifications or NotificationsService(NotificationRepository(session))
         self.phase6_otp_generation_hook = phase6_otp_generation_hook
+
+    async def create_checkout_order(
+        self,
+        actor: LifecycleActor,
+        *,
+        hub_id: UUID,
+        delivery_slot_id: UUID | None,
+        latitude: float,
+        longitude: float,
+        address: str,
+        settings: Settings,
+    ) -> UUID:
+        if actor.role is not UserRole.CONSUMER or actor.user_id is None:
+            raise LifecyclePermissionError("Only a consumer may place an order")
+        async with self._transaction():
+            await self._validate_actor(actor)
+            consumer_id = await self.session.scalar(
+                select(Consumer.id).where(Consumer.user_id == actor.user_id)
+            )
+            if consumer_id is None:
+                raise LifecyclePermissionError("Consumer profile not found")
+
+            cart_result = await self.session.execute(
+                select(Cart)
+                .where(Cart.consumer_id == consumer_id)
+                .options(
+                    selectinload(Cart.items)
+                    .selectinload(CartItem.listing)
+                    .selectinload(CropListing.crop),
+                    selectinload(Cart.items)
+                    .selectinload(CartItem.listing)
+                    .selectinload(CropListing.farmer),
+                )
+                .with_for_update()
+            )
+            cart = cart_result.scalar_one_or_none()
+            if cart is None or not cart.items:
+                raise LifecycleConflict("Cart is empty")
+
+            point = func.ST_SetSRID(
+                func.ST_MakePoint(longitude, latitude), 4326
+            ).cast(Geography(geometry_type="POINT", srid=4326))
+            hub_result = await self.session.execute(
+                select(Hub)
+                .where(
+                    Hub.id == hub_id,
+                    Hub.status == HubStatus.ACTIVE,
+                    func.ST_DWithin(
+                        Hub.location,
+                        point,
+                        float(settings.hub_service_radius_km * 1000),
+                    ),
+                )
+            )
+            hub = hub_result.scalar_one_or_none()
+            if hub is None:
+                raise LifecycleConflict(
+                    "Delivery address is not serviceable by the selected hub."
+                )
+            distance_meters = await self.session.scalar(
+                select(func.ST_Distance(Hub.location, point)).where(Hub.id == hub.id)
+            )
+            distance_km = Decimal(str(distance_meters)) / Decimal("1000")
+
+            listing_ids = [item.listing_id for item in cart.items]
+            await self.session.execute(
+                select(CropListing)
+                .where(CropListing.id.in_(listing_ids))
+                .options(
+                    selectinload(CropListing.crop),
+                    selectinload(CropListing.farmer),
+                )
+                .order_by(CropListing.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            stock_result = await self.session.execute(
+                select(HubStock)
+                .where(
+                    HubStock.hub_id == hub.id,
+                    HubStock.listing_id.in_(listing_ids),
+                )
+                .order_by(HubStock.listing_id)
+                .with_for_update()
+            )
+            stock_by_listing = {
+                row.listing_id: row for row in stock_result.scalars().all()
+            }
+            stock_ids = [row.id for row in stock_by_listing.values()]
+            active_holds: dict[UUID, Decimal] = {}
+            if stock_ids:
+                holds_result = await self.session.execute(
+                    select(
+                        StockReservation.hub_stock_id,
+                        func.sum(StockReservation.quantity),
+                    )
+                    .where(
+                        StockReservation.hub_stock_id.in_(stock_ids),
+                        StockReservation.status == ReservationStatus.HOLD,
+                        StockReservation.expires_at > datetime.now(timezone.utc),
+                    )
+                    .group_by(StockReservation.hub_stock_id)
+                )
+                active_holds = {
+                    stock_id: Decimal(quantity) for stock_id, quantity in holds_result
+                }
+
+            unavailable: list[str] = []
+            for cart_item in cart.items:
+                listing = cart_item.listing
+                stock = stock_by_listing.get(cart_item.listing_id)
+                free_quantity = (
+                    max(
+                        Decimal("0"),
+                        stock.available_quantity
+                        - active_holds.get(stock.id, Decimal("0")),
+                    )
+                    if stock is not None
+                    else Decimal("0")
+                )
+                if (
+                    listing.availability_status is not AvailabilityStatus.AVAILABLE
+                    or stock is None
+                    or free_quantity < cart_item.quantity
+                ):
+                    unavailable.append(
+                        f"{listing.crop.name} (requested {cart_item.quantity} "
+                        f"{listing.unit}, available {free_quantity} {listing.unit})"
+                    )
+            if unavailable:
+                raise LifecycleConflict(
+                    "Items unavailable at the selected hub: " + "; ".join(unavailable)
+                )
+
+            slot: DeliverySlot | None = None
+            if delivery_slot_id is not None:
+                slot = await self.session.scalar(
+                    select(DeliverySlot)
+                    .where(
+                        DeliverySlot.id == delivery_slot_id,
+                        DeliverySlot.hub_id == hub.id,
+                    )
+                    .with_for_update()
+                )
+                if (
+                    slot is None
+                    or slot.starts_at <= datetime.now(timezone.utc)
+                    or slot.booked_count >= slot.capacity
+                ):
+                    raise LifecycleConflict(
+                        "The selected delivery slot is no longer available."
+                    )
+
+            subtotal = sum(
+                (
+                    Decimal(item.listing.asking_price) * item.quantity
+                ).quantize(Decimal("0.01"))
+                for item in cart.items
+            )
+            delivery_fee = settings.delivery_fee.quantize(Decimal("0.01"))
+            platform_fee = settings.platform_fee.quantize(Decimal("0.01"))
+            total = subtotal + delivery_fee + platform_fee
+            travel_minutes = int(
+                (distance_km / settings.rider_speed_kmph * Decimal("60")).to_integral_value(
+                    rounding=ROUND_CEILING
+                )
+            )
+            eta_min = settings.packing_minutes + travel_minutes
+            eta_max = eta_min + settings.delivery_buffer_minutes
+            now = datetime.now(timezone.utc)
+            if slot is not None:
+                promised_start, promised_end = slot.starts_at, slot.ends_at
+                slot.booked_count += 1
+            else:
+                promised_start = now + timedelta(minutes=eta_min)
+                promised_end = now + timedelta(minutes=eta_max)
+
+            order = Order(
+                consumer_id=consumer_id,
+                hub_id=hub.id,
+                delivery_slot_id=slot.id if slot else None,
+                status=OrderStatus.PENDING,
+                subtotal=subtotal,
+                delivery_fee=delivery_fee,
+                platform_fee=platform_fee,
+                total_amount=total,
+                delivery_address=address,
+                delivery_latitude=Decimal(str(latitude)),
+                delivery_longitude=Decimal(str(longitude)),
+                promised_window_start=promised_start,
+                promised_window_end=promised_end,
+            )
+            self.session.add(order)
+            await self.session.flush()
+            expires_at = now + timedelta(minutes=settings.reservation_ttl_minutes)
+            await self._record_event(
+                order,
+                actor,
+                None,
+                OrderStatus.PENDING.value,
+                "Order placed; stock reservation held",
+            )
+            for cart_item in cart.items:
+                listing = cart_item.listing
+                unit_price = Decimal(listing.asking_price)
+                line_subtotal = (unit_price * cart_item.quantity).quantize(
+                    Decimal("0.01")
+                )
+                self.session.add(
+                    OrderItem(
+                        order_id=order.id,
+                        listing_id=listing.id,
+                        quantity=cart_item.quantity,
+                        unit_price=unit_price,
+                        subtotal=line_subtotal,
+                    )
+                )
+                stock = stock_by_listing[cart_item.listing_id]
+                reservation = StockReservation(
+                    order_id=order.id,
+                    hub_stock_id=stock.id,
+                    quantity=cart_item.quantity,
+                    status=ReservationStatus.HOLD,
+                    expires_at=expires_at,
+                )
+                self.session.add(reservation)
+                await self._record_event(
+                    order,
+                    actor,
+                    None,
+                    ReservationStatus.HOLD.value,
+                    f"Stock held until {expires_at.isoformat()}",
+                )
+                await self.session.delete(cart_item)
+        return order.id
+
+    async def expire_holds(self, *, limit: int = 500) -> int:
+        now = datetime.now(timezone.utc)
+        async with self._transaction():
+            order_ids_result = await self.session.execute(
+                select(StockReservation.order_id)
+                .where(
+                    StockReservation.status == ReservationStatus.HOLD,
+                    StockReservation.expires_at <= now,
+                )
+                .distinct()
+                .order_by(StockReservation.order_id)
+                .limit(limit)
+            )
+            count = 0
+            for order_id in order_ids_result.scalars():
+                order = await self._lock_order(order_id)
+                reservations_result = await self.session.execute(
+                    select(StockReservation)
+                    .where(
+                        StockReservation.order_id == order.id,
+                        StockReservation.status == ReservationStatus.HOLD,
+                        StockReservation.expires_at <= now,
+                    )
+                    .with_for_update(skip_locked=True)
+                )
+                expired_count = 0
+                for reservation in reservations_result.scalars():
+                    await self._transition_reservation_locked(
+                        order,
+                        reservation,
+                        ReservationStatus.EXPIRED,
+                        LifecycleActor(None, None),
+                        "Reservation TTL expired",
+                    )
+                    count += 1
+                    expired_count += 1
+                if expired_count and order.status in {
+                    OrderStatus.PENDING,
+                    OrderStatus.CONFIRMED,
+                }:
+                    await self._transition_order_locked(
+                        order,
+                        LifecycleActor(None, None),
+                        OrderStatus.CANCELLED,
+                        reason="Checkout reservation expired",
+                        cascade=True,
+                    )
+        return count
 
     async def transition_order(
         self,
@@ -308,6 +603,16 @@ class OrderLifecycleService:
             if consumer_user != consumer_user_id:
                 raise LifecycleNotFound("Order not found")
             if order.status not in {OrderStatus.PENDING, OrderStatus.CONFIRMED}:
+                expired_reservation = await self.session.scalar(
+                    select(StockReservation.id).where(
+                        StockReservation.order_id == order.id,
+                        StockReservation.status == ReservationStatus.EXPIRED,
+                    )
+                )
+                if expired_reservation is not None:
+                    raise LifecycleConflict(
+                        "Checkout reservation expired. Please place your order again."
+                    )
                 raise LifecycleConflict("Order is not payable")
             payment_result = await self.session.execute(
                 select(Payment).where(Payment.order_id == order.id).with_for_update()
@@ -357,8 +662,19 @@ class OrderLifecycleService:
                 reason=f"TEST_SANDBOX outcome: {outcome}",
                 sandbox_outcome=True,
             )
-            if outcome in {"failed", "cancelled"}:
-                await self._restore_checkout_stock(order)
+            if outcome == "success":
+                await self._commit_checkout_reservations(order)
+            elif outcome in {"failed", "cancelled"}:
+                if order.hub_id is not None:
+                    await self._transition_order_locked(
+                        order,
+                        LifecycleActor(None, None),
+                        OrderStatus.CANCELLED,
+                        reason=f"Checkout payment {outcome}",
+                        cascade=True,
+                    )
+                else:
+                    await self._restore_checkout_stock(order)
         return payment.id
 
     async def record_cod_cash_collected(
@@ -504,6 +820,7 @@ class OrderLifecycleService:
                     cascade_order=False,
                 )
             await self._restore_checkout_stock(order)
+            await self._release_delivery_slot(order)
             await self._refund_on_cancellation(order)
         await self._notify_order_parties(
             order,
@@ -920,6 +1237,10 @@ class OrderLifecycleService:
     async def _restore_checkout_stock(self, order: Order) -> None:
         if order.stock_restored:
             return
+        if order.hub_id is not None:
+            await self._release_checkout_reservations(order, restore_committed=True)
+            order.stock_restored = True
+            return
         items_result = await self.session.execute(
             select(OrderItem).where(OrderItem.order_id == order.id).with_for_update()
         )
@@ -936,6 +1257,127 @@ class OrderLifecycleService:
             if listing.availability_status is AvailabilityStatus.SOLD_OUT:
                 listing.availability_status = AvailabilityStatus.AVAILABLE
         order.stock_restored = True
+
+    async def _commit_checkout_reservations(self, order: Order) -> None:
+        reservations_result = await self.session.execute(
+            select(StockReservation)
+            .where(StockReservation.order_id == order.id)
+            .order_by(StockReservation.hub_stock_id)
+            .with_for_update()
+        )
+        reservations = list(reservations_result.scalars())
+        if order.hub_id is None or not reservations:
+            return
+        now = datetime.now(timezone.utc)
+        stocks_result = await self.session.execute(
+            select(HubStock)
+            .where(HubStock.id.in_([reservation.hub_stock_id for reservation in reservations]))
+            .order_by(HubStock.id)
+            .with_for_update()
+        )
+        stocks = {stock.id: stock for stock in stocks_result.scalars()}
+        for reservation in reservations:
+            if reservation.status is not ReservationStatus.HOLD or reservation.expires_at <= now:
+                raise LifecycleConflict(
+                    "Checkout reservation expired. Please place your order again."
+                )
+            stock = stocks.get(reservation.hub_stock_id)
+            if stock is None or stock.available_quantity < reservation.quantity:
+                raise LifecycleConflict("Reserved hub stock is no longer available.")
+            stock.available_quantity -= reservation.quantity
+            await self._transition_reservation_locked(
+                order,
+                reservation,
+                ReservationStatus.COMMITTED,
+                LifecycleActor(None, None),
+                "Payment succeeded; hub stock committed",
+            )
+
+    async def _release_checkout_reservations(
+        self,
+        order: Order,
+        *,
+        restore_committed: bool,
+    ) -> None:
+        reservations_result = await self.session.execute(
+            select(StockReservation)
+            .where(StockReservation.order_id == order.id)
+            .order_by(StockReservation.hub_stock_id)
+            .with_for_update()
+        )
+        reservations = list(reservations_result.scalars())
+        stocks_result = await self.session.execute(
+            select(HubStock)
+            .where(
+                HubStock.id.in_(
+                    [reservation.hub_stock_id for reservation in reservations]
+                )
+            )
+            .order_by(HubStock.id)
+            .with_for_update()
+        ) if reservations else None
+        stocks = (
+            {stock.id: stock for stock in stocks_result.scalars()}
+            if stocks_result is not None
+            else {}
+        )
+        for reservation in reservations:
+            if reservation.status is ReservationStatus.HOLD:
+                await self._transition_reservation_locked(
+                    order,
+                    reservation,
+                    ReservationStatus.RELEASED,
+                    LifecycleActor(None, None),
+                    "Payment failed, cancelled, or order cancelled",
+                )
+            elif (
+                restore_committed
+                and reservation.status is ReservationStatus.COMMITTED
+            ):
+                stock = stocks.get(reservation.hub_stock_id)
+                if stock is None:
+                    raise LifecycleConflict("Cannot restore missing hub stock.")
+                stock.available_quantity += reservation.quantity
+                await self._transition_reservation_locked(
+                    order,
+                    reservation,
+                    ReservationStatus.RELEASED,
+                    LifecycleActor(None, None),
+                    "Committed hub stock restored after order cancellation",
+                )
+
+    async def _transition_reservation_locked(
+        self,
+        order: Order,
+        reservation: StockReservation,
+        target: ReservationStatus,
+        actor: LifecycleActor,
+        note: str,
+    ) -> None:
+        current = reservation.status
+        try:
+            assert_transition(RESERVATION_TRANSITIONS, current, target)
+        except ValueError as exc:
+            raise LifecycleConflict(str(exc)) from exc
+        reservation.status = target
+        await self._record_event(
+            order,
+            actor,
+            current.value,
+            target.value,
+            f"{note} (reservation {reservation.id})",
+        )
+
+    async def _release_delivery_slot(self, order: Order) -> None:
+        if order.delivery_slot_id is None:
+            return
+        slot = await self.session.scalar(
+            select(DeliverySlot)
+            .where(DeliverySlot.id == order.delivery_slot_id)
+            .with_for_update()
+        )
+        if slot is not None and slot.booked_count > 0:
+            slot.booked_count -= 1
 
     async def _notify_order_parties(
         self,

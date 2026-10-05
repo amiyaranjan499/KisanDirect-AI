@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { cartRequest, fulfillmentRequest, getConsumerProfile, orderRequest } from "../services/api";
 import TestPaymentPanel from "../payments/Payment";
 import { useI18n } from "../i18n";
@@ -7,11 +7,13 @@ import { useI18n } from "../i18n";
 export default function CartOrders({ onBack, consumerProfile, onNavigate }) {
   const { t } = useI18n();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const ordersPage = pathname.startsWith("/orders");
   const [cart, setCart] = useState(null);
   const [orders, setOrders] = useState(null);
   const [fulfillments, setFulfillments] = useState({});
-  const [tab, setTab] = useState(ordersPage ? "orders" : "cart");
+  const [tab, setTab] = useState(ordersPage || searchParams.get("tab") === "orders" ? "orders" : "cart");
   const [orderFilter, setOrderFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -59,16 +61,9 @@ export default function CartOrders({ onBack, consumerProfile, onNavigate }) {
 
   const changeQuantity = (item, delta) => updateQuantity(item, Number(item.quantity) + delta);
 
-  const checkout = () => orderRequest("/orders", { method: "POST" })
-    .then(() => {
-      setMessage("Order created successfully.");
-      load();
-    })
-    .catch((error) => setMessage(error.message));
-
   const chooseFulfillment = async (order, method) => {
     if (!method) return;
-    const address = method === "DELIVERY" ? (drafts[order.id]?.address || loadedProfile?.address || "").trim() : null;
+    const address = method === "DELIVERY" ? (drafts[order.id]?.address || order.delivery_address || loadedProfile?.address || "").trim() : null;
 
     if (method === "DELIVERY" && address.length < 5) {
       setMessage("Add a delivery address before choosing delivery.");
@@ -148,7 +143,7 @@ export default function CartOrders({ onBack, consumerProfile, onNavigate }) {
             <div className="cart-total-row"><span>Subtotal</span><b>₹{Number(cart?.subtotal || 0).toFixed(2)}</b></div>
             <div className="cart-total-row"><span>Total quantity</span><b>{cart?.total_quantity || "0"}</b></div>
             <div className="cart-total-row total"><span>Total</span><b>₹{Number(cart?.subtotal || 0).toFixed(2)}</b></div>
-            <button onClick={() => onNavigate ? onNavigate("checkout") : checkout()}>Proceed to checkout</button>
+            <button onClick={() => onNavigate ? onNavigate("checkout") : navigate("/checkout")}>Proceed to checkout</button>
             <button className="text-link" onClick={onBack}>Add more items</button>
           </aside>
         </div>
@@ -157,7 +152,7 @@ export default function CartOrders({ onBack, consumerProfile, onNavigate }) {
           {ordersPage && <div className="order-status-filters">{["", "Processing", "Out for Delivery", "Delivered", "Cancelled"].map((filter) => <button key={filter || "all"} className={orderFilter === filter ? "active" : ""} onClick={() => setOrderFilter(filter)}>{filter || "All"}</button>)}</div>}
           {orders?.items?.length ? <>{filteredOrders.length ? filteredOrders.map((order) => {
             const fulfillment = fulfillments[order.id];
-            const draft = drafts[order.id] || { address: loadedProfile?.address || "" };
+            const draft = drafts[order.id] || { address: order.delivery_address || loadedProfile?.address || "" };
             const statusLabel = displayStatus(order);
             const itemNames = order.items.map((item) => item.crop_name).filter(Boolean).join(", ");
             const farmerNames = [...new Set(order.items.map((item) => item.farmer_name).filter(Boolean))].join(", ");
@@ -175,7 +170,7 @@ export default function CartOrders({ onBack, consumerProfile, onNavigate }) {
                       <select defaultValue="" onChange={(event) => chooseFulfillment(order, event.target.value)} aria-label={`Fulfillment for order ${order.id.slice(0, 8)}`}>
                         <option value="">Choose delivery or pickup</option>
                         <option value="DELIVERY">Delivery</option>
-                        <option value="PICKUP">Pickup</option>
+                        {!order.hub_id && <option value="FARMER_PICKUP">Pickup</option>}
                       </select>
                     </div>
                   ) : null}

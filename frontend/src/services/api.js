@@ -283,6 +283,21 @@ export function orderRequest(path, options = {}) {
   return request(`/api/v1${path}`, options);
 }
 
+export function getCheckoutOptions(latitude, longitude) {
+  const query = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+  });
+  return orderRequest(`/checkout/options?${query}`);
+}
+
+export function placeCheckoutOrder(payload) {
+  return orderRequest("/orders", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function paymentRequest(path, options = {}) {
   return request(`/api/v1${path}`, options);
 }

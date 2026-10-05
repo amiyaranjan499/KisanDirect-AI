@@ -15,13 +15,19 @@ The system addresses the gap between farm production and consumer access by givi
 - AI crop quality assessment boundary with image validation and prediction history
 - AI fair-price recommendation boundary with persisted prediction history
 - PostgreSQL/PostGIS marketplace and location-aware search
-- Server-validated cart, checkout, stock, totals, and order ownership
+- Server-priced, PostGIS hub-aware checkout with row-locked hub-stock reservations, capacity-backed delivery slots, and calculated ETA windows
+- Order destination, fee, and ETA snapshots; reservation commit, release, and expiry lifecycle
 - `TEST_SANDBOX` payment flow only; no real payment gateway is connected
-- Delivery and farmer-pickup fulfillment
+- Legacy delivery and farmer-pickup fulfillment; hub checkout keeps the delivery destination and slot from its order snapshot
 - Ratings and reviews with purchase eligibility checks
 - User-owned notifications and read-state management
 - Admin dashboard with platform summaries and user status management
 - Responsive React/Vite frontend with role-aware navigation
+
+Checkout location is requested from the browser for an individual order and is
+not stored in the consumer profile. Expired holds are swept with
+`python -m backend.app.expire_reservations`; see
+[checkout reservations and ETA](docs/checkout-reservations.md).
 
 ## Technology
 

@@ -311,8 +311,22 @@ class Order(TimestampMixin, Base):
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     consumer_id: Mapped[UUID] = mapped_column(ForeignKey("consumers.id", ondelete="RESTRICT"), index=True)
+    hub_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("hubs.id", ondelete="SET NULL"), index=True
+    )
+    delivery_slot_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("delivery_slots.id", ondelete="SET NULL"), index=True
+    )
     status: Mapped[OrderStatus] = mapped_column(enum_type(OrderStatus, "order_status"), default=OrderStatus.PENDING, nullable=False)
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    delivery_fee: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    platform_fee: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     total_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    delivery_address: Mapped[str | None] = mapped_column(Text)
+    delivery_latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
+    delivery_longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
+    promised_window_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    promised_window_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     stock_restored: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     consumer: Mapped[Consumer] = relationship(back_populates="orders")
@@ -320,6 +334,7 @@ class Order(TimestampMixin, Base):
     payment: Mapped["Payment | None"] = relationship(back_populates="order", uselist=False)
     delivery: Mapped["Delivery | None"] = relationship(back_populates="order", uselist=False)
     shipment: Mapped["Shipment | None"] = relationship(back_populates="order", uselist=False)
+    delivery_slot: Mapped["DeliverySlot | None"] = relationship()
     reviews: Mapped[list["Review"]] = relationship(back_populates="order")
 
 

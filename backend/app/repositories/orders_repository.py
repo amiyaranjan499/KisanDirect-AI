@@ -1,19 +1,28 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
+from geoalchemy2 import Geography
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.core.config import Settings
 from backend.app.models import (
     AvailabilityStatus,
     Cart,
     CartItem,
     CropListing,
+    DeliverySlot,
     Farmer,
+    Hub,
+    HubStatus,
+    HubStock,
     Order,
     OrderItem,
     Payment,
+    ReservationStatus,
+    StockReservation,
 )
 
 
@@ -112,36 +121,112 @@ class OrdersRepository:
             await self.session.delete(item)
         await self.session.commit()
 
-    async def checkout(self, consumer_id: UUID) -> Order:
-        await self.session.rollback()
-        async with self.session.begin():
-            cart_result = await self.session.execute(select(Cart).where(Cart.consumer_id == consumer_id).with_for_update())
-            cart = cart_result.scalar_one_or_none()
-            if cart is None:
-                raise ValueError("Cart is empty")
-            item_result = await self.session.execute(select(CartItem).where(CartItem.cart_id == cart.id).with_for_update())
-            cart_items = list(item_result.scalars().all())
-            if not cart_items:
-                raise ValueError("Cart is empty")
-            order = Order(consumer_id=consumer_id, total_amount=Decimal("0"))
-            self.session.add(order)
-            await self.session.flush()
-            total = Decimal("0")
-            for cart_item in cart_items:
-                listing = await self.get_listing_for_update(cart_item.listing_id)
-                if listing is None:
-                    raise ValueError("A cart listing no longer exists")
-                self._validate_listing(listing, cart_item.quantity)
-                unit_price = Decimal(listing.asking_price)
-                subtotal = (unit_price * cart_item.quantity).quantize(Decimal("0.01"))
-                total += subtotal
-                listing.quantity -= cart_item.quantity
-                if listing.quantity <= 0:
-                    listing.availability_status = AvailabilityStatus.SOLD_OUT
-                self.session.add(OrderItem(order_id=order.id, listing_id=listing.id, quantity=cart_item.quantity, unit_price=unit_price, subtotal=subtotal))
-                await self.session.delete(cart_item)
-            order.total_amount = total
-        return await self.get_order(order.id, consumer_id=consumer_id)
+    async def get_checkout_cart(self, consumer_id: UUID) -> Cart | None:
+        result = await self.session.execute(
+            select(Cart)
+            .where(Cart.consumer_id == consumer_id)
+            .options(
+                selectinload(Cart.items)
+                .selectinload(CartItem.listing)
+                .selectinload(CropListing.crop),
+                selectinload(Cart.items)
+                .selectinload(CartItem.listing)
+                .selectinload(CropListing.farmer),
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def checkout_hub_options(
+        self,
+        latitude: float,
+        longitude: float,
+        listing_ids: list[UUID],
+        settings: Settings,
+    ) -> list[dict]:
+        point = func.ST_SetSRID(
+            func.ST_MakePoint(longitude, latitude), 4326
+        ).cast(Geography(geometry_type="POINT", srid=4326))
+        distance_km = (func.ST_Distance(Hub.location, point) / 1000).label("distance_km")
+        hub_rows = await self.session.execute(
+            select(Hub, distance_km)
+            .where(
+                Hub.status == HubStatus.ACTIVE,
+                func.ST_DWithin(
+                    Hub.location,
+                    point,
+                    float(settings.hub_service_radius_km * 1000),
+                ),
+            )
+            .order_by(distance_km, Hub.id)
+        )
+        hubs = hub_rows.all()
+        if not hubs:
+            return []
+
+        slots_result = await self.session.execute(
+            select(DeliverySlot)
+            .where(
+                DeliverySlot.hub_id.in_([hub.id for hub, _ in hubs]),
+                DeliverySlot.starts_at > datetime.now(timezone.utc),
+                DeliverySlot.booked_count < DeliverySlot.capacity,
+            )
+            .order_by(DeliverySlot.starts_at)
+        )
+        slots_by_hub: dict[UUID, list[DeliverySlot]] = {}
+        for slot in slots_result.scalars():
+            slots_by_hub.setdefault(slot.hub_id, []).append(slot)
+
+        options: list[dict] = []
+        for hub, distance in hubs:
+            stock_by_listing: dict[UUID, Decimal] = {}
+            if listing_ids:
+                stock_rows = await self.session.execute(
+                    select(HubStock.listing_id, HubStock.id, HubStock.available_quantity)
+                    .where(
+                        HubStock.hub_id == hub.id,
+                        HubStock.listing_id.in_(listing_ids),
+                    )
+                )
+                stock_by_id = {
+                    listing_id: (stock_id, Decimal(quantity))
+                    for listing_id, stock_id, quantity in stock_rows
+                }
+                if stock_by_id:
+                    held_rows = await self.session.execute(
+                        select(
+                            StockReservation.hub_stock_id,
+                            func.sum(StockReservation.quantity),
+                        )
+                        .where(
+                            StockReservation.hub_stock_id.in_(
+                                [row[0] for row in stock_by_id.values()]
+                            ),
+                            StockReservation.status == ReservationStatus.HOLD,
+                            StockReservation.expires_at > datetime.now(timezone.utc),
+                        )
+                        .group_by(StockReservation.hub_stock_id)
+                    )
+                    held_by_stock = {
+                        stock_id: Decimal(quantity)
+                        for stock_id, quantity in held_rows
+                    }
+                    stock_by_listing = {
+                        listing_id: max(
+                            Decimal("0"),
+                            quantity - held_by_stock.get(stock_id, Decimal("0")),
+                        )
+                        for listing_id, (stock_id, quantity) in stock_by_id.items()
+                    }
+
+            options.append(
+                {
+                    "hub": hub,
+                    "distance_km": float(distance),
+                    "stock_by_listing": stock_by_listing,
+                    "slots": slots_by_hub.get(hub.id, []),
+                }
+            )
+        return options
 
     async def get_order(self, order_id: UUID, *, consumer_id: UUID | None = None, farmer_user_id: UUID | None = None) -> Order | None:
         statement = select(Order).where(Order.id == order_id).options(
