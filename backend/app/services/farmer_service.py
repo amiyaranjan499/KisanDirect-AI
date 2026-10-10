@@ -360,6 +360,7 @@ class FarmerService:
             id=order.id,
             consumer_id=order.consumer_id,
             consumer_name=order.consumer.name if order.consumer else None,
+            hub_name=order.hub.name if order.hub else None,
             status=order.status.value,
             total_amount=self._farmer_order_total(order, farmer_user_id),
             payment_status=order.payment.status.value if order.payment else None,

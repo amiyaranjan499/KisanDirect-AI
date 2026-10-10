@@ -171,6 +171,47 @@ export function listFarmerDashboardOrders() {
   return request("/api/v1/farmers/dashboard/orders");
 }
 
+export function listFarmerHubOptions() {
+  return request("/api/v1/hub-operations/farmer/hubs");
+}
+
+export function listFarmerStockDeliveries() {
+  return request("/api/v1/hub-operations/farmer/stock-deliveries");
+}
+
+export function createFarmerStockDelivery(payload) {
+  return request("/api/v1/hub-operations/farmer/stock-deliveries", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listHubStaffHubs() {
+  return request("/api/v1/hub-operations/hub-staff/hubs");
+}
+
+export function getHubOperationsOverview(hubId) {
+  return request(`/api/v1/hub-operations/hub-staff/hubs/${encodeURIComponent(hubId)}/overview`);
+}
+
+export function receiveHubStockDelivery(hubId, deliveryId) {
+  return request(`/api/v1/hub-operations/hub-staff/hubs/${encodeURIComponent(hubId)}/stock-deliveries/${encodeURIComponent(deliveryId)}/receive`, {
+    method: "POST",
+  });
+}
+
+export function startHubOrderPacking(hubId, orderId) {
+  return request(`/api/v1/hub-operations/hub-staff/hubs/${encodeURIComponent(hubId)}/orders/${encodeURIComponent(orderId)}/start-packing`, {
+    method: "POST",
+  });
+}
+
+export function markHubShipmentReady(hubId, shipmentId) {
+  return request(`/api/v1/hub-operations/hub-staff/hubs/${encodeURIComponent(hubId)}/shipments/${encodeURIComponent(shipmentId)}/ready`, {
+    method: "POST",
+  });
+}
+
 export function getFarmerDashboardAnalytics() {
   return request("/api/v1/farmers/dashboard/analytics");
 }

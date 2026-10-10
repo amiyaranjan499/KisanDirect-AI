@@ -21,6 +21,7 @@ from backend.app.models import (
     Hub,
     HubStaff,
     HubStock,
+    HubStockDelivery,
     Notification,
     NotificationType,
     Order,
@@ -43,6 +44,9 @@ from backend.app.services.order_lifecycle_service import (
     LifecyclePermissionError,
     OrderLifecycleService,
 )
+from backend.app.repositories.hub_operations_repository import HubOperationsRepository
+from backend.app.schemas.hub_operations import StockDeliveryCreate
+from backend.app.services.hub_operations_service import HubOperationsService
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -194,10 +198,20 @@ def cleanup(data) -> None:
             await session.execute(
                 delete(HubStock).where(HubStock.listing_id == data["listing_id"])
             )
+            await session.execute(
+                delete(HubStockDelivery).where(
+                    HubStockDelivery.listing_id == data["listing_id"]
+                )
+            )
             await session.execute(delete(CropListing).where(CropListing.id == data["listing_id"]))
             await session.execute(delete(Crop).where(Crop.id == data["crop_id"]))
+            if data.get("extra_hub_ids"):
+                await session.execute(
+                    delete(Hub).where(Hub.id.in_(data["extra_hub_ids"]))
+                )
             await session.execute(delete(Hub).where(Hub.id == data["hub_id"]))
-            await session.execute(delete(User).where(User.id.in_(data["user_ids"])))
+            user_ids = data["user_ids"] + data.get("extra_user_ids", [])
+            await session.execute(delete(User).where(User.id.in_(user_ids)))
             await session.commit()
         await engine.dispose()
 
@@ -384,6 +398,179 @@ def test_hub_staff_can_transition_order_from_hub_stock_before_shipment():
             await service.transition_order(data["order_id"], actor, OrderStatus.PROCESSING)
             order = await session.get(Order, data["order_id"])
             assert order.status is OrderStatus.PROCESSING
+        await engine.dispose()
+
+    try:
+        asyncio.run(exercise())
+    finally:
+        cleanup(data)
+
+
+def test_hub_stock_receipt_increments_once_and_is_hub_scoped():
+    data = seed()
+    extra_hub_id = uuid4()
+    data["extra_hub_ids"] = [extra_hub_id]
+
+    async def exercise():
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            other_hub = Hub(
+                id=extra_hub_id,
+                name="Other Lifecycle Hub",
+                address="2 Hub Road",
+                location=WKTElement("POINT(85.9 20.4)", srid=4326),
+                pincode="751002",
+            )
+            session.add(other_hub)
+            listing = await session.get(CropListing, data["listing_id"])
+            listing.availability_status = AvailabilityStatus.AVAILABLE
+            await session.flush()
+            other_receipt = HubStockDelivery(
+                hub_id=extra_hub_id,
+                listing_id=data["listing_id"],
+                farmer_user_id=data["farmer_user_id"],
+                quantity=Decimal("5.000"),
+                status="PENDING",
+            )
+            session.add(other_receipt)
+            await session.commit()
+
+            service = HubOperationsService(
+                session,
+                HubOperationsRepository(session),
+                OrderLifecycleService(session),
+            )
+            farmer = LifecycleActor(data["farmer_user_id"], UserRole.FARMER)
+            submitted = await service.submit_stock_delivery(
+                farmer,
+                StockDeliveryCreate(
+                    hub_id=data["hub_id"],
+                    listing_id=data["listing_id"],
+                    quantity=Decimal("3.250"),
+                ),
+            )
+            staff = LifecycleActor(data["hub_staff_user_id"], UserRole.HUB_STAFF)
+            received = await service.receive_stock_delivery(
+                staff, data["hub_id"], submitted.id
+            )
+            repeated = await service.receive_stock_delivery(
+                staff, data["hub_id"], submitted.id
+            )
+            assert received.status == repeated.status == "RECEIVED"
+            assert received.received_at == repeated.received_at
+
+            stock = await session.scalar(
+                select(HubStock).where(
+                    HubStock.hub_id == data["hub_id"],
+                    HubStock.listing_id == data["listing_id"],
+                )
+            )
+            assert stock.available_quantity == Decimal("3.250")
+            with pytest.raises(LifecyclePermissionError):
+                await service.receive_stock_delivery(
+                    staff, extra_hub_id, other_receipt.id
+                )
+            assert await session.scalar(
+                select(HubStock.id).where(
+                    HubStock.hub_id == extra_hub_id,
+                    HubStock.listing_id == data["listing_id"],
+                )
+            ) is None
+        await engine.dispose()
+
+    try:
+        asyncio.run(exercise())
+    finally:
+        cleanup(data)
+
+
+def test_hub_shipment_readiness_is_audited_and_requires_a_supplier():
+    data = seed(OrderStatus.PROCESSING)
+    data["extra_user_ids"] = []
+    extra_hub_id = uuid4()
+    data["extra_hub_ids"] = [extra_hub_id]
+    extra_staff_id = uuid4()
+
+    async def exercise():
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            order = await session.get(Order, data["order_id"])
+            order.hub_id = data["hub_id"]
+            order.promised_window_start = datetime.now(timezone.utc)
+            order.promised_window_end = order.promised_window_start + timedelta(hours=1)
+            order.delivery_address = "Consumer address"
+            session.add(
+                HubStock(
+                    hub_id=data["hub_id"],
+                    listing_id=data["listing_id"],
+                    available_quantity=Decimal("10.000"),
+                )
+            )
+            other_hub = Hub(
+                id=extra_hub_id,
+                name="Assigned Elsewhere Hub",
+                address="3 Hub Road",
+                location=WKTElement("POINT(86.0 20.5)", srid=4326),
+                pincode="751003",
+            )
+            extra_staff = User(
+                id=extra_staff_id,
+                email=f"lifecycle-other-hub-staff-{uuid4()}@example.com",
+                hashed_password="not-used",
+                role=UserRole.HUB_STAFF,
+            )
+            outsider_farmer = User(
+                email=f"lifecycle-outsider-farmer-{uuid4()}@example.com",
+                hashed_password="not-used",
+                role=UserRole.FARMER,
+            )
+            session.add_all([other_hub, extra_staff, outsider_farmer])
+            await session.flush()
+            session.add(HubStaff(user_id=extra_staff.id, hub_id=other_hub.id))
+            await session.commit()
+            data["extra_user_ids"].extend([outsider_farmer.id, extra_staff.id])
+
+            lifecycle = OrderLifecycleService(session)
+            hub_staff = LifecycleActor(data["hub_staff_user_id"], UserRole.HUB_STAFF)
+            operations = HubOperationsService(
+                session, HubOperationsRepository(session), lifecycle
+            )
+            shipment_response = await operations.start_packing(
+                hub_staff, data["hub_id"], data["order_id"]
+            )
+            with pytest.raises(LifecycleNotFound):
+                await operations.mark_ready(
+                    LifecycleActor(extra_staff.id, UserRole.HUB_STAFF),
+                    extra_hub_id,
+                    shipment_response.id,
+                )
+            with pytest.raises(LifecyclePermissionError):
+                await lifecycle.transition_shipment(
+                    shipment_response.id,
+                    LifecycleActor(outsider_farmer.id, UserRole.FARMER),
+                    ShipmentStatus.READY_FOR_PICKUP,
+                )
+            ready_shipment = await operations.mark_ready(
+                hub_staff, data["hub_id"], shipment_response.id
+            )
+            assert ready_shipment.status == ShipmentStatus.READY_FOR_PICKUP.value
+            refreshed_order = await session.get(Order, data["order_id"])
+            assert refreshed_order.status is OrderStatus.SHIPPED
+            events = list(
+                (
+                    await session.execute(
+                        select(OrderEvent.to_status).where(
+                            OrderEvent.order_id == data["order_id"]
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert "READY_FOR_PICKUP" in events
+            assert "SHIPPED" in events
         await engine.dispose()
 
     try:

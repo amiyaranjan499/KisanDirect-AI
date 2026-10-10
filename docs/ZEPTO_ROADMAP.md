@@ -1,10 +1,10 @@
 # Zepto-Style Quick-Commerce Roadmap
 
-This roadmap describes the approved hub-based direction for KisanDirect AI. It targets local farm produce delivered from a Kisan Hub, generally in a 45-90 minute window or a selected delivery slot. It does not promise ten-minute delivery. Phase 1 introduced the schema and authentication baseline. Phase 2 added the central order lifecycle service and routes existing order, delivery, shipment, and sandbox-payment status changes through it. The project owner confirmed 79 backend tests passed before Phase 3 work began; Phase 3 verification is pending.
+This roadmap describes the approved hub-based direction for KisanDirect AI. It targets local farm produce delivered from a Kisan Hub, generally in a 45-90 minute window or a selected delivery slot. It does not promise ten-minute delivery. Phase 1 introduced the schema and authentication baseline. Phase 2 added the central order lifecycle service and routes existing order, delivery, shipment, and sandbox-payment status changes through it. The project owner confirmed 85 backend tests passed before the current Hub Operations work began.
 
 ## Order Lifecycle
 
-1. A farmer listing is reviewed and eligible produce is received or allocated to a local hub.
+1. A farmer submits a stock delivery for one of their listings; assigned hub staff receive it into local hub inventory.
 2. A consumer selects one hub's stock by pincode or location. A cart spanning multiple hubs is rejected.
 3. Checkout validates prices and quantities on the server, calculates configured fees, and places expiring stock holds under row locks.
 4. Checkout validates the destination, reserves stock, and optionally books a capacity-limited slot. Payment success commits the held stock; failure, cancellation, or expiry releases it.
@@ -30,12 +30,12 @@ Every order, payment, or shipment transition is intended to pass through one ser
 
 1. **Data model and roles (complete):** add hub/rider/shipment/slot/reservation/event models, database constraints and indexes, role values, operational settings, and secure password login/registration with configurable throttling.
 2. **Transition and audit services (complete; 79 passed before Phase 3):** define allowed order, payment, shipment, and legacy-delivery transitions; enforce actor roles/ownership; lock rows, write order events, and stage notifications in the same transaction; migrate existing status-changing paths through the single service boundary. Shipment state `PACKING` is added by `b7c4d2e9f1a0`.
-3. **Hub inventory and checkout (implementation; verification pending):** resolve active hubs within `HUB_SERVICE_RADIUS_KM` using PostGIS, reject unavailable carts, reserve stock transactionally with row locks and expiry, commit/release holds, and calculate configured Decimal fees on the server. Listing-to-hub stock intake/reconciliation remains an operational prerequisite.
+3. **Hub inventory and checkout (implemented; 85 backend tests confirmed by the project owner before current work):** resolve active hubs within `HUB_SERVICE_RADIUS_KM` using PostGIS, reject unavailable carts, reserve stock transactionally with row locks and expiry, commit/release holds, and calculate configured Decimal fees on the server. Farmer delivery submissions and staff receipt now populate hub stock; reconciliation and broader stock management remain future operational work.
 4. **Delivery windows and promises (checkout foundation implemented; verification pending):** return capacity-backed future slots, protect booking counts transactionally, and calculate promised windows using configured packing, rider-speed, and buffer values. Broader slot administration remains future work.
-5. **Hub operations:** implement hub and staff provisioning/authorization, pick lists, packing workflow, and shipment readiness without bypassing transition/audit rules.
+5. **Hub operations (current implementation):** farmers submit listing quantities for delivery to an active hub; assigned hub staff receive each delivery exactly once into `hub_stock`. Staff can see their hub's incoming deliveries and PROCESSING orders, start packing through `OrderLifecycleService.create_shipment`, and mark PACKING shipments ready through `transition_shipment`. Hub access is enforced server-side and shipment/order changes are audited. Hub/staff provisioning and broader inventory reconciliation remain future work.
 6. **Rider onboarding and dispatch:** add approval controls, rider availability/location updates, eligibility checks, assignment, and location retention/privacy rules.
 7. **Shipment execution and proof:** implement pickup, transit, arrival, OTP verification/expiry/attempt limits, failed-delivery and return paths, notifications, and payment/stock reconciliation.
-8. **Role-based user experiences:** consumer hub/slot checkout selection is implemented in the consumer checkout flow; order tracking, hub-staff operations, and rider workflow remain future work in their separate role folders.
+8. **Role-based user experiences:** consumer hub/slot checkout and Farmer/Hub Staff stock and packing screens are implemented in their separate role folders; consumer order tracking and rider workflow remain future work.
 9. **Admin operations and release hardening:** provide audited read/manage operations over real platform data, operational monitoring, retention/access controls, deployment configuration, migration rehearsal, and end-to-end verification.
 
 ## Risks and Controls

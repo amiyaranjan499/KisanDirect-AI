@@ -453,15 +453,19 @@ class OrderLifecycleService:
         actor: LifecycleActor,
         *,
         hub_id: UUID,
-        promised_window_start: datetime,
-        promised_window_end: datetime,
-        pickup_address_snapshot: str,
-        dropoff_address_snapshot: str,
+        promised_window_start: datetime | None = None,
+        promised_window_end: datetime | None = None,
+        pickup_address_snapshot: str | None = None,
+        dropoff_address_snapshot: str | None = None,
         reason: str | None = None,
     ) -> Shipment:
         async with self._transaction():
             order = await self._lock_order(order_id)
             await self._authorize_hub_operation(order, actor, hub_id)
+            if order.hub_id is not None and order.hub_id != hub_id:
+                raise LifecyclePermissionError(
+                    "Shipment hub must match the hub selected at checkout"
+                )
             if order.status is not OrderStatus.PROCESSING:
                 raise LifecycleConflict("Shipment can only be prepared while the order is PROCESSING")
             existing = await self.session.scalar(
@@ -469,6 +473,31 @@ class OrderLifecycleService:
             )
             if existing is not None:
                 raise LifecycleConflict("A shipment already exists for this order")
+            if (
+                promised_window_start is None
+                or promised_window_end is None
+                or pickup_address_snapshot is None
+                or dropoff_address_snapshot is None
+            ):
+                hub = await self.session.get(Hub, hub_id)
+                if hub is None:
+                    raise LifecycleNotFound("Hub not found")
+                promised_window_start = (
+                    promised_window_start or order.promised_window_start
+                )
+                promised_window_end = promised_window_end or order.promised_window_end
+                pickup_address_snapshot = pickup_address_snapshot or hub.address
+                dropoff_address_snapshot = (
+                    dropoff_address_snapshot or order.delivery_address
+                )
+                if promised_window_start is None or promised_window_end is None:
+                    raise LifecycleConflict(
+                        "Order has no promised delivery window for shipment preparation"
+                    )
+                if not dropoff_address_snapshot:
+                    raise LifecycleConflict(
+                        "Order has no delivery address for shipment preparation"
+                    )
 
             shipment = Shipment(
                 order_id=order.id,
@@ -1125,6 +1154,10 @@ class OrderLifecycleService:
         *,
         assigned_rider_user_id: UUID | None,
     ) -> None:
+        if order.hub_id is not None and order.hub_id != shipment.hub_id:
+            raise LifecyclePermissionError(
+                "Shipment hub must match the hub selected at checkout"
+            )
         if actor.user_id is None and actor.role is None:
             if target is ShipmentStatus.RIDER_ASSIGNED and shipment.status is ShipmentStatus.READY_FOR_PICKUP:
                 await self._rider_id(assigned_rider_user_id)
@@ -1148,8 +1181,16 @@ class OrderLifecycleService:
         if target is ShipmentStatus.READY_FOR_PICKUP and shipment.status is ShipmentStatus.PACKING:
             if role is UserRole.ADMIN:
                 return
-            if role is UserRole.FARMER and await self._farmer_owns_order(order.id, actor.user_id):
-                return
+            if role is UserRole.FARMER:
+                owns_hub_supply = (
+                    await self._farmer_supplies_hub_order(
+                        order.id, shipment.hub_id, actor.user_id
+                    )
+                    if order.hub_id is not None
+                    else await self._farmer_owns_order(order.id, actor.user_id)
+                )
+                if owns_hub_supply:
+                    return
             if role is UserRole.HUB_STAFF and await self._hub_staff_for_hub(
                 shipment.hub_id, actor.user_id
             ):
@@ -1489,6 +1530,25 @@ class OrderLifecycleService:
                 .join(CropListing, CropListing.id == OrderItem.listing_id)
                 .join(Farmer, Farmer.id == CropListing.farmer_id)
                 .where(OrderItem.order_id == order_id, Farmer.user_id == user_id)
+                .limit(1)
+            )
+            is not None
+        )
+
+    async def _farmer_supplies_hub_order(
+        self, order_id: UUID, hub_id: UUID, user_id: UUID
+    ) -> bool:
+        return (
+            await self.session.scalar(
+                select(OrderItem.id)
+                .join(CropListing, CropListing.id == OrderItem.listing_id)
+                .join(Farmer, Farmer.id == CropListing.farmer_id)
+                .join(HubStock, HubStock.listing_id == CropListing.id)
+                .where(
+                    OrderItem.order_id == order_id,
+                    Farmer.user_id == user_id,
+                    HubStock.hub_id == hub_id,
+                )
                 .limit(1)
             )
             is not None

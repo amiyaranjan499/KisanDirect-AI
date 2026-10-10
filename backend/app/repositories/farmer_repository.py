@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -9,6 +9,7 @@ from backend.app.models import (
     CropImage,
     CropListing,
     Farmer,
+    HubStock,
     Notification,
     Order,
     OrderItem,
@@ -85,13 +86,25 @@ class FarmerRepository:
             .join(Order.items)
             .join(OrderItem.listing)
             .join(CropListing.farmer)
-            .where(Farmer.user_id == farmer_user_id)
+            .where(
+                Farmer.user_id == farmer_user_id,
+                or_(
+                    Order.hub_id.is_(None),
+                    select(HubStock.id)
+                    .where(
+                        HubStock.hub_id == Order.hub_id,
+                        HubStock.listing_id == CropListing.id,
+                    )
+                    .exists(),
+                ),
+            )
             .distinct()
             .order_by(Order.created_at.desc())
             .options(
                 selectinload(Order.consumer),
                 selectinload(Order.payment),
                 selectinload(Order.delivery),
+                selectinload(Order.hub),
                 selectinload(Order.items).selectinload(OrderItem.listing).selectinload(CropListing.crop),
                 selectinload(Order.items).selectinload(OrderItem.listing).selectinload(CropListing.farmer),
             )

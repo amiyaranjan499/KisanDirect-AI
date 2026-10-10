@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  createFarmerStockDelivery,
   fulfillmentRequest,
+  listFarmerHubOptions,
   listFarmerDashboardOrders,
+  listFarmerStockDeliveries,
+  listMyFarmerListings,
   updateFulfillmentStatus,
   updateOrderStatus,
 } from "../services/api";
+import { useI18n } from "../i18n";
 
 const statusMap = {
   PENDING: "New",
@@ -68,15 +73,29 @@ function nextAction(order, fulfillment) {
 const formatMoney = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 export default function FarmerOrderDetails({ onBack }) {
+  const { t } = useI18n();
   const [orders, setOrders] = useState([]);
   const [fulfillments, setFulfillments] = useState({});
+  const [listings, setListings] = useState([]);
+  const [hubs, setHubs] = useState([]);
+  const [stockDeliveries, setStockDeliveries] = useState([]);
+  const [selectedListing, setSelectedListing] = useState("");
+  const [selectedHub, setSelectedHub] = useState("");
+  const [deliveryQuantity, setDeliveryQuantity] = useState("");
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("All");
   const [busyId, setBusyId] = useState(null);
+  const [deliveryBusy, setDeliveryBusy] = useState(false);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
 
   const load = async () => {
     try {
-      const data = await listFarmerDashboardOrders();
+      const [data, farmerListings, hubOptions, deliveries] = await Promise.all([
+        listFarmerDashboardOrders(),
+        listMyFarmerListings(),
+        listFarmerHubOptions(),
+        listFarmerStockDeliveries(),
+      ]);
       const nextOrders = Array.isArray(data) ? data : data?.items || [];
       const fulfillmentEntries = await Promise.all(
         nextOrders.map(async (order) => {
@@ -95,8 +114,26 @@ export default function FarmerOrderDetails({ onBack }) {
       );
       setOrders(nextOrders);
       setFulfillments(Object.fromEntries(fulfillmentEntries));
+      const availableListings = Array.isArray(farmerListings)
+        ? farmerListings.filter((listing) => listing.availability_status === "AVAILABLE")
+        : [];
+      setListings(availableListings);
+      setHubs(Array.isArray(hubOptions) ? hubOptions : []);
+      setStockDeliveries(Array.isArray(deliveries) ? deliveries : []);
+      setSelectedListing((current) => (
+        availableListings.some((listing) => listing.id === current)
+          ? current
+          : availableListings[0]?.id || ""
+      ));
+      setSelectedHub((current) => (
+        hubOptions?.some((hub) => hub.id === current)
+          ? current
+          : hubOptions?.[0]?.id || ""
+      ));
     } catch (requestError) {
       setError(requestError.message || "Unable to load orders.");
+    } finally {
+      setOrdersLoaded(true);
     }
   };
 
@@ -128,6 +165,25 @@ export default function FarmerOrderDetails({ onBack }) {
     }
   };
 
+  const submitStockDelivery = async (event) => {
+    event.preventDefault();
+    try {
+      setDeliveryBusy(true);
+      setError("");
+      await createFarmerStockDelivery({
+        listing_id: selectedListing,
+        hub_id: selectedHub,
+        quantity: deliveryQuantity,
+      });
+      setDeliveryQuantity("");
+      await load();
+    } catch (requestError) {
+      setError(requestError.message || t("hubOperations.farmer.submitError"));
+    } finally {
+      setDeliveryBusy(false);
+    }
+  };
+
   return (
     <section className="detail-view farmer-orders-page">
       <div className="consumer-screen-header farmer-page-header">
@@ -136,6 +192,72 @@ export default function FarmerOrderDetails({ onBack }) {
           <h1>Orders</h1>
         </div>
       </div>
+
+      <section className="farmer-stock-delivery">
+        <div className="consumer-screen-header">
+          <span className="eyebrow">{t("hubOperations.farmer.sectionEyebrow")}</span>
+          <h2>{t("hubOperations.farmer.title")}</h2>
+          <p>{t("hubOperations.farmer.description")}</p>
+        </div>
+        {!ordersLoaded ? (
+          <div className="loading">{t("hubOperations.farmer.loadingSupply")}</div>
+        ) : !listings.length || !hubs.length ? (
+          <div className="empty">
+            <p>{!listings.length ? t("hubOperations.farmer.noListings") : t("hubOperations.farmer.noHubs")}</p>
+          </div>
+        ) : (
+          <form className="row g-2 align-items-end mb-3" onSubmit={submitStockDelivery}>
+            <div className="col-12 col-md-4">
+              <label className="form-label" htmlFor="hub-stock-listing">{t("hubOperations.farmer.listing")}</label>
+              <select id="hub-stock-listing" className="form-select" value={selectedListing} onChange={(event) => setSelectedListing(event.target.value)} required>
+                {listings.map((listing) => (
+                  <option key={listing.id} value={listing.id}>{listing.crop_name} · {listing.quantity} {listing.unit}</option>
+                ))}
+              </select>
+            </div>
+            <div className="col-12 col-md-4">
+              <label className="form-label" htmlFor="hub-stock-hub">{t("hubOperations.farmer.hub")}</label>
+              <select id="hub-stock-hub" className="form-select" value={selectedHub} onChange={(event) => setSelectedHub(event.target.value)} required>
+                {hubs.map((hub) => <option key={hub.id} value={hub.id}>{hub.name}</option>)}
+              </select>
+            </div>
+            <div className="col-8 col-md-2">
+              <label className="form-label" htmlFor="hub-stock-quantity">{t("hubOperations.farmer.quantity")}</label>
+              <input id="hub-stock-quantity" className="form-control" type="number" min="0.001" step="0.001" value={deliveryQuantity} onChange={(event) => setDeliveryQuantity(event.target.value)} required />
+            </div>
+            <div className="col-4 col-md-2">
+              <button className="farmer-small-button solid w-100" type="submit" disabled={deliveryBusy || !selectedListing || !selectedHub}>
+                {deliveryBusy ? t("hubOperations.farmer.submitting") : t("hubOperations.farmer.submit")}
+              </button>
+            </div>
+          </form>
+        )}
+        <div className="farmer-table-wrap">
+          <table className="farmer-order-table">
+            <thead>
+              <tr>
+                <th>{t("hubOperations.farmer.crop")}</th>
+                <th>{t("hubOperations.farmer.hub")}</th>
+                <th>{t("hubOperations.farmer.quantity")}</th>
+                <th>{t("hubOperations.farmer.receiptStatus")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stockDeliveries.map((delivery) => (
+                <tr key={delivery.id}>
+                  <td>{delivery.crop_name}</td>
+                  <td>{delivery.hub_name}</td>
+                  <td>{delivery.quantity} {delivery.unit}</td>
+                  <td>{delivery.status === "RECEIVED" ? t("hubOperations.farmer.received") : t("hubOperations.farmer.pending")}</td>
+                </tr>
+              ))}
+              {!stockDeliveries.length && (
+                <tr><td colSpan="4">{t("hubOperations.farmer.noDeliveries")}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <div className="farmer-filter-tabs order-tabs">
         {[
@@ -156,8 +278,10 @@ export default function FarmerOrderDetails({ onBack }) {
 
       {error ? (
         <div className="error">{error}</div>
+      ) : !ordersLoaded ? (
+        <div className="loading">{t("hubOperations.farmer.loadingOrders")}</div>
       ) : !orders.length ? (
-        <div className="loading">Loading orders...</div>
+        <div className="empty"><p>{t("hubOperations.farmer.noOrders")}</p></div>
       ) : (
         <div className="farmer-table-wrap">
           <table className="farmer-order-table">
@@ -181,7 +305,10 @@ export default function FarmerOrderDetails({ onBack }) {
                 const totalQty = order.items?.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || 0;
                 return (
                   <tr key={order.id}>
-                    <td><strong>{`ORD-${String(order.id).slice(0, 6).toUpperCase()}`}</strong></td>
+                    <td>
+                      <strong>{`ORD-${String(order.id).slice(0, 6).toUpperCase()}`}</strong>
+                      {order.hub_name && <div className="muted">{t("hubOperations.farmer.fulfilledFrom")} {order.hub_name}</div>}
+                    </td>
                     <td>{order.consumer_name || "Consumer"}</td>
                     <td>{firstItem?.crop_name || "Farm produce"}</td>
                     <td>{`${totalQty} ${firstItem?.unit || "kg"}`}</td>

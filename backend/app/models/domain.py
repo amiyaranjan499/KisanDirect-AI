@@ -330,6 +330,7 @@ class Order(TimestampMixin, Base):
     stock_restored: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     consumer: Mapped[Consumer] = relationship(back_populates="orders")
+    hub: Mapped["Hub | None"] = relationship(back_populates="orders")
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
     payment: Mapped["Payment | None"] = relationship(back_populates="order", uselist=False)
     delivery: Mapped["Delivery | None"] = relationship(back_populates="order", uselist=False)
@@ -487,6 +488,7 @@ class Hub(TimestampMixin, Base):
 
     staff_assignments: Mapped[list["HubStaff"]] = relationship(back_populates="hub")
     stock: Mapped[list["HubStock"]] = relationship(back_populates="hub")
+    orders: Mapped[list[Order]] = relationship(back_populates="hub")
     shipments: Mapped[list["Shipment"]] = relationship(back_populates="hub")
 
 
@@ -518,6 +520,34 @@ class HubStock(TimestampMixin, Base):
     available_quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
 
     hub: Mapped[Hub] = relationship(back_populates="stock")
+
+
+class HubStockDelivery(TimestampMixin, Base):
+    __tablename__ = "hub_stock_deliveries"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_hub_stock_deliveries_quantity_positive"),
+        CheckConstraint(
+            "status IN ('PENDING', 'RECEIVED')",
+            name="ck_hub_stock_deliveries_status",
+        ),
+        Index("ix_hub_stock_deliveries_hub_status", "hub_id", "status"),
+        Index("ix_hub_stock_deliveries_farmer_created", "farmer_user_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    hub_id: Mapped[UUID] = mapped_column(ForeignKey("hubs.id", ondelete="CASCADE"))
+    listing_id: Mapped[UUID] = mapped_column(
+        ForeignKey("crop_listings.id", ondelete="RESTRICT")
+    )
+    farmer_user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
+    received_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Rider(TimestampMixin, Base):

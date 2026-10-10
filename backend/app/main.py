@@ -20,6 +20,7 @@ from backend.app.routers import (
     farmers,
     fulfillment,
     health,
+    hub_operations,
     marketplace,
     notifications,
     orders,
@@ -59,6 +60,7 @@ def create_app() -> FastAPI:
     app.include_router(price.router, prefix=settings.api_v1_prefix)
     app.include_router(orders.router, prefix=settings.api_v1_prefix)
     app.include_router(fulfillment.router, prefix=settings.api_v1_prefix)
+    app.include_router(hub_operations.router, prefix=settings.api_v1_prefix)
     app.include_router(notifications.router, prefix=settings.api_v1_prefix)
     app.include_router(reviews.router, prefix=settings.api_v1_prefix)
     media_root = Path(__file__).resolve().parents[1] / "storage"

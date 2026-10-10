@@ -144,6 +144,7 @@ class DashboardOrderResponse(BaseModel):
     id: UUID
     consumer_id: UUID
     consumer_name: str | None = None
+    hub_name: str | None = None
     status: str
     total_amount: Decimal
     payment_status: str | None = None

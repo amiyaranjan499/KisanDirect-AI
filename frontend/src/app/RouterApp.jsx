@@ -16,6 +16,7 @@ import FarmerCropDetails from "../farmer/FarmerCropDetails";
 import FarmerOrderDetails from "../farmer/FarmerOrderDetails";
 import FarmerSales from "../farmer/FarmerSales";
 import FarmerNotifications from "../farmer/FarmerNotifications";
+import HubStaffOperationsPage from "../hubstaff/HubStaffOperationsPage";
 import AdminShell from "../admin/components/AdminShell";
 import AdminDashboardPage from "../admin/pages/AdminDashboardPage";
 import AdminUsersPage from "../admin/pages/AdminUsersPage";
@@ -105,6 +106,9 @@ export default function RouterApp({ user, logout, onAuthenticated }) {
             <Route path="/farmer/reviews" element={<FarmerReviews />} />
             <Route path="/farmer/notifications" element={<FarmerNotifications />} />
             <Route path="/farmer/profile" element={<FarmerProfile />} />
+          </Route>
+          <Route element={<RoleGuard user={user} roles={["HUB_STAFF"]} />}>
+            <Route path="/hub-staff/operations" element={<HubStaffOperationsPage />} />
           </Route>
           <Route element={<RoleGuard user={user} roles={["ADMIN"]} />}>
             <Route element={<AdminShell user={user} logout={logout} />}>

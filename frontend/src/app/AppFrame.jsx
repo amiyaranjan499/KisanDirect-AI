@@ -5,18 +5,26 @@ export default function AppFrame({ user, logout }) {
   const navigate = useNavigate();
   const { language, setLanguage, t } = useI18n();
 
-  const home = user?.role === "FARMER" ? "/farmer/dashboard" : user?.role === "ADMIN" ? "/admin/dashboard" : "/";
+  const home = user?.role === "FARMER"
+    ? "/farmer/dashboard"
+    : user?.role === "ADMIN"
+      ? "/admin/dashboard"
+      : user?.role === "HUB_STAFF"
+        ? "/hub-staff/operations"
+        : "/";
   const links = user?.role === "FARMER"
     ? [["Home", "/farmer/dashboard"], ["Crops", "/farmer/crops"], ["Orders", "/farmer/orders"], ["Sales", "/farmer/sales"], ["Profile", "/farmer/profile"]]
     : user?.role === "ADMIN"
       ? [["Dashboard", "/admin/dashboard"]]
-      : [["Marketplace", "/"], ["Dashboard", "/consumer/dashboard"], ["Cart", "/cart"], ["Orders", "/orders"], ["Notifications", "/notifications"], ["Profile", "/profile"]];
+      : user?.role === "HUB_STAFF"
+        ? [[t("hubOperations.staff.nav"), "/hub-staff/operations"]]
+        : [["Marketplace", "/"], ["Dashboard", "/consumer/dashboard"], ["Cart", "/cart"], ["Orders", "/orders"], ["Notifications", "/notifications"], ["Profile", "/profile"]];
 
   const consumer = user?.role === "CONSUMER";
   const consumerLinks = [["Home", "/"], ["Marketplace", "/?view=marketplace"], ["Farmers", "/farmers"], ["Orders", "/orders"], ["Profile", "/profile"]];
 
   return (
-    <main className={`app-shell ${consumer ? "consumer-shell" : ""} ${user?.role === "FARMER" ? "farmer-app" : ""}`}>
+    <main className={`app-shell ${consumer ? "consumer-shell" : ""} ${user?.role === "FARMER" || user?.role === "HUB_STAFF" ? "farmer-app" : ""}`}>
       <header className="topbar">
         <div className="topbar-row">
           <Link className="brand" to={home}>
@@ -96,4 +104,3 @@ export default function AppFrame({ user, logout }) {
     </main>
   );
 }
-

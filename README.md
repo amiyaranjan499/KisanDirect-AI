@@ -16,6 +16,7 @@ The system addresses the gap between farm production and consumer access by givi
 - AI fair-price recommendation boundary with persisted prediction history
 - PostgreSQL/PostGIS marketplace and location-aware search
 - Server-priced, PostGIS hub-aware checkout with row-locked hub-stock reservations, capacity-backed delivery slots, and calculated ETA windows
+- Farmer-to-hub stock delivery submissions with idempotent, hub-staff-confirmed inventory receipt and audited hub packing/readiness operations
 - Order destination, fee, and ETA snapshots; reservation commit, release, and expiry lifecycle
 - `TEST_SANDBOX` payment flow only; no real payment gateway is connected
 - Legacy delivery and farmer-pickup fulfillment; hub checkout keeps the delivery destination and slot from its order snapshot
