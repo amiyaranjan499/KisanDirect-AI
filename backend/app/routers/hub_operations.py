@@ -8,6 +8,7 @@ from backend.app.database.session import get_db_session
 from backend.app.dependencies import get_current_user
 from backend.app.models import User
 from backend.app.repositories.hub_operations_repository import HubOperationsRepository
+from backend.app.repositories.rider_repository import RiderRepository
 from backend.app.schemas.hub_operations import (
     FarmerHubOptionResponse,
     HubOperationsOverviewResponse,
@@ -24,6 +25,8 @@ from backend.app.services.order_lifecycle_service import (
     LifecyclePermissionError,
     OrderLifecycleService,
 )
+from backend.app.services.rider_service import RiderService
+from backend.app.core.config import get_settings
 
 router = APIRouter(prefix="/hub-operations", tags=["hub-operations"])
 
@@ -31,10 +34,18 @@ router = APIRouter(prefix="/hub-operations", tags=["hub-operations"])
 def get_hub_operations_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> HubOperationsService:
+    lifecycle = OrderLifecycleService(session)
+    rider_dispatch = RiderService(
+        session,
+        RiderRepository(session),
+        lifecycle,
+        get_settings(),
+    )
+    lifecycle.shipment_ready_hook = rider_dispatch.dispatch_ready_shipment
     return HubOperationsService(
         session,
         HubOperationsRepository(session),
-        OrderLifecycleService(session),
+        lifecycle,
     )
 
 

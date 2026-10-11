@@ -27,6 +27,7 @@ from backend.app.routers import (
     price,
     quality,
     reviews,
+    riders,
 )
 
 
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     app.include_router(hub_operations.router, prefix=settings.api_v1_prefix)
     app.include_router(notifications.router, prefix=settings.api_v1_prefix)
     app.include_router(reviews.router, prefix=settings.api_v1_prefix)
+    app.include_router(riders.router, prefix=settings.api_v1_prefix)
     media_root = Path(__file__).resolve().parents[1] / "storage"
     media_root.mkdir(parents=True, exist_ok=True)
     app.mount("/media", StaticFiles(directory=media_root), name="media")

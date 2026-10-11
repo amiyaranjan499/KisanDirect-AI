@@ -3,7 +3,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.domain import Consumer, Farmer, User, UserRole
+from backend.app.models.domain import (
+    Consumer,
+    Farmer,
+    Rider,
+    RiderApprovalStatus,
+    User,
+    UserRole,
+)
 
 
 class SqlAlchemyUserRepository:
@@ -19,14 +26,23 @@ class SqlAlchemyUserRepository:
         return result.scalar_one_or_none()
 
     async def create(self, email: str, hashed_password: str, role: UserRole) -> User:
-        user = User(email=email.lower(), hashed_password=hashed_password, role=role)
-        self.session.add(user)
-        await self.session.flush()
-        profile_name = email.split("@", 1)[0].replace(".", " ").strip() or role.value.title()
-        if role is UserRole.FARMER:
-            self.session.add(Farmer(user_id=user.id, name=profile_name))
-        elif role is UserRole.CONSUMER:
-            self.session.add(Consumer(user_id=user.id, name=profile_name))
+        async with self.session.begin_nested():
+            user = User(email=email.lower(), hashed_password=hashed_password, role=role)
+            self.session.add(user)
+            await self.session.flush()
+            profile_name = email.split("@", 1)[0].replace(".", " ").strip() or role.value.title()
+            if role is UserRole.FARMER:
+                self.session.add(Farmer(user_id=user.id, name=profile_name))
+            elif role is UserRole.CONSUMER:
+                self.session.add(Consumer(user_id=user.id, name=profile_name))
+            elif role is UserRole.RIDER:
+                self.session.add(
+                    Rider(
+                        user_id=user.id,
+                        approval_status=RiderApprovalStatus.PENDING_APPROVAL,
+                    )
+                )
+            await self.session.flush()
         await self.session.commit()
         await self.session.refresh(user)
         return user

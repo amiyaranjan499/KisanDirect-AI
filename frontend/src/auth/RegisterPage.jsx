@@ -41,7 +41,7 @@ export default function RegisterPage({ language, setLanguage, t = (key) => key }
       <section className="auth-reference-card">
         <div className="reference-card-logo"><img src="/assets/logos/KisanDirect%20Ai%20logo.png" alt="KisanDirect AI" /></div>
         <h2>{t("auth.createAccount")}</h2>
-        <p className="reference-card-subtitle">Join as a consumer or farmer.</p>
+        <p className="reference-card-subtitle">{t("auth.joinRoles")}</p>
         <form className="reference-login-form" onSubmit={submit}>
           <label htmlFor="register-email">{t("auth.email")}</label>
           <input id="register-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
@@ -51,6 +51,7 @@ export default function RegisterPage({ language, setLanguage, t = (key) => key }
           <select id="register-role" value={role} onChange={(event) => setRole(event.target.value)}>
             <option value="CONSUMER">Consumer</option>
             <option value="FARMER">Farmer</option>
+            <option value="RIDER">{t("auth.rider")}</option>
           </select>
           {error && <div className="error" role="alert">{error}</div>}
           <button type="submit" className="reference-submit" disabled={loading}>

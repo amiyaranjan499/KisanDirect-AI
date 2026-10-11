@@ -11,6 +11,8 @@ export default function AppFrame({ user, logout }) {
       ? "/admin/dashboard"
       : user?.role === "HUB_STAFF"
         ? "/hub-staff/operations"
+        : user?.role === "RIDER"
+          ? "/rider/dashboard"
         : "/";
   const links = user?.role === "FARMER"
     ? [["Home", "/farmer/dashboard"], ["Crops", "/farmer/crops"], ["Orders", "/farmer/orders"], ["Sales", "/farmer/sales"], ["Profile", "/farmer/profile"]]
@@ -18,6 +20,8 @@ export default function AppFrame({ user, logout }) {
       ? [["Dashboard", "/admin/dashboard"]]
       : user?.role === "HUB_STAFF"
         ? [[t("hubOperations.staff.nav"), "/hub-staff/operations"]]
+        : user?.role === "RIDER"
+          ? [[t("rider.navActive"), "/rider/dashboard"], [t("rider.navHistory"), "/rider/history"]]
         : [["Marketplace", "/"], ["Dashboard", "/consumer/dashboard"], ["Cart", "/cart"], ["Orders", "/orders"], ["Notifications", "/notifications"], ["Profile", "/profile"]];
 
   const consumer = user?.role === "CONSUMER";

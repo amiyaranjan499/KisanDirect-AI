@@ -19,6 +19,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy import (
     Enum as SqlEnum,
@@ -557,7 +558,7 @@ class Rider(TimestampMixin, Base):
     user_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
     )
-    vehicle_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    vehicle_type: Mapped[str | None] = mapped_column(String(40))
     availability: Mapped[RiderAvailability] = mapped_column(
         enum_type(RiderAvailability, "rider_availability"),
         default=RiderAvailability.OFFLINE,
@@ -591,6 +592,41 @@ class RiderLocation(Base):
     )
 
     rider: Mapped[Rider] = relationship(back_populates="locations")
+
+
+class RiderOffer(TimestampMixin, Base):
+    __tablename__ = "rider_offers"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('OFFERED', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'SUPERSEDED')",
+            name="ck_rider_offers_status",
+        ),
+        CheckConstraint("expires_at > offered_at", name="ck_rider_offers_expiry_after_offer"),
+        Index("ix_rider_offers_rider_status_expiry", "rider_id", "status", "expires_at"),
+        Index("ix_rider_offers_shipment_status", "shipment_id", "status"),
+        Index("ix_rider_offers_status_expiry", "status", "expires_at"),
+        Index(
+            "uq_rider_offers_one_active_per_shipment",
+            "shipment_id",
+            unique=True,
+            postgresql_where=text("status IN ('OFFERED', 'ACCEPTED')"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    shipment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("shipments.id", ondelete="CASCADE"), nullable=False
+    )
+    rider_id: Mapped[UUID] = mapped_column(
+        ForeignKey("riders.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="OFFERED")
+    offered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    rider: Mapped[Rider] = relationship()
+    shipment: Mapped["Shipment"] = relationship()
 
 
 class DeliverySlot(TimestampMixin, Base):

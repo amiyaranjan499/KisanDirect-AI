@@ -8,7 +8,7 @@ The system addresses the gap between farm production and consumer access by givi
 
 ## Implemented Features
 
-- JWT authentication for FARMER/CONSUMER/ADMIN workflows, with RIDER and HUB_STAFF roles added at the schema level; public registration remains limited to FARMER and CONSUMER
+- JWT authentication for FARMER/CONSUMER/RIDER/ADMIN workflows, with public ADMIN and HUB_STAFF registration disabled; rider accounts begin pending approval
 - Password-based login and registration with configurable per-IP throttling; OTP login is not implemented
 - Farmer registration, profile, listings, images, orders, fulfillment, notifications, and dashboard
 - Consumer registration, profile, marketplace, nearby farmer search, cart, orders, reviews, notifications, and dashboard
@@ -17,8 +17,10 @@ The system addresses the gap between farm production and consumer access by givi
 - PostgreSQL/PostGIS marketplace and location-aware search
 - Server-priced, PostGIS hub-aware checkout with row-locked hub-stock reservations, capacity-backed delivery slots, and calculated ETA windows
 - Farmer-to-hub stock delivery submissions with idempotent, hub-staff-confirmed inventory receipt and audited hub packing/readiness operations
+- Approval-gated rider availability, nearest-rider offers with configurable timeouts, audited shipment pickup/progress, browser GPS sharing, and completed-delivery history
 - Order destination, fee, and ETA snapshots; reservation commit, release, and expiry lifecycle
 - `TEST_SANDBOX` payment flow only; no real payment gateway is connected
+- Shipment OTP verification and delivery completion are intentionally unavailable until Phase 6
 - Legacy delivery and farmer-pickup fulfillment; hub checkout keeps the delivery destination and slot from its order snapshot
 - Ratings and reviews with purchase eligibility checks
 - User-owned notifications and read-state management
@@ -60,6 +62,12 @@ python scripts/create_admin.py
 ```
 
 Demo data can be loaded idempotently with `python scripts/seed_data.py`. Demo credentials are for local development only and must be changed before shared use.
+
+Rider dispatch timeout is configured by `RIDER_OFFER_TIMEOUT_SECONDS` (default
+`60`). Riders register with role `RIDER`, remain pending until approval, and
+share only browser-provided location while online or on an active delivery.
+See [rider operations](docs/RIDER_OPERATIONS.md). OTP verification remains a
+Phase 6 boundary.
 
 Sandbox payments and test notification creation are enabled by default only in `development` and `test`. Set `ENABLE_SANDBOX_PAYMENTS=false` to disable them; production rejects the setting when it is true.
 

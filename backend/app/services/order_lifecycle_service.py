@@ -77,10 +77,12 @@ class OrderLifecycleService:
         session: AsyncSession,
         notifications: NotificationsService | None = None,
         phase6_otp_generation_hook: Callable[[Shipment], Awaitable[None]] | None = None,
+        shipment_ready_hook: Callable[[UUID], Awaitable[None]] | None = None,
     ) -> None:
         self.session = session
         self.notifications = notifications or NotificationsService(NotificationRepository(session))
         self.phase6_otp_generation_hook = phase6_otp_generation_hook
+        self.shipment_ready_hook = shipment_ready_hook
 
     async def create_checkout_order(
         self,
@@ -964,6 +966,11 @@ class OrderLifecycleService:
             f"Shipment for order {str(order.id)[:8]} is now {target.value}.",
             shipment_id=shipment.id,
         )
+        if (
+            target is ShipmentStatus.READY_FOR_PICKUP
+            and self.shipment_ready_hook is not None
+        ):
+            await self.shipment_ready_hook(shipment.id)
 
     async def _transition_payment_locked(
         self,

@@ -17,6 +17,8 @@ import FarmerOrderDetails from "../farmer/FarmerOrderDetails";
 import FarmerSales from "../farmer/FarmerSales";
 import FarmerNotifications from "../farmer/FarmerNotifications";
 import HubStaffOperationsPage from "../hubstaff/HubStaffOperationsPage";
+import RiderDashboardPage from "../rider/RiderDashboardPage";
+import RiderHistoryPage from "../rider/RiderHistoryPage";
 import AdminShell from "../admin/components/AdminShell";
 import AdminDashboardPage from "../admin/pages/AdminDashboardPage";
 import AdminUsersPage from "../admin/pages/AdminUsersPage";
@@ -84,7 +86,7 @@ export default function RouterApp({ user, logout, onAuthenticated }) {
       <Route path="/admin/login" element={<AdminLogin onAuthenticated={(token) => onAuthenticated(token, "/admin/dashboard")} language={language} setLanguage={setLanguage} />} />
       <Route element={<ProtectedRoute user={user} />}>
         <Route element={<AppFrame user={user} logout={logout} />}>
-          <Route path="/" element={<Marketplace user={user} />} />
+          <Route path="/" element={user?.role === "RIDER" ? <Navigate to="/rider/dashboard" replace /> : <Marketplace user={user} />} />
           <Route path="/p/:id" element={<ListingRoute />} />
           <Route path="/c/:slug" element={<FarmerRoute />} />
           <Route path="/farmers" element={<NearbyFarmersRoute />} />
@@ -109,6 +111,10 @@ export default function RouterApp({ user, logout, onAuthenticated }) {
           </Route>
           <Route element={<RoleGuard user={user} roles={["HUB_STAFF"]} />}>
             <Route path="/hub-staff/operations" element={<HubStaffOperationsPage />} />
+          </Route>
+          <Route element={<RoleGuard user={user} roles={["RIDER"]} />}>
+            <Route path="/rider/dashboard" element={<RiderDashboardPage />} />
+            <Route path="/rider/history" element={<RiderHistoryPage />} />
           </Route>
           <Route element={<RoleGuard user={user} roles={["ADMIN"]} />}>
             <Route element={<AdminShell user={user} logout={logout} />}>

@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     reservation_ttl_minutes: int = Field(default=10, gt=0)
     otp_ttl_minutes: int = Field(default=120, gt=0)
     otp_max_attempts: int = Field(default=5, gt=0)
+    rider_offer_timeout_seconds: int = Field(default=60, gt=0)
     delivery_fee: Decimal = Field(default=Decimal("0.00"), ge=0)
     platform_fee: Decimal = Field(default=Decimal("0.00"), ge=0)
     auth_rate_limit_requests: int = Field(default=5, gt=0)

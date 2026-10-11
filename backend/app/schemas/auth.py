@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from backend.app.models.user import UserRole
 
-RegistrationRole = Literal[UserRole.FARMER, UserRole.CONSUMER]
+RegistrationRole = Literal[UserRole.FARMER, UserRole.CONSUMER, UserRole.RIDER]
 
 
 class RegistrationRequest(BaseModel):

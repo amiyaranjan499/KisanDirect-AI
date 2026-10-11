@@ -86,6 +86,64 @@ export function getCurrentUser() {
   return request("/api/v1/auth/me");
 }
 
+export function getRiderStatus() {
+  return request("/api/v1/rider/me");
+}
+
+export function updateRiderAvailability(online) {
+  return request("/api/v1/rider/availability", {
+    method: "PATCH",
+    body: JSON.stringify({ online }),
+  });
+}
+
+export function postRiderLocation(location) {
+  return request("/api/v1/rider/location", {
+    method: "POST",
+    body: JSON.stringify(location),
+  });
+}
+
+export function pollRiderOffers() {
+  return request("/api/v1/rider/offers/poll", { method: "POST" });
+}
+
+export function acceptRiderOffer(offerId) {
+  return request(`/api/v1/rider/offers/${offerId}/accept`, { method: "POST" });
+}
+
+export function declineRiderOffer(offerId) {
+  return request(`/api/v1/rider/offers/${offerId}/decline`, { method: "POST" });
+}
+
+export function getRiderActiveShipment() {
+  return request("/api/v1/rider/shipments/active");
+}
+
+export function updateRiderShipmentStatus(shipmentId, status) {
+  return request(`/api/v1/rider/shipments/${shipmentId}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function recordRiderCodCashCollected(shipmentId) {
+  return request(`/api/v1/rider/shipments/${shipmentId}/cod-cash-collected`, {
+    method: "POST",
+  });
+}
+
+export function verifyRiderDeliveryOtp(shipmentId, code) {
+  return request(`/api/v1/rider/shipments/${shipmentId}/otp-verification`, {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export function getRiderHistory() {
+  return request("/api/v1/rider/history");
+}
+
 export function getConsumerProfile() {
   return request("/api/v1/consumers/me");
 }

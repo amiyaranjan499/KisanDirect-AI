@@ -52,14 +52,20 @@ def test_new_role_and_fulfillment_enum_values() -> None:
     }
 
 
-def test_public_registration_rejects_admin_hub_staff_and_rider() -> None:
-    for role in ("ADMIN", "HUB_STAFF", "RIDER"):
+def test_public_registration_rejects_admin_and_hub_staff_but_accepts_rider() -> None:
+    for role in ("ADMIN", "HUB_STAFF"):
         with pytest.raises(ValidationError):
             RegistrationRequest(
                 email=f"{role.lower()}@example.com",
                 password="Password123!",
                 role=role,
             )
+    rider = RegistrationRequest(
+        email="rider@example.com",
+        password="Password123!",
+        role="RIDER",
+    )
+    assert rider.role is UserRole.RIDER
 
 
 def test_database_rejects_negative_hub_stock_and_overbooked_slot() -> None:
