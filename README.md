@@ -1,8 +1,8 @@
 # KisanDirect AI
 
-## AI-Based Direct Farmer-to-Consumer Crop Selling Platform
+## Hub-Based Farm Produce Quick Commerce
 
-KisanDirect AI is a Phase-I web application that connects farmers and consumers through a database-backed crop marketplace. It provides authenticated role-specific workflows for farmer listings, consumer purchasing, administration, delivery/pickup, notifications, and reviews.
+KisanDirect AI connects farmers, Kisan Hubs, and consumers through a database-backed farm produce marketplace and delivery workflow. It provides authenticated role-specific workflows for farmer listings, consumer purchasing and tracking, rider delivery, hub operations, administration, notifications, and reviews.
 
 The system addresses the gap between farm production and consumer access by giving farmers a direct listing and order workflow. Consumers can browse real listings, search by location, manage a cart, place orders, use the deterministic sandbox payment flow, choose fulfillment, and review eligible purchases. AI integration is represented by explicit crop-quality and fair-price inference boundaries; when trained model artifacts are unavailable, the API reports `MODEL_UNAVAILABLE` rather than fabricating predictions.
 
@@ -18,9 +18,9 @@ The system addresses the gap between farm production and consumer access by givi
 - Server-priced, PostGIS hub-aware checkout with row-locked hub-stock reservations, capacity-backed delivery slots, and calculated ETA windows
 - Farmer-to-hub stock delivery submissions with idempotent, hub-staff-confirmed inventory receipt and audited hub packing/readiness operations
 - Approval-gated rider availability, nearest-rider offers with configurable timeouts, audited shipment pickup/progress, browser GPS sharing, and completed-delivery history
+- Consumer order-event tracking with fresh rider-location polling, consumer-only in-app delivery OTP, lifecycle-gated OTP confirmation, lockout, and audited admin reset
 - Order destination, fee, and ETA snapshots; reservation commit, release, and expiry lifecycle
 - `TEST_SANDBOX` payment flow only; no real payment gateway is connected
-- Shipment OTP verification and delivery completion are intentionally unavailable until Phase 6
 - Legacy delivery and farmer-pickup fulfillment; hub checkout keeps the delivery destination and slot from its order snapshot
 - Ratings and reviews with purchase eligibility checks
 - User-owned notifications and read-state management
@@ -64,10 +64,12 @@ python scripts/create_admin.py
 Demo data can be loaded idempotently with `python scripts/seed_data.py`. Demo credentials are for local development only and must be changed before shared use.
 
 Rider dispatch timeout is configured by `RIDER_OFFER_TIMEOUT_SECONDS` (default
-`60`). Riders register with role `RIDER`, remain pending until approval, and
-share only browser-provided location while online or on an active delivery.
-See [rider operations](docs/RIDER_OPERATIONS.md). OTP verification remains a
-Phase 6 boundary.
+`60`); tracking hides rider positions older than
+`RIDER_LOCATION_STALE_SECONDS` (default `30`). Riders register with role
+`RIDER`, remain pending until approval, and share only browser-provided
+location while online or on an active delivery.
+See [rider operations](docs/RIDER_OPERATIONS.md) and
+[OTP delivery confirmation and tracking](docs/OTP_AND_TRACKING.md).
 
 Sandbox payments and test notification creation are enabled by default only in `development` and `test`. Set `ENABLE_SANDBOX_PAYMENTS=false` to disable them; production rejects the setting when it is true.
 

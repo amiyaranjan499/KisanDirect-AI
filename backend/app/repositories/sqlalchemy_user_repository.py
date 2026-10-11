@@ -25,7 +25,13 @@ class SqlAlchemyUserRepository:
         result = await self.session.execute(select(User).where(User.email == email.lower()))
         return result.scalar_one_or_none()
 
-    async def create(self, email: str, hashed_password: str, role: UserRole) -> User:
+    async def create(
+        self,
+        email: str,
+        hashed_password: str,
+        role: UserRole,
+        display_name: str | None = None,
+    ) -> User:
         async with self.session.begin_nested():
             user = User(email=email.lower(), hashed_password=hashed_password, role=role)
             self.session.add(user)
@@ -39,6 +45,7 @@ class SqlAlchemyUserRepository:
                 self.session.add(
                     Rider(
                         user_id=user.id,
+                        display_name=display_name.strip() if display_name else None,
                         approval_status=RiderApprovalStatus.PENDING_APPROVAL,
                     )
                 )

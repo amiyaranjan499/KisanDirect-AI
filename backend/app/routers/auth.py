@@ -37,7 +37,9 @@ async def register(
 ) -> UserResponse:
     _enforce_auth_rate_limit(request, "register")
     try:
-        user = await auth_service.register(payload.email, payload.password, payload.role)
+        user = await auth_service.register(
+            payload.email, payload.password, payload.role, payload.display_name
+        )
     except DatabaseNotConfiguredError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except IntegrityError as exc:

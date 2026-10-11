@@ -119,6 +119,37 @@ class OrderPage(BaseModel):
     pages: int
 
 
+class TrackingEventResponse(BaseModel):
+    status: str
+    occurred_at: datetime
+
+
+class TrackingLocationResponse(BaseModel):
+    latitude: float
+    longitude: float
+    recorded_at: datetime
+
+
+class OrderTrackingResponse(BaseModel):
+    order_id: UUID
+    order_status: str
+    shipment_status: str | None
+    events: list[TrackingEventResponse]
+    pickup_address: str | None
+    pickup_location: TrackingLocationResponse | None
+    delivery_address: str | None
+    delivery_location: TrackingLocationResponse | None
+    rider_name: str | None
+    rider_vehicle: str | None
+    rider_location: TrackingLocationResponse | None
+    rider_location_available: bool
+    promised_window_start: datetime | None
+    promised_window_end: datetime | None
+    delivery_otp: str | None
+    review_listing_ids: list[UUID]
+    can_cancel: bool
+
+
 class OrderStatusUpdate(BaseModel):
     status: str = Field(pattern="^(CONFIRMED|PROCESSING|CANCELLED|COMPLETED)$")
     reason: str | None = Field(default=None, max_length=1000)

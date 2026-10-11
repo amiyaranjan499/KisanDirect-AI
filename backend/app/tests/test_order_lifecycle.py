@@ -32,6 +32,7 @@ from backend.app.models import (
     PaymentStatus,
     Rider,
     RiderApprovalStatus,
+    RiderLocation,
     Shipment,
     ShipmentStatus,
     User,
@@ -45,8 +46,12 @@ from backend.app.services.order_lifecycle_service import (
     OrderLifecycleService,
 )
 from backend.app.repositories.hub_operations_repository import HubOperationsRepository
+from backend.app.repositories.consumer_repository import ConsumerRepository
+from backend.app.repositories.orders_repository import OrdersRepository
 from backend.app.schemas.hub_operations import StockDeliveryCreate
+from backend.app.schemas.rider import RiderShipmentResponse
 from backend.app.services.hub_operations_service import HubOperationsService
+from backend.app.services.orders_service import OrdersService
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -169,6 +174,7 @@ def seed(order_status: OrderStatus = OrderStatus.PENDING):
                 "rider_user_id": rider_user.id,
                 "other_rider_user_id": other_rider_user.id,
                 "consumer_id": consumer.id,
+                "rider_id": rider.id,
                 "hub_id": hub.id,
                 "order_id": order.id,
                 "listing_id": listing.id,
@@ -1137,6 +1143,266 @@ def test_concurrent_order_transitions_only_write_one_event():
                 )
             )
             assert event_count == 1
+        await engine.dispose()
+
+    try:
+        asyncio.run(exercise())
+    finally:
+        cleanup(data)
+
+
+def test_delivery_otp_lockout_reset_tracking_access_and_single_use(caplog):
+    data = seed(OrderStatus.CONFIRMED)
+    settings = Settings(otp_ttl_minutes=120, otp_max_attempts=2)
+
+    async def exercise():
+        engine = build_engine(settings)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            lifecycle = OrderLifecycleService(session, settings=settings)
+            await lifecycle.transition_order(
+                data["order_id"],
+                LifecycleActor(data["farmer_user_id"], UserRole.FARMER),
+                OrderStatus.PROCESSING,
+            )
+            now = datetime.now(timezone.utc)
+            shipment = await lifecycle.create_shipment(
+                data["order_id"],
+                LifecycleActor(data["hub_staff_user_id"], UserRole.HUB_STAFF),
+                hub_id=data["hub_id"],
+                promised_window_start=now,
+                promised_window_end=now + timedelta(hours=1),
+                pickup_address_snapshot="Hub address",
+                dropoff_address_snapshot="Consumer address",
+            )
+            for target, actor in [
+                (
+                    ShipmentStatus.READY_FOR_PICKUP,
+                    LifecycleActor(data["hub_staff_user_id"], UserRole.HUB_STAFF),
+                ),
+                (
+                    ShipmentStatus.RIDER_ASSIGNED,
+                    LifecycleActor(data["rider_user_id"], UserRole.RIDER),
+                ),
+                (
+                    ShipmentStatus.PICKED_UP,
+                    LifecycleActor(data["rider_user_id"], UserRole.RIDER),
+                ),
+                (
+                    ShipmentStatus.OUT_FOR_DELIVERY,
+                    LifecycleActor(data["rider_user_id"], UserRole.RIDER),
+                ),
+                (
+                    ShipmentStatus.ARRIVED,
+                    LifecycleActor(data["rider_user_id"], UserRole.RIDER),
+                ),
+            ]:
+                await lifecycle.transition_shipment(shipment.id, actor, target)
+
+            with pytest.raises(LifecyclePermissionError):
+                await lifecycle.verify_delivery_otp(
+                    shipment.id,
+                    LifecycleActor(data["other_rider_user_id"], UserRole.RIDER),
+                    "123456",
+                )
+            with pytest.raises(LifecyclePermissionError):
+                await lifecycle.verify_delivery_otp(
+                    shipment.id,
+                    LifecycleActor(data["consumer_user_id"], UserRole.CONSUMER),
+                    "123456",
+                )
+            session.add(
+                RiderLocation(
+                    rider_id=data.get("rider_id"),
+                    location=WKTElement("POINT(85.801 20.301)", srid=4326),
+                    recorded_at=datetime.now(timezone.utc),
+                )
+            )
+            await session.flush()
+
+            notifications = list(
+                (
+                    await session.execute(
+                        select(Notification).where(
+                            Notification.user_id == data["consumer_user_id"],
+                            Notification.related_entity_type == "shipment_otp",
+                            Notification.related_entity_id == shipment.id,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(notifications) == 1
+            first_code = notifications[0].message.rsplit(" ", 1)[1].rstrip(".")
+            stored_shipment = await session.get(Shipment, shipment.id)
+            original_hash = stored_shipment.delivery_otp_hash
+            assert stored_shipment.delivery_otp_hash != first_code
+            assert lifecycle._matches_otp(
+                first_code, stored_shipment.delivery_otp_hash
+            )
+            assert stored_shipment.otp_attempts == 0
+
+            stored_shipment.otp_expires_at = datetime.now(timezone.utc) - timedelta(
+                seconds=1
+            )
+            await session.flush()
+            assert not await lifecycle.verify_delivery_otp(
+                shipment.id,
+                LifecycleActor(data["rider_user_id"], UserRole.RIDER),
+                first_code,
+            )
+            assert stored_shipment.otp_attempts == 0
+
+            stored_shipment.otp_expires_at = datetime.now(timezone.utc) + timedelta(
+                minutes=30
+            )
+            await session.flush()
+            assert not await lifecycle.verify_delivery_otp(
+                shipment.id,
+                LifecycleActor(data["rider_user_id"], UserRole.RIDER),
+                "000000" if first_code != "000000" else "000001",
+            )
+            assert stored_shipment.otp_attempts == 1
+            assert not await lifecycle.verify_delivery_otp(
+                shipment.id,
+                LifecycleActor(data["rider_user_id"], UserRole.RIDER),
+                "000000" if first_code != "000000" else "000001",
+            )
+            assert stored_shipment.otp_attempts == 2
+
+            admin_actor = LifecycleActor(data["admin_user_id"], UserRole.ADMIN)
+            with pytest.raises(LifecycleConflict):
+                await lifecycle.reset_delivery_otp(
+                    shipment.id, admin_actor, " "
+                )
+            await lifecycle.reset_delivery_otp(
+                shipment.id, admin_actor, "Consumer requested a replacement code"
+            )
+            assert stored_shipment.otp_attempts == 0
+            notifications = list(
+                (
+                    await session.execute(
+                        select(Notification)
+                        .where(
+                            Notification.user_id == data["consumer_user_id"],
+                            Notification.related_entity_type == "shipment_otp",
+                            Notification.related_entity_id == shipment.id,
+                        )
+                        .order_by(Notification.created_at, Notification.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(notifications) == 2
+            reset_code = notifications[-1].message.rsplit(" ", 1)[1].rstrip(".")
+            assert stored_shipment.delivery_otp_hash != original_hash
+
+            orders_service = OrdersService(
+                OrdersRepository(session),
+                ConsumerRepository(session),
+                settings=settings,
+            )
+            consumer_tracking = await orders_service.tracking(
+                data["consumer_user_id"], UserRole.CONSUMER, data["order_id"]
+            )
+            assert consumer_tracking.delivery_otp == reset_code
+            assert consumer_tracking.pickup_address == "Hub address"
+            assert consumer_tracking.rider_location is not None
+            rider_tracking = await orders_service.tracking(
+                data["rider_user_id"], UserRole.RIDER, data["order_id"]
+            )
+            assert rider_tracking.delivery_otp is None
+            assert rider_tracking.pickup_address is None
+            assert rider_tracking.delivery_location is None
+            assert rider_tracking.rider_location is not None
+            farmer_tracking = await orders_service.tracking(
+                data["farmer_user_id"], UserRole.FARMER, data["order_id"]
+            )
+            assert farmer_tracking.events
+            assert farmer_tracking.pickup_address is None
+            assert farmer_tracking.rider_location is None
+            hub_staff_tracking = await orders_service.tracking(
+                data["hub_staff_user_id"], UserRole.HUB_STAFF, data["order_id"]
+            )
+            assert hub_staff_tracking.events
+            assert hub_staff_tracking.pickup_address is None
+            assert hub_staff_tracking.rider_location is None
+            admin_tracking = await orders_service.tracking(
+                data["admin_user_id"], UserRole.ADMIN, data["order_id"]
+            )
+            assert admin_tracking.rider_location is not None
+            assert admin_tracking.delivery_otp is None
+            with pytest.raises(PermissionError):
+                await orders_service.tracking(
+                    data["other_consumer_user_id"],
+                    UserRole.CONSUMER,
+                    data["order_id"],
+                )
+
+            assert await lifecycle.verify_delivery_otp(
+                shipment.id,
+                LifecycleActor(data["rider_user_id"], UserRole.RIDER),
+                reset_code,
+            )
+            assert stored_shipment.status is ShipmentStatus.DELIVERED
+            assert stored_shipment.otp_consumed_at is not None
+            with pytest.raises(LifecycleConflict):
+                await lifecycle.verify_delivery_otp(
+                    shipment.id,
+                    LifecycleActor(data["rider_user_id"], UserRole.RIDER),
+                    reset_code,
+                )
+
+            events = list(
+                (
+                    await session.execute(
+                        select(OrderEvent).where(
+                            OrderEvent.order_id == data["order_id"]
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert any(event.to_status == "OTP_LOCKED" for event in events)
+            assert any(
+                event.to_status == "OTP_RESET"
+                and event.actor_role is UserRole.ADMIN
+                and event.note == "Consumer requested a replacement code"
+                for event in events
+            )
+            assert all(
+                reset_code not in (event.note or "")
+                and first_code not in (event.note or "")
+                for event in events
+            )
+            assert all(
+                code not in record.getMessage()
+                for record in caplog.records
+                for code in {first_code, reset_code}
+            )
+            assert "delivery_otp" not in RiderShipmentResponse.model_fields
+            rider_location = await session.scalar(
+                select(RiderLocation).where(
+                    RiderLocation.rider_id == data["rider_id"]
+                )
+            )
+            rider_location.recorded_at = datetime.now(timezone.utc) - timedelta(
+                seconds=settings.rider_location_stale_seconds + 1
+            )
+            await session.flush()
+            stale_tracking = await orders_service.tracking(
+                data["consumer_user_id"], UserRole.CONSUMER, data["order_id"]
+            )
+            assert stale_tracking.rider_location is None
+            assert stale_tracking.rider_location_available is False
+
+            delivered_tracking = await orders_service.tracking(
+                data["consumer_user_id"], UserRole.CONSUMER, data["order_id"]
+            )
+            assert delivered_tracking.review_listing_ids == [data["listing_id"]]
         await engine.dispose()
 
     try:

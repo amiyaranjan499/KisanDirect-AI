@@ -558,6 +558,7 @@ class Rider(TimestampMixin, Base):
     user_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
     )
+    display_name: Mapped[str | None] = mapped_column(String(160))
     vehicle_type: Mapped[str | None] = mapped_column(String(40))
     availability: Mapped[RiderAvailability] = mapped_column(
         enum_type(RiderAvailability, "rider_availability"),

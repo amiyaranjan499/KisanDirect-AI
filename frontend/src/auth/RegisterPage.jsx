@@ -6,6 +6,7 @@ import { languageOptions } from "../i18n/stateLanguages";
 export default function RegisterPage({ language, setLanguage, t = (key) => key }) {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("CONSUMER");
   const [loading, setLoading] = useState(false);
@@ -16,7 +17,12 @@ export default function RegisterPage({ language, setLanguage, t = (key) => key }
     setError("");
     setLoading(true);
     try {
-      await registerUser({ email, password, role });
+      await registerUser({
+        email,
+        password,
+        role,
+        ...(role === "RIDER" ? { display_name: displayName.trim() } : {}),
+      });
       navigate("/login", { replace: true, state: { registered: true } });
     } catch (requestError) {
       setError(requestError.message || "Unable to create account.");
@@ -53,6 +59,22 @@ export default function RegisterPage({ language, setLanguage, t = (key) => key }
             <option value="FARMER">Farmer</option>
             <option value="RIDER">{t("auth.rider")}</option>
           </select>
+          {role === "RIDER" && (
+            <>
+              <label htmlFor="register-display-name">{t("auth.riderName")}</label>
+              <input
+                id="register-display-name"
+                aria-describedby="register-display-name-help"
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                autoComplete="name"
+                minLength={2}
+                maxLength={160}
+                required
+              />
+              <small id="register-display-name-help">{t("auth.riderNameHelp")}</small>
+            </>
+          )}
           {error && <div className="error" role="alert">{error}</div>}
           <button type="submit" className="reference-submit" disabled={loading}>
             {loading ? "Working..." : <><span>{t("auth.register")}</span> <i className="bi bi-arrow-right" aria-hidden="true" /></>}

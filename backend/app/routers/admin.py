@@ -21,8 +21,16 @@ from backend.app.schemas.admin import (
     AdminReviewResponse,
     AdminUserStatusResponse,
     AdminUserStatusUpdate,
+    OtpResetRequest,
 )
 from backend.app.services.admin_service import AdminService
+from backend.app.services.order_lifecycle_service import (
+    LifecycleConflict,
+    LifecycleNotFound,
+    LifecyclePermissionError,
+    LifecycleActor,
+    OrderLifecycleService,
+)
 
 router = APIRouter(prefix="/admins", tags=["admin"])
 
@@ -31,6 +39,12 @@ def get_admin_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AdminService:
     return AdminService(AdminRepository(session))
+
+
+def get_order_lifecycle_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> OrderLifecycleService:
+    return OrderLifecycleService(session)
 
 
 async def get_authenticated_admin(
@@ -136,3 +150,27 @@ async def update_user_status(
         return await service.update_user_status(user_id, payload.is_active)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/shipments/{shipment_id}/otp-reset", status_code=204)
+async def reset_delivery_otp(
+    shipment_id: UUID,
+    payload: OtpResetRequest,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[OrderLifecycleService, Depends(get_order_lifecycle_service)],
+) -> None:
+    try:
+        await service.reset_delivery_otp(
+            shipment_id,
+            LifecycleActor(current_user.id, current_user.role),
+            payload.reason,
+        )
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (LifecyclePermissionError, ValueError) as exc:
+        raise HTTPException(
+            status_code=403 if isinstance(exc, LifecyclePermissionError) else 422,
+            detail=str(exc),
+        ) from exc

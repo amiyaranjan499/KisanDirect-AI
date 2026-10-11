@@ -1,10 +1,18 @@
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from math import ceil
 from uuid import UUID
 
 from backend.app.core.config import Settings
-from backend.app.models import NotificationType, Order, OrderStatus, UserRole
+from backend.app.models import (
+    NotificationType,
+    Order,
+    OrderStatus,
+    ShipmentStatus,
+    UserRole,
+)
 from backend.app.repositories.consumer_repository import ConsumerRepository
+from backend.app.repositories.notifications_repository import NotificationRepository
 from backend.app.repositories.orders_repository import OrdersRepository
 from backend.app.services.order_lifecycle_service import LifecycleActor, OrderLifecycleService
 from backend.app.schemas.orders import (
@@ -18,6 +26,9 @@ from backend.app.schemas.orders import (
     OrderItemResponse,
     OrderPage,
     OrderResponse,
+    OrderTrackingResponse,
+    TrackingEventResponse,
+    TrackingLocationResponse,
 )
 from backend.app.schemas.payments import PaymentResponse
 
@@ -34,7 +45,9 @@ class OrdersService:
         self.consumer_repository = consumer_repository
         self.notification_service = notification_service
         self.settings = settings or Settings()
-        self.lifecycle = OrderLifecycleService(repository.session, notification_service)
+        self.lifecycle = OrderLifecycleService(
+            repository.session, notification_service, settings=self.settings
+        )
 
     async def consumer_id(self, user_id: UUID) -> UUID:
         consumer = await self.consumer_repository.get_profile(user_id)
@@ -211,6 +224,155 @@ class OrdersService:
         if order is None:
             raise LookupError("Order not found")
         return self.order_response(order, user_id if role is UserRole.FARMER else None)
+
+    async def tracking(
+        self, actor_id: UUID, role: UserRole, order_id: UUID
+    ) -> OrderTrackingResponse:
+        order = await self.repository.get_tracking_order(order_id)
+        if order is None:
+            raise LookupError("Order not found")
+        shipment = order.shipment
+        is_consumer = role is UserRole.CONSUMER and order.consumer.user_id == actor_id
+        is_rider = (
+            role is UserRole.RIDER
+            and shipment is not None
+            and shipment.rider is not None
+            and shipment.rider.user_id == actor_id
+        )
+        is_farmer = role is UserRole.FARMER and await self.repository.has_farmer_access(
+            order.id, actor_id
+        )
+        is_hub_staff = (
+            role is UserRole.HUB_STAFF
+            and shipment is not None
+            and await self.repository.has_hub_staff_access(shipment.hub_id, actor_id)
+        )
+        is_admin = role is UserRole.ADMIN
+        if not any((is_consumer, is_rider, is_farmer, is_hub_staff, is_admin)):
+            raise PermissionError("You do not have access to this order tracking")
+        can_view_order_details = is_consumer or is_admin
+
+        events = await self.repository.order_events(order.id)
+        tracking_events = [
+            TrackingEventResponse(status=event.to_status, occurred_at=event.created_at)
+            for event in events
+            if not event.to_status.startswith("OTP_")
+        ]
+        pickup_location = None
+        delivery_location = None
+        rider_location = None
+        rider_location_available = False
+        rider_name = None
+        rider_vehicle = None
+        delivery_otp = None
+
+        if shipment is not None:
+            hub_coordinates = (
+                await self.repository.hub_coordinates(shipment.hub_id)
+                if can_view_order_details
+                else None
+            )
+            if hub_coordinates is not None:
+                pickup_location = TrackingLocationResponse(
+                    latitude=hub_coordinates[0],
+                    longitude=hub_coordinates[1],
+                    recorded_at=hub_coordinates[2],
+                )
+            if (
+                can_view_order_details
+                and order.delivery_latitude is not None
+                and order.delivery_longitude is not None
+            ):
+                delivery_location = TrackingLocationResponse(
+                    latitude=float(order.delivery_latitude),
+                    longitude=float(order.delivery_longitude),
+                    recorded_at=order.created_at,
+                )
+            if shipment.rider is not None:
+                if can_view_order_details:
+                    rider_name = shipment.rider.display_name or "Delivery rider"
+                    rider_vehicle = shipment.rider.vehicle_type
+                if is_consumer or is_rider or is_admin:
+                    latest = await self.repository.latest_rider_location(
+                        shipment.rider.id
+                    )
+                    if latest is not None:
+                        latitude, longitude, recorded_at = latest
+                        if recorded_at >= datetime.now(timezone.utc) - timedelta(
+                            seconds=self.settings.rider_location_stale_seconds
+                        ):
+                            rider_location = TrackingLocationResponse(
+                                latitude=latitude,
+                                longitude=longitude,
+                                recorded_at=recorded_at,
+                            )
+                            rider_location_available = True
+            if (
+                is_consumer
+                and shipment.status
+                in {ShipmentStatus.OUT_FOR_DELIVERY, ShipmentStatus.ARRIVED}
+                and shipment.otp_consumed_at is None
+                and shipment.otp_expires_at is not None
+                and shipment.otp_expires_at > datetime.now(timezone.utc)
+                and shipment.otp_attempts < self.settings.otp_max_attempts
+            ):
+                notification = await NotificationRepository(
+                    self.repository.session
+                ).latest_delivery_otp(actor_id, shipment.id)
+                if notification is not None:
+                    prefix = "Your delivery verification code is "
+                    if notification.message.startswith(prefix):
+                        delivery_otp = notification.message[len(prefix) :].rstrip(".")
+
+        return OrderTrackingResponse(
+            order_id=order.id,
+            order_status=order.status.value,
+            shipment_status=shipment.status.value if shipment is not None else None,
+            events=tracking_events,
+            pickup_address=(
+                shipment.pickup_address_snapshot
+                if shipment is not None and can_view_order_details
+                else None
+            ),
+            pickup_location=pickup_location if can_view_order_details else None,
+            delivery_address=order.delivery_address if can_view_order_details else None,
+            delivery_location=delivery_location if can_view_order_details else None,
+            rider_name=rider_name,
+            rider_vehicle=rider_vehicle,
+            rider_location=rider_location,
+            rider_location_available=rider_location_available,
+            promised_window_start=(
+                (
+                    shipment.promised_window_start
+                    if can_view_order_details
+                    else None
+                )
+                if shipment
+                else (
+                    order.promised_window_start if can_view_order_details else None
+                )
+            ),
+            promised_window_end=(
+                (
+                    shipment.promised_window_end
+                    if can_view_order_details
+                    else None
+                )
+                if shipment
+                else (order.promised_window_end if can_view_order_details else None)
+            ),
+            delivery_otp=delivery_otp,
+            review_listing_ids=(
+                [item.listing_id for item in order.items]
+                if is_consumer and shipment is not None
+                and shipment.status is ShipmentStatus.DELIVERED
+                else []
+            ),
+            can_cancel=(
+                is_consumer
+                and order.status in {OrderStatus.PENDING, OrderStatus.CONFIRMED}
+            ),
+        )
 
     async def update_status(
         self,

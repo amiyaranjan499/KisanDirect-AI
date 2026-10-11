@@ -11,7 +11,13 @@ class UserRepository(Protocol):
     async def get_by_email(self, email: str) -> User | None:
         ...
 
-    async def create(self, email: str, hashed_password: str, role: UserRole) -> User:
+    async def create(
+        self,
+        email: str,
+        hashed_password: str,
+        role: UserRole,
+        display_name: str | None = None,
+    ) -> User:
         ...
 
 
@@ -30,7 +36,13 @@ class UnconfiguredUserRepository:
             "Database integration is not configured; authentication persistence is unavailable."
         )
 
-    async def create(self, email: str, hashed_password: str, role: UserRole) -> User:
+    async def create(
+        self,
+        email: str,
+        hashed_password: str,
+        role: UserRole,
+        display_name: str | None = None,
+    ) -> User:
         raise DatabaseNotConfiguredError(
             "Database integration is not configured; authentication persistence is unavailable."
         )

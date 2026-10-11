@@ -71,4 +71,4 @@ class RiderHistoryResponse(BaseModel):
 
 
 class RiderOtpVerificationRequest(BaseModel):
-    code: str = Field(min_length=4, max_length=12)
+    code: str = Field(pattern=r"^\d{6}$")

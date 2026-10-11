@@ -19,6 +19,7 @@ from backend.app.schemas.orders import (
     CheckoutOptionsResponse,
     OrderPage,
     OrderResponse,
+    OrderTrackingResponse,
     OrderStatusUpdate,
 )
 from backend.app.schemas.payments import PaymentResponse, TestPaymentRequest
@@ -134,6 +135,20 @@ async def order_detail(order_id: UUID, current_user: Annotated[User, Depends(get
         return await service.order_detail(current_user.id, current_user.role, order_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/orders/{order_id}/tracking", response_model=OrderTrackingResponse)
+async def order_tracking(
+    order_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: Annotated[OrdersService, Depends(get_orders_service)],
+) -> OrderTrackingResponse:
+    try:
+        return await service.tracking(current_user.id, current_user.role, order_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @router.patch("/orders/{order_id}/status", response_model=OrderResponse)

@@ -12,6 +12,7 @@ class RegistrationRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     role: RegistrationRole = UserRole.CONSUMER
+    display_name: str | None = Field(default=None, min_length=2, max_length=160)
 
 
 class LoginRequest(BaseModel):

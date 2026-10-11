@@ -19,6 +19,7 @@ This documentation describes the implemented Phase-I system. It is written from 
 - [Order, Shipment, and Payment Lifecycle](order-lifecycle.md)
 - [Checkout Reservations and ETA](checkout-reservations.md)
 - [Rider Operations](RIDER_OPERATIONS.md)
+- [OTP Delivery Confirmation and Tracking](OTP_AND_TRACKING.md)
 
 ## API Documentation
 

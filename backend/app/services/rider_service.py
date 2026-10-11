@@ -282,20 +282,17 @@ class RiderService:
                 actor.user_id,
             )
 
-    async def verify_otp_phase6_stub(
+    async def verify_delivery_otp(
         self,
         actor: LifecycleActor,
         shipment_id: UUID,
-        _code: str,
-    ) -> None:
-        rider = await self._rider_for_actor(actor)
-        self._require_approved(rider)
-        shipment = await self.repository.shipment_for_actor(
-            shipment_id, rider.id
-        )
-        if shipment is None or shipment.status is not ShipmentStatus.ARRIVED:
-            raise LifecyclePermissionError(
-                "Only the assigned rider may submit arrival verification"
+        code: str,
+    ) -> bool:
+        async with self._transaction():
+            rider = await self._rider_for_actor(actor, for_update=True)
+            self._require_approved(rider)
+            return await self.lifecycle.verify_delivery_otp(
+                shipment_id, actor, code
             )
 
     async def history(self, actor: LifecycleActor) -> RiderHistoryResponse:

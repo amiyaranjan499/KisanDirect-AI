@@ -11,5 +11,11 @@ class UserRepositoryType(Protocol):
     async def get_by_email(self, email: str) -> User | None:
         ...
 
-    async def create(self, email: str, hashed_password: str, role: UserRole) -> User:
+    async def create(
+        self,
+        email: str,
+        hashed_password: str,
+        role: UserRole,
+        display_name: str | None = None,
+    ) -> User:
         ...

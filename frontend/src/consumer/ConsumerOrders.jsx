@@ -1,13 +1,15 @@
 ﻿import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { cartRequest, fulfillmentRequest, getConsumerProfile, orderRequest } from "../services/api";
 import TestPaymentPanel from "../payments/Payment";
 import { useI18n } from "../i18n";
+import ConsumerTracking from "./ConsumerTracking";
 
 export default function CartOrders({ onBack, consumerProfile, onNavigate }) {
   const { t } = useI18n();
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const { id: trackingOrderId } = useParams();
   const [searchParams] = useSearchParams();
   const ordersPage = pathname.startsWith("/orders");
   const [cart, setCart] = useState(null);
@@ -97,6 +99,17 @@ export default function CartOrders({ onBack, consumerProfile, onNavigate }) {
     );
   }
 
+  if (trackingOrderId) {
+    return (
+      <section className="orders-view consumer-orders-page">
+        <ConsumerTracking
+          orderId={trackingOrderId}
+          onBack={() => navigate("/orders")}
+        />
+      </section>
+    );
+  }
+
   return (
     <section className="orders-view consumer-orders-page">
       {!ordersPage && <button className="back-button" onClick={onBack}>← {t("back")}</button>}
@@ -162,6 +175,15 @@ export default function CartOrders({ onBack, consumerProfile, onNavigate }) {
                 <div className="order-card-main">
                   <div className="reference-order-top"><div><h2>Order {order.id.slice(0, 8)}</h2><p className="muted">{new Date(order.created_at).toLocaleDateString()} {farmerNames ? `· ${farmerNames}` : ""}</p></div><span className={`order-status-badge status-${statusLabel.toLowerCase().replaceAll(" ", "-")}`}>{statusLabel}</span></div>
                   <div className="reference-order-bottom"><p>{itemNames || "Order items unavailable"}</p><strong>₹{Number(order.total_amount || 0).toFixed(2)}</strong></div>
+                  {ordersPage && (fulfillment?.method === "DELIVERY" || order.hub_id) && (
+                    <button
+                      className="text-link"
+                      type="button"
+                      onClick={() => navigate(`/orders/${order.id}`)}
+                    >
+                      <i className="bi bi-truck" /> {t("tracking.trackOrder")}
+                    </button>
+                  )}
 
                   {!ordersPage && fulfillment ? (
                     <p className="fulfillment-status">{fulfillment.method}: {fulfillment.status}{fulfillment.address ? ` · ${fulfillment.address}` : fulfillment.pickup_location ? ` · Pickup: ${fulfillment.pickup_location}` : ""}</p>
@@ -194,7 +216,16 @@ export default function CartOrders({ onBack, consumerProfile, onNavigate }) {
       )}
 
       {!ordersPage && <div className="reference-order-links">
-        <button className="text-link" onClick={() => onNavigate?.("tracking")}><i className="bi bi-truck" /> Track latest order</button>
+        <button
+          className="text-link"
+          onClick={() => {
+            const latest = orders?.items?.[0];
+            if (latest) navigate(`/orders/${latest.id}`);
+          }}
+          disabled={!orders?.items?.length}
+        >
+          <i className="bi bi-truck" /> {t("tracking.trackLatestOrder")}
+        </button>
       </div>}
     </section>
   );

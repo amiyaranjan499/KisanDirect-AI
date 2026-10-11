@@ -30,6 +30,7 @@ export default function RiderDashboardPage() {
   const [offersLoading, setOffersLoading] = useState(false);
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [locationError, setLocationError] = useState("");
   const [locationRetry, setLocationRetry] = useState(0);
   const lastLocationPost = useRef(0);
@@ -182,10 +183,16 @@ export default function RiderDashboardPage() {
     if (!shipment) return;
     setBusyId(shipment.id);
     setError("");
+    setSuccess("");
     try {
       await verifyRiderDeliveryOtp(shipment.id, otp);
+      setShipment(null);
+      setRider(await getRiderStatus());
+      setOtp("");
+      setSuccess(t("rider.otpVerified"));
+      await refreshOffers();
     } catch (requestError) {
-      setError(requestError.message || t("rider.actionError"));
+      setError(requestError.message || t("rider.otpRejected"));
     } finally {
       setBusyId("");
     }
@@ -204,6 +211,7 @@ export default function RiderDashboardPage() {
       </header>
 
       {error && <div className="error" role="alert">{error}</div>}
+      {success && <div className="info-box" role="status">{success}</div>}
 
       {rider?.approval_status === "PENDING_APPROVAL" ? (
         <section className="consumer-panel mb-4" role="status">
@@ -278,7 +286,7 @@ export default function RiderDashboardPage() {
                       <h3>{t("rider.otpTitle")}</h3>
                       <p>{t("rider.otpDescription")}</p>
                       <label htmlFor="rider-delivery-otp">{t("rider.otpCode")}</label>
-                      <input id="rider-delivery-otp" value={otp} onChange={(event) => setOtp(event.target.value)} minLength={4} maxLength={12} required />
+                      <input id="rider-delivery-otp" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, ""))} inputMode="numeric" autoComplete="one-time-code" minLength={6} maxLength={6} required />
                       <button className="farmer-small-button secondary" type="submit" disabled={busyId === shipment.id}>
                         {t("rider.verifyOtp")}
                       </button>

@@ -28,6 +28,20 @@ class NotificationRepository:
         )
         return result.scalar_one_or_none()
 
+    async def latest_delivery_otp(self, user_id: UUID, shipment_id: UUID) -> Notification | None:
+        result = await self.session.execute(
+            select(Notification)
+            .where(
+                Notification.user_id == user_id,
+                Notification.related_entity_type == "shipment_otp",
+                Notification.related_entity_id == shipment_id,
+                Notification.title == "Delivery verification code",
+            )
+            .order_by(Notification.created_at.desc(), Notification.id.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
     async def create(self, notification: Notification) -> Notification:
         self.session.add(notification)
         await self.session.commit()

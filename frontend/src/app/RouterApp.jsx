@@ -40,16 +40,27 @@ import NearbyFarmers from "../maps/NearbyFarmersMap";
 import Login from "../auth/Login";
 import RegisterPage from "../auth/RegisterPage";
 import AdminLogin from "../admin/AdminLogin";
+import { getConsumerProfile, orderRequest } from "../services/api";
 
-function ListingRoute() {
+function ListingRoute({ user }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const [item, setItem] = useState(null);
   const [error, setError] = useState("");
+  const [reviewContext, setReviewContext] = useState({ profile: null, orders: [] });
   useEffect(() => { getListing(id).then(setItem).catch((requestError) => setError(requestError.message)); }, [id]);
+  useEffect(() => {
+    if (user?.role !== "CONSUMER") {
+      setReviewContext({ profile: null, orders: [] });
+      return;
+    }
+    Promise.all([getConsumerProfile(), orderRequest("/orders?page_size=50")])
+      .then(([profile, orders]) => setReviewContext({ profile, orders: orders.items || [] }))
+      .catch(() => setReviewContext({ profile: null, orders: [] }));
+  }, [user?.role]);
   if (error) return <section className="detail-view"><div className="error">{error}</div><button className="primary-button" onClick={() => navigate("/")}>Back to marketplace</button></section>;
   if (!item) return <section className="detail-view"><div className="loading"><span className="loading-mark" />Loading listing...</div></section>;
-  return <ProductDetail item={item} onFarmer={(farmer) => navigate(`/c/${farmer.id}`)} />;
+  return <ProductDetail item={item} consumerProfile={reviewContext.profile} orders={reviewContext.orders} onFarmer={(farmer) => navigate(`/c/${farmer.id}`)} />;
 }
 
 function FarmerRoute() {
@@ -87,7 +98,7 @@ export default function RouterApp({ user, logout, onAuthenticated }) {
       <Route element={<ProtectedRoute user={user} />}>
         <Route element={<AppFrame user={user} logout={logout} />}>
           <Route path="/" element={user?.role === "RIDER" ? <Navigate to="/rider/dashboard" replace /> : <Marketplace user={user} />} />
-          <Route path="/p/:id" element={<ListingRoute />} />
+          <Route path="/p/:id" element={<ListingRoute user={user} />} />
           <Route path="/c/:slug" element={<FarmerRoute />} />
           <Route path="/farmers" element={<NearbyFarmersRoute />} />
           <Route path="/consumer/dashboard" element={<ConsumerDashboard />} />

@@ -127,6 +127,7 @@ def test_rider_signup_creates_pending_profile_and_unauthenticated_location_is_de
                     "email": email,
                     "password": "Password123!",
                     "role": "RIDER",
+                    "display_name": "Test Delivery Rider",
                 },
             )
             login = client.post(
@@ -159,6 +160,7 @@ def test_rider_signup_creates_pending_profile_and_unauthenticated_location_is_de
                     select(Rider).where(Rider.user_id == registered.json()["id"])
                 )
                 assert rider is not None
+                assert rider.display_name == "Test Delivery Rider"
                 assert rider.approval_status is RiderApprovalStatus.PENDING_APPROVAL
                 assert rider.availability is RiderAvailability.OFFLINE
             await engine.dispose()

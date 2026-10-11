@@ -169,6 +169,10 @@ class AdminUserStatusUpdate(BaseModel):
     is_active: bool = Field(default=True)
 
 
+class OtpResetRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class AdminUserStatusResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

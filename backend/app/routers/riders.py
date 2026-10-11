@@ -2,6 +2,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import get_settings
@@ -36,7 +37,7 @@ router = APIRouter(prefix="/rider", tags=["rider-operations"])
 def get_rider_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RiderService:
-    lifecycle = OrderLifecycleService(session)
+    lifecycle = OrderLifecycleService(session, settings=get_settings())
     return RiderService(
         session,
         RiderRepository(session),
@@ -192,24 +193,26 @@ async def record_cod_cash_collected(
 
 @router.post(
     "/shipments/{shipment_id}/otp-verification",
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
+    response_model=None,
 )
-async def verify_delivery_otp_phase6_stub(
+async def verify_delivery_otp(
     shipment_id: UUID,
     payload: RiderOtpVerificationRequest,
     current_user: Annotated[User, Depends(rider_user)],
     service: Annotated[RiderService, Depends(get_rider_service)],
-) -> None:
+) -> JSONResponse | dict[str, str]:
     try:
-        await service.verify_otp_phase6_stub(
+        verified = await service.verify_delivery_otp(
             _actor(current_user), shipment_id, payload.code
         )
     except (LifecycleNotFound, LifecyclePermissionError, LifecycleConflict) as exc:
         _raise_http_error(exc)
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="OTP verification is not available until Phase 6",
-    )
+    if not verified:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": "Delivery verification code is invalid or unavailable"},
+        )
+    return {"status": "DELIVERED"}
 
 
 @router.get("/history", response_model=RiderHistoryResponse)

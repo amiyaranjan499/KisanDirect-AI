@@ -3,6 +3,9 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_CEILING
+import hashlib
+import hmac
+import secrets
 from uuid import UUID, uuid4
 
 from geoalchemy2 import Geography
@@ -35,6 +38,7 @@ from backend.app.models import (
     ReservationStatus,
     Rider,
     RiderApprovalStatus,
+    RiderAvailability,
     Shipment,
     ShipmentStatus,
     StockReservation,
@@ -78,10 +82,14 @@ class OrderLifecycleService:
         notifications: NotificationsService | None = None,
         phase6_otp_generation_hook: Callable[[Shipment], Awaitable[None]] | None = None,
         shipment_ready_hook: Callable[[UUID], Awaitable[None]] | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self.session = session
         self.notifications = notifications or NotificationsService(NotificationRepository(session))
-        self.phase6_otp_generation_hook = phase6_otp_generation_hook
+        self.settings = settings or Settings()
+        self.phase6_otp_generation_hook = (
+            phase6_otp_generation_hook or self._generate_delivery_otp_for_shipment
+        )
         self.shipment_ready_hook = shipment_ready_hook
 
     async def create_checkout_order(
@@ -608,6 +616,175 @@ class OrderLifecycleService:
                 otp_verified=True,
             )
         return shipment
+
+    async def verify_delivery_otp(
+        self, shipment_id: UUID, actor: LifecycleActor, code: str
+    ) -> bool:
+        if actor.role is not UserRole.RIDER or actor.user_id is None:
+            raise LifecyclePermissionError("Only the assigned rider may verify delivery")
+
+        verified = False
+        async with self.session.begin_nested():
+            await self._validate_actor(actor)
+            order_id = await self.session.scalar(
+                select(Shipment.order_id).where(Shipment.id == shipment_id)
+            )
+            if order_id is None:
+                raise LifecycleNotFound("Shipment not found")
+            order = await self._lock_order(order_id)
+            shipment_result = await self.session.execute(
+                select(Shipment)
+                .where(Shipment.id == shipment_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            shipment = shipment_result.scalar_one_or_none()
+            if shipment is None:
+                raise LifecycleNotFound("Shipment not found")
+            rider_id = await self.session.scalar(
+                select(Rider.id).where(Rider.user_id == actor.user_id)
+            )
+            if rider_id is None or shipment.rider_id != rider_id:
+                raise LifecyclePermissionError(
+                    "Only the assigned rider may verify delivery"
+                )
+            if shipment.status not in {
+                ShipmentStatus.OUT_FOR_DELIVERY,
+                ShipmentStatus.ARRIVED,
+            }:
+                raise LifecycleConflict(
+                    "Delivery OTP can only be verified after arrival"
+                )
+
+            now = datetime.now(timezone.utc)
+            is_eligible = (
+                shipment.otp_consumed_at is None
+                and shipment.otp_expires_at is not None
+                and shipment.otp_expires_at > now
+                and shipment.otp_attempts < self.settings.otp_max_attempts
+                and shipment.delivery_otp_hash is not None
+            )
+            if is_eligible and self._matches_otp(code, shipment.delivery_otp_hash):
+                shipment.otp_consumed_at = now
+                await self._deliver_shipment_after_otp(
+                    shipment.id, actor, otp_verified=True
+                )
+                if shipment.rider_id is not None:
+                    rider = await self.session.scalar(
+                        select(Rider)
+                        .where(Rider.id == shipment.rider_id)
+                        .with_for_update()
+                    )
+                    if rider is not None:
+                        rider.availability = RiderAvailability.AVAILABLE
+                verified = True
+            elif is_eligible:
+                shipment.otp_attempts += 1
+                if shipment.otp_attempts == self.settings.otp_max_attempts:
+                    await self._record_event(
+                        order,
+                        actor,
+                        "OTP_ACTIVE",
+                        "OTP_LOCKED",
+                        "Maximum delivery OTP attempts reached",
+                        shipment_id=shipment.id,
+                    )
+            await self.session.flush()
+        return verified
+
+    async def reset_delivery_otp(
+        self, shipment_id: UUID, actor: LifecycleActor, reason: str
+    ) -> None:
+        if actor.role is not UserRole.ADMIN:
+            raise LifecyclePermissionError("Admin role required")
+        if not reason.strip():
+            raise LifecycleConflict("A non-empty reason is required")
+        async with self.session.begin_nested():
+            await self._validate_actor(actor)
+            order_id = await self.session.scalar(
+                select(Shipment.order_id).where(Shipment.id == shipment_id)
+            )
+            if order_id is None:
+                raise LifecycleNotFound("Shipment not found")
+            order = await self._lock_order(order_id)
+            shipment_result = await self.session.execute(
+                select(Shipment)
+                .where(Shipment.id == shipment_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            shipment = shipment_result.scalar_one_or_none()
+            if shipment is None:
+                raise LifecycleNotFound("Shipment not found")
+            if (
+                shipment.status
+                not in {ShipmentStatus.OUT_FOR_DELIVERY, ShipmentStatus.ARRIVED}
+                or shipment.otp_consumed_at is not None
+                or shipment.otp_attempts < self.settings.otp_max_attempts
+            ):
+                raise LifecycleConflict("Only a locked delivery OTP can be reset")
+
+            await self._issue_delivery_otp(order, shipment)
+            await self._record_event(
+                order,
+                actor,
+                "OTP_LOCKED",
+                "OTP_RESET",
+                reason.strip(),
+                shipment_id=shipment.id,
+            )
+            await self.session.flush()
+
+    async def _generate_delivery_otp_for_shipment(
+        self, shipment: Shipment
+    ) -> None:
+        async with self.session.begin_nested():
+            result = await self.session.execute(
+                select(Order)
+                .where(Order.id == shipment.order_id)
+                .options(selectinload(Order.consumer))
+            )
+            order = result.scalar_one_or_none()
+            if order is None:
+                raise LifecycleNotFound("Order not found for delivery OTP")
+            await self._issue_delivery_otp(order, shipment)
+            await self.session.flush()
+
+    async def _issue_delivery_otp(self, order: Order, shipment: Shipment) -> None:
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        shipment.delivery_otp_hash = self._hash_otp(code)
+        shipment.otp_expires_at = datetime.now(timezone.utc) + timedelta(
+            minutes=self.settings.otp_ttl_minutes
+        )
+        shipment.otp_attempts = 0
+        shipment.otp_consumed_at = None
+        await self.notifications.stage(
+            user_id=order.consumer.user_id,
+            notification_type=NotificationType.DELIVERY,
+            title="Delivery verification code",
+            message=f"Your delivery verification code is {code}.",
+            related_entity_type="shipment_otp",
+            related_entity_id=shipment.id,
+            deduplicate=False,
+        )
+
+    @staticmethod
+    def _hash_otp(code: str) -> str:
+        salt = secrets.token_bytes(16)
+        digest = hashlib.pbkdf2_hmac(
+            "sha256", code.encode("utf-8"), salt, 120_000
+        )
+        return f"{salt.hex()}:{digest.hex()}"
+
+    @staticmethod
+    def _matches_otp(code: str, encoded_hash: str) -> bool:
+        salt_hex, separator, digest_hex = encoded_hash.partition(":")
+        if not separator:
+            return False
+        digest = hashlib.pbkdf2_hmac(
+            "sha256", code.encode("utf-8"), bytes.fromhex(salt_hex), 120_000
+        )
+        return hmac.compare_digest(digest.hex(), digest_hex)
 
     async def initiate_sandbox_payment(
         self,
