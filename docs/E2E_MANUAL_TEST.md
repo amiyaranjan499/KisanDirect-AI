@@ -16,7 +16,7 @@ cd backend
 cd ..
 .\venv\Scripts\python.exe -m backend.run
 ```
-*Health check:* Visit `http://127.0.0.1:8000/health` (should return `{"status":"ok"}`).  
+*Health check:* Visit `http://127.0.0.1:8000/health` (should return `{"status":"ok"}`).
 *API documentation:* `http://127.0.0.1:8000/docs`.
 
 ### 2. Frontend Development Server
@@ -298,4 +298,3 @@ python scripts/create_admin.py
 2. **SMS Delivery**: Delivery OTP is displayed in-app on the authenticated consumer's tracking page and in-app notifications. No external SMS gateway is configured.
 3. **AI Models**: Crop quality assessment and fair price recommendation boundaries report `MODEL_UNAVAILABLE` when local model artifact files are not placed in the artifact path.
 4. **GPS Emulation**: Browser Geolocation permissions must be granted for rider location polling and hub location pickers. In automated or headless environments, use Chrome DevTools Sensors to emulate GPS coordinates.
-
