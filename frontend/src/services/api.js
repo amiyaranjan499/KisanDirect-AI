@@ -354,6 +354,81 @@ export function updateAdminUserStatus(userId, payload) {
   });
 }
 
+export function listAdminRiders() {
+  return request("/api/v1/admins/riders");
+}
+
+export function updateAdminRiderApproval(riderId, payload) {
+  return request(`/api/v1/admins/riders/${riderId}/approval`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listAdminHubs() {
+  return request("/api/v1/admins/hubs");
+}
+
+export function createAdminHub(payload) {
+  return request("/api/v1/admins/hubs", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateAdminHub(hubId, payload) {
+  return request(`/api/v1/admins/hubs/${hubId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listAdminHubStaff() {
+  return request("/api/v1/admins/hub-staff");
+}
+
+export function createAdminHubStaff(payload) {
+  return request("/api/v1/admins/hub-staff", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function assignAdminHubStaff(payload) {
+  return request("/api/v1/admins/hub-staff/assignments", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function unassignAdminHubStaff(userId, hubId) {
+  return request(`/api/v1/admins/hub-staff/${userId}/assignments/${hubId}`, {
+    method: "DELETE",
+  });
+}
+
+export function listAdminShipments() {
+  return request("/api/v1/admins/shipments");
+}
+
+export function reassignAdminShipment(shipmentId, payload) {
+  return request(`/api/v1/admins/shipments/${shipmentId}/reassign`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function cancelAdminShipment(shipmentId, payload) {
+  return request(`/api/v1/admins/shipments/${shipmentId}/cancel`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function resetAdminDeliveryOtp(shipmentId, payload) {
+  return request(`/api/v1/admins/shipments/${shipmentId}/otp-reset`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function createReview(payload) {
   return request("/api/v1/reviews", {
     method: "POST",

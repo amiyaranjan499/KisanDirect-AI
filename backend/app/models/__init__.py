@@ -1,5 +1,6 @@
 from backend.app.models.domain import (
 	Admin,
+	AdminAuditEvent,
 	AIPricePrediction,
 	AIQualityPrediction,
 	AvailabilityStatus,
@@ -44,6 +45,7 @@ from backend.app.models.domain import (
 
 __all__ = [
 	"Admin",
+	"AdminAuditEvent",
 	"AIPricePrediction",
 	"AIQualityPrediction",
 	"AvailabilityStatus",

@@ -57,6 +57,9 @@ export default function AdminAnalyticsPage() {
         <div className="admin-stat-card"><span>Orders</span><strong>{analytics.total_orders}</strong></div>
         <div className="admin-stat-card"><span>Pending orders</span><strong>{analytics.pending_orders}</strong></div>
         <div className="admin-stat-card"><span>Revenue</span><strong>{money(analytics.total_sales || 0)}</strong></div>
+        <div className="admin-stat-card"><span>Active shipments in range</span><strong>{analytics.active_shipments}</strong></div>
+        <div className="admin-stat-card"><span>Average placed to delivered</span><strong>{analytics.average_placed_to_delivered_minutes == null ? "No completed deliveries" : `${Math.round(analytics.average_placed_to_delivered_minutes)} min`}</strong></div>
+        <div className="admin-stat-card"><span>Failed deliveries</span><strong>{analytics.failed_deliveries}</strong></div>
       </div>
 
       <div className="admin-section-grid">

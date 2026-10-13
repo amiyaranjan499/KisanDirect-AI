@@ -1,6 +1,6 @@
 # KisanDirect AI Documentation
 
-This documentation describes the implemented Phase-I system. It is written from the current source code, API routers, models, migrations, frontend, and verified test results.
+This documentation describes the current hub-based quick-commerce system from its source code, API routers, models, migrations, and frontend. Verification status is stated per phase where it is known.
 
 ## General Documentation
 
@@ -20,6 +20,7 @@ This documentation describes the implemented Phase-I system. It is written from 
 - [Checkout Reservations and ETA](checkout-reservations.md)
 - [Rider Operations](RIDER_OPERATIONS.md)
 - [OTP Delivery Confirmation and Tracking](OTP_AND_TRACKING.md)
+- [Admin Operations](ADMIN_OPERATIONS.md)
 
 ## API Documentation
 

@@ -1,9 +1,34 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from enum import Enum
+import json
 from uuid import UUID
 
-from backend.app.models import AvailabilityStatus, OrderStatus, UserRole
+from geoalchemy2.elements import WKTElement
+from sqlalchemy import select
+
+from backend.app.core.security import hash_password
+from backend.app.core.config import get_settings
+from backend.app.models import (
+    AdminAuditEvent,
+    AvailabilityStatus,
+    Hub,
+    HubStaff,
+    HubStatus,
+    OrderStatus,
+    RiderApprovalStatus,
+    RiderAvailability,
+    ShipmentStatus,
+    User,
+    UserRole,
+)
 from backend.app.repositories.admin_repository import AdminRepository
+from backend.app.services.order_lifecycle_service import (
+    LifecycleActor,
+    LifecycleConflict,
+    LifecycleNotFound,
+    LifecyclePermissionError,
+)
 from backend.app.schemas.admin import (
     AdminAnalyticsActivityResponse,
     AdminAnalyticsResponse,
@@ -12,11 +37,17 @@ from backend.app.schemas.admin import (
     AdminConsumerResponse,
     AdminDashboardSummaryResponse,
     AdminFarmerResponse,
+    AdminHubDeliveryResponse,
+    AdminHubResponse,
+    AdminHubStockResponse,
+    AdminHubStaffResponse,
     AdminListingResponse,
     AdminNotificationResponse,
     AdminOrderResponse,
     AdminPaymentResponse,
     AdminReviewResponse,
+    AdminRiderResponse,
+    AdminShipmentResponse,
     AdminUserStatusResponse,
 )
 
@@ -73,6 +104,7 @@ class AdminService:
             for day in sorted(revenue_by_day)
         ]
 
+        delivery_metrics = await self.repository.delivery_metrics(start, end)
         return AdminAnalyticsResponse(
             range=normalized_range,
             total_users=await self.repository.count_users_in_range(start, end),
@@ -85,6 +117,7 @@ class AdminService:
             cancelled_orders=status_counts.get(OrderStatus.CANCELLED.value, 0),
             recent_activity=recent_activity,
             revenue_by_day=trend_points,
+            **delivery_metrics,
         )
 
     async def dashboard_summary(self) -> AdminDashboardSummaryResponse:
@@ -105,6 +138,10 @@ class AdminService:
         total_reviews = await self.repository.count_reviews()
         total_notifications = await self.repository.count_notifications()
         unread_notifications = await self.repository.count_unread_notifications()
+        delivery_metrics = await self.repository.delivery_metrics(
+            datetime.min.replace(tzinfo=timezone.utc),
+            datetime.now(timezone.utc),
+        )
         return AdminDashboardSummaryResponse(
             total_users=total_users,
             active_users=active_users,
@@ -123,6 +160,7 @@ class AdminService:
             total_reviews=total_reviews,
             total_notifications=total_notifications,
             unread_notifications=unread_notifications,
+            **delivery_metrics,
         )
 
     async def list_farmers(self) -> list[AdminFarmerResponse]:
@@ -279,11 +317,30 @@ class AdminService:
             )
         return responses
 
-    async def update_user_status(self, user_id: UUID, is_active: bool) -> AdminUserStatusResponse:
-        user = await self.repository.get_user_by_id(user_id)
-        if user is None:
-            raise LookupError("User not found")
-        updated = await self.repository.set_user_active_state(user, is_active)
+    async def update_user_status(
+        self, user_id: UUID, is_active: bool, actor: LifecycleActor
+    ) -> AdminUserStatusResponse:
+        async with self.repository.session.begin_nested():
+            await self._require_admin(actor)
+            user = await self.repository.get_user_by_id_for_update(user_id)
+            if user is None:
+                raise LifecycleNotFound("User not found")
+            user_state_transitions = {True: {False}, False: {True}}
+            if is_active not in user_state_transitions[user.is_active]:
+                raise LifecycleConflict("User already has the requested active state")
+            from_value = "ACTIVE" if user.is_active else "INACTIVE"
+            user = await self.repository.set_user_active_state(user, is_active)
+            await self._audit(
+                actor,
+                "USER_ACTIVATED" if is_active else "USER_DEACTIVATED",
+                "user",
+                user.id,
+                from_value,
+                "ACTIVE" if is_active else "INACTIVE",
+                None,
+            )
+            await self.repository.session.refresh(user)
+            updated = user
         return AdminUserStatusResponse(
             id=updated.id,
             email=updated.email,
@@ -291,4 +348,372 @@ class AdminService:
             is_active=updated.is_active,
             created_at=updated.created_at,
             updated_at=updated.updated_at,
+        )
+
+    async def list_riders(self) -> list[AdminRiderResponse]:
+        rows = await self.repository.list_riders()
+        return [
+            AdminRiderResponse(
+                id=rider.id,
+                user_id=rider.user_id,
+                display_name=rider.display_name or rider.user.email,
+                email=rider.user.email,
+                approval_status=rider.approval_status,
+                availability=rider.availability.value,
+                active_shipment_count=active_count,
+                completed_delivery_count=completed_count,
+            )
+            for rider, active_count, completed_count in rows
+        ]
+
+    async def update_rider_approval(
+        self,
+        rider_id: UUID,
+        approval_status: RiderApprovalStatus,
+        reason: str | None,
+        actor: LifecycleActor,
+    ) -> AdminRiderResponse:
+        async with self.repository.session.begin_nested():
+            await self._require_admin(actor)
+            rider = await self.repository.get_rider_for_update(rider_id)
+            if rider is None:
+                raise LifecycleNotFound("Rider not found")
+            current = rider.approval_status
+            allowed = {
+                RiderApprovalStatus.PENDING_APPROVAL: {RiderApprovalStatus.APPROVED},
+                RiderApprovalStatus.APPROVED: {RiderApprovalStatus.SUSPENDED},
+                RiderApprovalStatus.SUSPENDED: {RiderApprovalStatus.APPROVED},
+            }
+            if approval_status not in allowed.get(current, set()):
+                raise LifecycleConflict(
+                    f"Rider cannot transition from {current.value} to {approval_status.value}"
+                )
+            active_count = await self.repository.count_active_shipments_for_rider(rider.id)
+            if approval_status is RiderApprovalStatus.SUSPENDED and active_count:
+                raise LifecycleConflict(
+                    "Rider with active shipments must be reassigned or completed before suspension"
+                )
+            rider.approval_status = approval_status
+            if approval_status is RiderApprovalStatus.SUSPENDED:
+                rider.availability = RiderAvailability.OFFLINE
+            await self.repository.session.flush()
+            await self._audit(
+                actor,
+                f"RIDER_{approval_status.value}",
+                "rider",
+                rider.id,
+                current.value,
+                approval_status.value,
+                reason,
+            )
+        active, completed = await self._rider_counts(rider.id)
+        return AdminRiderResponse(
+            id=rider.id,
+            user_id=rider.user_id,
+            display_name=rider.display_name or rider.user.email,
+            email=rider.user.email,
+            approval_status=rider.approval_status,
+            availability=rider.availability.value,
+            active_shipment_count=active,
+            completed_delivery_count=completed,
+        )
+
+    async def list_hubs(self) -> list[AdminHubResponse]:
+        hubs = await self.repository.list_hubs()
+        stocks = await self.repository.hub_stock_rows()
+        deliveries = await self.repository.hub_delivery_rows()
+        stock_by_hub: dict[UUID, list[AdminHubStockResponse]] = {}
+        for stock, crop_name, unit in stocks:
+            stock_by_hub.setdefault(stock.hub_id, []).append(
+                AdminHubStockResponse(
+                    listing_id=stock.listing_id,
+                    crop_name=crop_name,
+                    quantity=stock.available_quantity,
+                    unit=unit,
+                )
+            )
+        deliveries_by_hub: dict[UUID, list[AdminHubDeliveryResponse]] = {}
+        for delivery, crop_name, farmer_name in deliveries:
+            rows = deliveries_by_hub.setdefault(delivery.hub_id, [])
+            if len(rows) < 5:
+                rows.append(
+                    AdminHubDeliveryResponse(
+                        id=delivery.id,
+                        crop_name=crop_name,
+                        farmer_name=farmer_name,
+                        quantity=delivery.quantity,
+                        status=delivery.status,
+                        created_at=delivery.created_at,
+                    )
+                )
+        return [
+            AdminHubResponse(
+                id=hub.id,
+                name=hub.name,
+                address=hub.address,
+                pincode=hub.pincode,
+                service_radius_km=hub.service_radius_km,
+                status=hub.status,
+                latitude=latitude,
+                longitude=longitude,
+                stock=stock_by_hub.get(hub.id, []),
+                recent_deliveries=deliveries_by_hub.get(hub.id, []),
+            )
+            for hub, latitude, longitude in hubs
+        ]
+
+    async def create_hub(self, values: dict, actor: LifecycleActor) -> AdminHubResponse:
+        async with self.repository.session.begin_nested():
+            await self._require_admin(actor)
+            location = WKTElement(
+                f"POINT({values['longitude']} {values['latitude']})", srid=4326
+            )
+            hub = Hub(
+                name=values["name"],
+                address=values["address"],
+                pincode=values["pincode"],
+                service_radius_km=values["service_radius_km"],
+                status=values["status"],
+                location=location,
+            )
+            self.repository.session.add(hub)
+            await self.repository.session.flush()
+            await self._audit(
+                actor,
+                "HUB_CREATED",
+                "hub",
+                hub.id,
+                None,
+                self._json_value(values),
+                None,
+            )
+        return AdminHubResponse(
+            id=hub.id,
+            name=hub.name,
+            address=hub.address,
+            pincode=hub.pincode,
+            service_radius_km=hub.service_radius_km,
+            status=hub.status,
+            latitude=values["latitude"],
+            longitude=values["longitude"],
+        )
+
+    async def update_hub(
+        self, hub_id: UUID, values: dict, actor: LifecycleActor
+    ) -> AdminHubResponse:
+        async with self.repository.session.begin_nested():
+            await self._require_admin(actor)
+            hub = await self.repository.get_hub_for_update(hub_id)
+            if hub is None:
+                raise LifecycleNotFound("Hub not found")
+            latitude = values.pop("latitude", None)
+            longitude = values.pop("longitude", None)
+            values = {key: value for key, value in values.items() if value is not None}
+            if (latitude is None) != (longitude is None):
+                raise ValueError("Latitude and longitude must be provided together")
+            before_latitude, before_longitude = await self.repository.hub_coordinates(hub.id)
+            if latitude == before_latitude and longitude == before_longitude:
+                latitude = longitude = None
+            values = {
+                key: value for key, value in values.items() if getattr(hub, key) != value
+            }
+            if not values and latitude is None:
+                raise LifecycleConflict("No hub changes were provided")
+            if "status" in values:
+                permitted_statuses = {
+                    HubStatus.ACTIVE: {HubStatus.INACTIVE},
+                    HubStatus.INACTIVE: {HubStatus.ACTIVE},
+                }
+                if values["status"] not in permitted_statuses.get(hub.status, set()):
+                    raise LifecycleConflict("Hub is already in the requested status")
+            before = {
+                key: getattr(hub, key).value if key == "status" else str(getattr(hub, key))
+                for key in values
+            }
+            before["latitude"] = str(before_latitude)
+            before["longitude"] = str(before_longitude)
+            for key, value in values.items():
+                setattr(hub, key, value)
+            if latitude is not None and longitude is not None:
+                hub.location = WKTElement(f"POINT({longitude} {latitude})", srid=4326)
+            elif latitude is None:
+                latitude, longitude = before_latitude, before_longitude
+            await self.repository.session.flush()
+            after = {
+                key: value.value if key == "status" else str(value)
+                for key, value in values.items()
+            }
+            after["latitude"] = str(latitude)
+            after["longitude"] = str(longitude)
+            await self._audit(
+                actor,
+                "HUB_UPDATED",
+                "hub",
+                hub.id,
+                self._json_value(before),
+                self._json_value(after),
+                None,
+            )
+        return await self._get_hub_response(hub.id)
+
+    async def list_hub_staff(self) -> list[AdminHubStaffResponse]:
+        return [
+            AdminHubStaffResponse(
+                user_id=user.id,
+                email=user.email,
+                display_name=user.email,
+                hub_id=hub_id,
+                hub_name=hub_name,
+            )
+            for user, hub_id, hub_name in await self.repository.list_hub_staff()
+        ]
+
+    async def create_hub_staff(
+        self, email: str, initial_password: str, hub_id: UUID, actor: LifecycleActor
+    ) -> AdminHubStaffResponse:
+        normalized_email = email.strip().lower()
+        async with self.repository.session.begin_nested():
+            await self._require_admin(actor)
+            if await self.repository.get_user_by_email(normalized_email) is not None:
+                raise LifecycleConflict("An account with this email already exists")
+            hub = await self.repository.get_hub_for_update(hub_id)
+            if hub is None:
+                raise LifecycleNotFound("Hub not found")
+            user = User(
+                email=normalized_email,
+                hashed_password=hash_password(initial_password),
+                role=UserRole.HUB_STAFF,
+                is_active=True,
+            )
+            self.repository.session.add(user)
+            await self.repository.session.flush()
+            self.repository.session.add(HubStaff(user_id=user.id, hub_id=hub.id))
+            await self.repository.session.flush()
+            await self._audit(
+                actor, "HUB_STAFF_CREATED_AND_ASSIGNED", "hub_staff", user.id, None, str(hub.id), None
+            )
+        return AdminHubStaffResponse(
+            user_id=user.id,
+            email=user.email,
+            display_name=user.email,
+            hub_id=hub.id,
+            hub_name=hub.name,
+        )
+
+    async def assign_hub_staff(
+        self, user_id: UUID, hub_id: UUID, actor: LifecycleActor
+    ) -> None:
+        async with self.repository.session.begin_nested():
+            await self._require_admin(actor)
+            user = await self.repository.get_hub_staff_user(user_id)
+            if user is None or not user.is_active:
+                raise LifecycleNotFound("Active hub staff user not found")
+            hub = await self.repository.get_hub_for_update(hub_id)
+            if hub is None:
+                raise LifecycleNotFound("Hub not found")
+            existing = await self.repository.get_hub_staff_assignment(user_id, hub_id)
+            if existing is not None:
+                raise LifecycleConflict("Hub staff user is already assigned to this hub")
+            self.repository.session.add(HubStaff(user_id=user_id, hub_id=hub_id))
+            await self.repository.session.flush()
+            await self._audit(
+                actor, "HUB_STAFF_ASSIGNED", "hub_staff", user_id, None, str(hub_id), None
+            )
+
+    async def unassign_hub_staff(
+        self, user_id: UUID, hub_id: UUID, actor: LifecycleActor
+    ) -> None:
+        async with self.repository.session.begin_nested():
+            await self._require_admin(actor)
+            assignment = await self.repository.get_hub_staff_assignment(user_id, hub_id)
+            if assignment is None:
+                raise LifecycleNotFound("Hub staff assignment not found")
+            await self.repository.session.delete(assignment)
+            await self.repository.session.flush()
+            await self._audit(
+                actor, "HUB_STAFF_UNASSIGNED", "hub_staff", user_id, str(hub_id), None, None
+            )
+
+    async def list_shipments(self) -> list[AdminShipmentResponse]:
+        return [
+            AdminShipmentResponse(
+                id=shipment.id,
+                order_id=shipment.order_id,
+                status=shipment.status.value,
+                rider_id=shipment.rider_id,
+                rider_name=(
+                    shipment.rider.display_name or shipment.rider.user.email
+                    if shipment.rider is not None
+                    else None
+                ),
+                hub_id=shipment.hub_id,
+                hub_name=shipment.hub.name,
+                pickup_address=shipment.pickup_address_snapshot,
+                delivery_address=shipment.dropoff_address_snapshot,
+                eta_start=shipment.promised_window_start,
+                eta_end=shipment.promised_window_end,
+                can_cancel=shipment.status
+                in {
+                    ShipmentStatus.PACKING,
+                    ShipmentStatus.READY_FOR_PICKUP,
+                    ShipmentStatus.RIDER_ASSIGNED,
+                },
+                otp_locked=shipment.otp_attempts >= get_settings().otp_max_attempts,
+                created_at=shipment.created_at,
+            )
+            for shipment in await self.repository.list_shipments()
+        ]
+
+    async def _get_hub_response(self, hub_id: UUID) -> AdminHubResponse:
+        return next(hub for hub in await self.list_hubs() if hub.id == hub_id)
+
+    async def _rider_counts(self, rider_id: UUID) -> tuple[int, int]:
+        return next(
+            (active, completed)
+            for rider, active, completed in await self.repository.list_riders()
+            if rider.id == rider_id
+        )
+
+    async def _require_admin(self, actor: LifecycleActor) -> None:
+        if actor.user_id is None or actor.role is not UserRole.ADMIN:
+            raise LifecyclePermissionError("Admin role required")
+        active_admin = await self.repository.session.scalar(
+            select(User.id).where(
+                User.id == actor.user_id,
+                User.role == UserRole.ADMIN,
+                User.is_active.is_(True),
+            )
+        )
+        if active_admin is None:
+            raise LifecyclePermissionError("Active admin actor required")
+
+    async def _audit(
+        self,
+        actor: LifecycleActor,
+        action: str,
+        entity_type: str,
+        entity_id: UUID,
+        from_value: str | None,
+        to_value: str | None,
+        reason: str | None,
+    ) -> None:
+        self.repository.session.add(
+            AdminAuditEvent(
+                actor_user_id=actor.user_id,
+                action=action,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                from_value=from_value,
+                to_value=to_value,
+                reason=reason.strip() if reason and reason.strip() else None,
+            )
+        )
+        await self.repository.session.flush()
+
+    @staticmethod
+    def _json_value(value: dict) -> str:
+        return json.dumps(
+            value,
+            sort_keys=True,
+            default=lambda item: item.value if isinstance(item, Enum) else str(item),
         )

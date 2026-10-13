@@ -2,7 +2,8 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import case, func, select
+from geoalchemy2 import Geometry
+from sqlalchemy import case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -12,12 +13,20 @@ from backend.app.models import (
     Crop,
     CropListing,
     Farmer,
+    Hub,
+    HubStaff,
+    HubStock,
+    HubStockDelivery,
     Notification,
     Order,
+    OrderEvent,
     OrderItem,
     OrderStatus,
     Payment,
     Review,
+    Rider,
+    Shipment,
+    ShipmentStatus,
     User,
     UserRole,
 )
@@ -240,6 +249,214 @@ class AdminRepository:
 
     async def set_user_active_state(self, user: User, is_active: bool) -> User:
         user.is_active = is_active
-        await self.session.commit()
-        await self.session.refresh(user)
+        await self.session.flush()
         return user
+
+    async def delivery_metrics(self, start: datetime, end: datetime) -> dict[str, int | float | None]:
+        active_statuses = (
+            ShipmentStatus.PACKING,
+            ShipmentStatus.READY_FOR_PICKUP,
+            ShipmentStatus.RIDER_ASSIGNED,
+            ShipmentStatus.PICKED_UP,
+            ShipmentStatus.OUT_FOR_DELIVERY,
+            ShipmentStatus.ARRIVED,
+        )
+        active = await self.session.scalar(
+            select(func.count(Shipment.id)).where(
+                Shipment.status.in_(active_statuses),
+                Shipment.created_at >= start,
+                Shipment.created_at < end,
+            )
+        )
+
+        placed = (
+            select(
+                OrderEvent.order_id.label("order_id"),
+                func.min(OrderEvent.created_at).label("placed_at"),
+            )
+            .where(OrderEvent.to_status == OrderStatus.PENDING.value)
+            .group_by(OrderEvent.order_id)
+            .subquery()
+        )
+        delivered = (
+            select(
+                OrderEvent.order_id.label("order_id"),
+                func.min(OrderEvent.created_at).label("delivered_at"),
+            )
+            .where(OrderEvent.to_status == ShipmentStatus.DELIVERED.value)
+            .group_by(OrderEvent.order_id)
+            .subquery()
+        )
+        average_minutes = await self.session.scalar(
+            select(
+                func.avg(
+                    func.extract("epoch", delivered.c.delivered_at - placed.c.placed_at)
+                    / 60.0
+                )
+            )
+            .join(placed, placed.c.order_id == delivered.c.order_id)
+            .where(delivered.c.delivered_at >= start, delivered.c.delivered_at < end)
+        )
+        failed = await self.session.scalar(
+            select(func.count(OrderEvent.id)).where(
+                OrderEvent.to_status == "FAILED_DELIVERY",
+                OrderEvent.created_at >= start,
+                OrderEvent.created_at < end,
+            )
+        )
+        return {
+            "active_shipments": int(active or 0),
+            "average_placed_to_delivered_minutes": (
+                float(average_minutes) if average_minutes is not None else None
+            ),
+            "failed_deliveries": int(failed or 0),
+        }
+
+    async def list_riders(self) -> list[tuple[Rider, int, int]]:
+        active = (
+            select(func.count(Shipment.id))
+            .where(
+                Shipment.rider_id == Rider.id,
+                Shipment.status.not_in(
+                    (ShipmentStatus.DELIVERED, ShipmentStatus.CANCELLED, ShipmentStatus.RETURNED)
+                ),
+            )
+            .correlate(Rider)
+            .scalar_subquery()
+        )
+        completed = (
+            select(func.count(Shipment.id))
+            .where(
+                Shipment.rider_id == Rider.id,
+                Shipment.status == ShipmentStatus.DELIVERED,
+            )
+            .correlate(Rider)
+            .scalar_subquery()
+        )
+        result = await self.session.execute(
+            select(Rider, active, completed)
+            .options(selectinload(Rider.user))
+            .order_by(Rider.created_at.desc(), Rider.id)
+        )
+        return [(rider, int(active_count or 0), int(done_count or 0)) for rider, active_count, done_count in result.all()]
+
+    async def get_rider_for_update(self, rider_id: UUID) -> Rider | None:
+        result = await self.session.execute(
+            select(Rider)
+            .options(selectinload(Rider.user))
+            .where(Rider.id == rider_id)
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
+
+    async def count_active_shipments_for_rider(self, rider_id: UUID) -> int:
+        return int(
+            await self.session.scalar(
+                select(func.count(Shipment.id)).where(
+                    Shipment.rider_id == rider_id,
+                    Shipment.status.not_in(
+                        (
+                            ShipmentStatus.DELIVERED,
+                            ShipmentStatus.CANCELLED,
+                            ShipmentStatus.RETURNED,
+                        )
+                    ),
+                )
+            )
+            or 0
+        )
+
+    async def list_hubs(self) -> list[tuple[Hub, float, float]]:
+        result = await self.session.execute(
+            select(
+                Hub,
+                func.ST_Y(cast(Hub.location, Geometry)).label("latitude"),
+                func.ST_X(cast(Hub.location, Geometry)).label("longitude"),
+            ).order_by(Hub.name, Hub.id)
+        )
+        return [
+            (hub, float(latitude), float(longitude))
+            for hub, latitude, longitude in result.all()
+        ]
+
+    async def get_hub_for_update(self, hub_id: UUID) -> Hub | None:
+        result = await self.session.execute(
+            select(Hub).where(Hub.id == hub_id).with_for_update()
+        )
+        return result.scalar_one_or_none()
+
+    async def hub_coordinates(self, hub_id: UUID) -> tuple[float, float]:
+        result = await self.session.execute(
+            select(
+                func.ST_Y(cast(Hub.location, Geometry)),
+                func.ST_X(cast(Hub.location, Geometry)),
+            ).where(Hub.id == hub_id)
+        )
+        latitude, longitude = result.one()
+        return float(latitude), float(longitude)
+
+    async def hub_stock_rows(self) -> list[tuple[HubStock, str, str]]:
+        result = await self.session.execute(
+            select(HubStock, Crop.name, CropListing.unit)
+            .join(CropListing, CropListing.id == HubStock.listing_id)
+            .join(Crop, Crop.id == CropListing.crop_id)
+            .order_by(HubStock.hub_id, Crop.name)
+        )
+        return list(result.all())
+
+    async def hub_delivery_rows(self) -> list[tuple[HubStockDelivery, str, str]]:
+        result = await self.session.execute(
+            select(HubStockDelivery, Crop.name, func.coalesce(Farmer.name, User.email))
+            .join(CropListing, CropListing.id == HubStockDelivery.listing_id)
+            .join(Crop, Crop.id == CropListing.crop_id)
+            .outerjoin(Farmer, Farmer.user_id == HubStockDelivery.farmer_user_id)
+            .join(User, User.id == HubStockDelivery.farmer_user_id)
+            .order_by(HubStockDelivery.created_at.desc())
+        )
+        return list(result.all())
+
+    async def list_hub_staff(self) -> list[tuple[User, UUID | None, str | None]]:
+        result = await self.session.execute(
+            select(User, HubStaff.hub_id, Hub.name)
+            .outerjoin(HubStaff, HubStaff.user_id == User.id)
+            .outerjoin(Hub, Hub.id == HubStaff.hub_id)
+            .where(User.role == UserRole.HUB_STAFF)
+            .order_by(User.email, Hub.name)
+        )
+        return list(result.all())
+
+    async def get_hub_staff_user(self, user_id: UUID) -> User | None:
+        result = await self.session.execute(
+            select(User).where(User.id == user_id, User.role == UserRole.HUB_STAFF).with_for_update()
+        )
+        return result.scalar_one_or_none()
+
+    async def get_user_by_email(self, email: str) -> User | None:
+        result = await self.session.execute(select(User).where(User.email == email))
+        return result.scalar_one_or_none()
+
+    async def get_hub_staff_assignment(self, user_id: UUID, hub_id: UUID) -> HubStaff | None:
+        result = await self.session.execute(
+            select(HubStaff)
+            .where(HubStaff.user_id == user_id, HubStaff.hub_id == hub_id)
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
+
+    async def list_shipments(self) -> list[Shipment]:
+        result = await self.session.execute(
+            select(Shipment)
+            .options(
+                selectinload(Shipment.hub),
+                selectinload(Shipment.rider).selectinload(Rider.user),
+                selectinload(Shipment.order).selectinload(Order.consumer).selectinload(Consumer.user),
+            )
+            .order_by(Shipment.created_at.desc(), Shipment.id)
+        )
+        return list(result.scalars().unique().all())
+
+    async def get_user_by_id_for_update(self, user_id: UUID) -> User | None:
+        result = await self.session.execute(
+            select(User).where(User.id == user_id).with_for_update()
+        )
+        return result.scalar_one_or_none()

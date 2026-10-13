@@ -731,3 +731,25 @@ class OrderEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class AdminAuditEvent(Base):
+    __tablename__ = "admin_audit_events"
+    __table_args__ = (
+        Index("ix_admin_audit_entity_created", "entity_type", "entity_id", "created_at"),
+        Index("ix_admin_audit_actor_created", "actor_user_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    actor_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    action: Mapped[str] = mapped_column(String(80), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    entity_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    from_value: Mapped[str | None] = mapped_column(Text)
+    to_value: Mapped[str | None] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

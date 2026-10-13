@@ -14,6 +14,7 @@ from backend.app.database.session import build_engine
 from backend.app.main import create_app
 from backend.app.models import (
     Admin,
+    AdminAuditEvent,
     AvailabilityStatus,
     Consumer,
     Crop,
@@ -185,6 +186,13 @@ def cleanup_admin_data(data):
             await session.execute(delete(Consumer).where(Consumer.id == consumer_profile.id))
             await session.execute(delete(Farmer).where(Farmer.id == farmer_profile.id))
             await session.execute(delete(Admin).where(Admin.user_id == admin_user.id))
+            await session.execute(
+                delete(AdminAuditEvent).where(
+                    AdminAuditEvent.actor_user_id.in_(
+                        [admin_user.id, farmer_user.id, consumer_user.id]
+                    )
+                )
+            )
             await session.execute(delete(User).where(User.id.in_([admin_user.id, farmer_user.id, consumer_user.id])))
             await session.commit()
         await engine.dispose()

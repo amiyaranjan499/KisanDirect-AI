@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database.session import get_db_session
 from backend.app.dependencies import get_current_user
-from backend.app.models import User, UserRole
+from backend.app.models import ShipmentStatus, User, UserRole
 from backend.app.repositories.admin_repository import AdminRepository
 from backend.app.schemas.admin import (
     AdminAnalyticsResponse,
@@ -14,11 +14,22 @@ from backend.app.schemas.admin import (
     AdminConsumerResponse,
     AdminDashboardSummaryResponse,
     AdminFarmerResponse,
+    AdminHubCreate,
+    AdminHubResponse,
+    AdminHubStaffAssignment,
+    AdminHubStaffCreate,
+    AdminHubStaffResponse,
+    AdminHubUpdate,
     AdminListingResponse,
     AdminNotificationResponse,
     AdminOrderResponse,
     AdminPaymentResponse,
     AdminReviewResponse,
+    AdminRiderResponse,
+    AdminRiderStatusUpdate,
+    AdminShipmentCancel,
+    AdminShipmentReassign,
+    AdminShipmentResponse,
     AdminUserStatusResponse,
     AdminUserStatusUpdate,
     OtpResetRequest,
@@ -147,9 +158,212 @@ async def update_user_status(
     service: Annotated[AdminService, Depends(get_admin_service)],
 ) -> AdminUserStatusResponse:
     try:
-        return await service.update_user_status(user_id, payload.is_active)
-    except LookupError as exc:
+        return await service.update_user_status(
+            user_id, payload.is_active, LifecycleActor(current_user.id, current_user.role)
+        )
+    except LifecycleNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LifecyclePermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.get("/riders", response_model=list[AdminRiderResponse])
+async def list_admin_riders(
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> list[AdminRiderResponse]:
+    return await service.list_riders()
+
+
+@router.patch("/riders/{rider_id}/approval", response_model=AdminRiderResponse)
+async def update_rider_approval(
+    rider_id: UUID,
+    payload: AdminRiderStatusUpdate,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> AdminRiderResponse:
+    try:
+        return await service.update_rider_approval(
+            rider_id,
+            payload.approval_status,
+            payload.reason,
+            LifecycleActor(current_user.id, current_user.role),
+        )
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LifecyclePermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.get("/hubs", response_model=list[AdminHubResponse])
+async def list_admin_hubs(
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> list[AdminHubResponse]:
+    return await service.list_hubs()
+
+
+@router.post("/hubs", response_model=AdminHubResponse, status_code=201)
+async def create_admin_hub(
+    payload: AdminHubCreate,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> AdminHubResponse:
+    try:
+        return await service.create_hub(
+            payload.model_dump(), LifecycleActor(current_user.id, current_user.role)
+        )
+    except LifecyclePermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.patch("/hubs/{hub_id}", response_model=AdminHubResponse)
+async def update_admin_hub(
+    hub_id: UUID,
+    payload: AdminHubUpdate,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> AdminHubResponse:
+    try:
+        return await service.update_hub(
+            hub_id,
+            payload.model_dump(exclude_unset=True),
+            LifecycleActor(current_user.id, current_user.role),
+        )
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LifecyclePermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/hub-staff", response_model=list[AdminHubStaffResponse])
+async def list_admin_hub_staff(
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> list[AdminHubStaffResponse]:
+    return await service.list_hub_staff()
+
+
+@router.post("/hub-staff", response_model=AdminHubStaffResponse, status_code=201)
+async def create_admin_hub_staff(
+    payload: AdminHubStaffCreate,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> AdminHubStaffResponse:
+    try:
+        return await service.create_hub_staff(
+            payload.email,
+            payload.initial_password,
+            payload.hub_id,
+            LifecycleActor(current_user.id, current_user.role),
+        )
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LifecyclePermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/hub-staff/assignments", status_code=204)
+async def assign_admin_hub_staff(
+    payload: AdminHubStaffAssignment,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> None:
+    try:
+        await service.assign_hub_staff(
+            payload.user_id, payload.hub_id, LifecycleActor(current_user.id, current_user.role)
+        )
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LifecyclePermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.delete("/hub-staff/{user_id}/assignments/{hub_id}", status_code=204)
+async def unassign_admin_hub_staff(
+    user_id: UUID,
+    hub_id: UUID,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> None:
+    try:
+        await service.unassign_hub_staff(
+            user_id, hub_id, LifecycleActor(current_user.id, current_user.role)
+        )
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecyclePermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.get("/shipments", response_model=list[AdminShipmentResponse])
+async def list_admin_shipments(
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> list[AdminShipmentResponse]:
+    return await service.list_shipments()
+
+
+@router.post("/shipments/{shipment_id}/reassign", response_model=AdminShipmentResponse)
+async def reassign_admin_shipment(
+    shipment_id: UUID,
+    payload: AdminShipmentReassign,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    lifecycle: Annotated[OrderLifecycleService, Depends(get_order_lifecycle_service)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> AdminShipmentResponse:
+    try:
+        await lifecycle.reassign_shipment(
+            shipment_id,
+            payload.rider_user_id,
+            LifecycleActor(current_user.id, current_user.role),
+            reason=payload.reason,
+        )
+        return next(row for row in await service.list_shipments() if row.id == shipment_id)
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LifecyclePermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/shipments/{shipment_id}/cancel", response_model=AdminShipmentResponse)
+async def cancel_admin_shipment(
+    shipment_id: UUID,
+    payload: AdminShipmentCancel,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    lifecycle: Annotated[OrderLifecycleService, Depends(get_order_lifecycle_service)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> AdminShipmentResponse:
+    try:
+        await lifecycle.transition_shipment(
+            shipment_id,
+            LifecycleActor(current_user.id, current_user.role),
+            ShipmentStatus.CANCELLED,
+            reason=payload.reason,
+        )
+        return next(row for row in await service.list_shipments() if row.id == shipment_id)
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LifecyclePermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/shipments/{shipment_id}/otp-reset", status_code=204)

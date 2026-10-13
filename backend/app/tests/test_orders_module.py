@@ -629,3 +629,256 @@ def test_payment_outcomes_commit_or_release_hub_reservations():
         assert available_quantity == Decimal("18.000")
     finally:
         cleanup(data)
+
+
+def test_delivery_slots_promised_windows_and_slot_capacity_lifecycle():
+    data = seed()
+    consumer, _, other_consumer, consumer_profile, _, listing, _, hub = data
+    other_hub_id = uuid4()
+
+    async def exercise_phase4():
+        custom_settings = Settings(
+            hub_service_radius_km=Decimal("8"),
+            packing_minutes=20,
+            rider_speed_kmph=Decimal("15"),
+            delivery_buffer_minutes=12,
+            reservation_ttl_minutes=10,
+        )
+        engine = build_engine(custom_settings)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        now = datetime.now(timezone.utc)
+
+        async with factory() as session:
+            other_hub = Hub(
+                id=other_hub_id,
+                name=f"Other Hub {uuid4()}",
+                address="Other Road",
+                location=WKTElement("POINT(85.8 20.3)", srid=4326),
+                pincode="751002",
+                service_radius_km=Decimal("8"),
+            )
+            session.add(other_hub)
+            await session.flush()
+
+            future_slot = DeliverySlot(
+                hub_id=hub.id,
+                starts_at=now + timedelta(hours=2),
+                ends_at=now + timedelta(hours=3),
+                capacity=2,
+                booked_count=1,
+            )
+            full_slot = DeliverySlot(
+                hub_id=hub.id,
+                starts_at=now + timedelta(hours=3),
+                ends_at=now + timedelta(hours=4),
+                capacity=2,
+                booked_count=2,
+            )
+            past_slot = DeliverySlot(
+                hub_id=hub.id,
+                starts_at=now - timedelta(hours=2),
+                ends_at=now - timedelta(hours=1),
+                capacity=3,
+                booked_count=0,
+            )
+            other_hub_slot = DeliverySlot(
+                hub_id=other_hub.id,
+                starts_at=now + timedelta(hours=2),
+                ends_at=now + timedelta(hours=3),
+                capacity=3,
+                booked_count=0,
+            )
+            session.add_all([future_slot, full_slot, past_slot, other_hub_slot])
+            cart = Cart(consumer_id=consumer_profile.id)
+            session.add(cart)
+            await session.flush()
+            session.add(
+                CartItem(
+                    cart_id=cart.id,
+                    listing_id=listing.id,
+                    quantity=Decimal("2"),
+                )
+            )
+            await session.commit()
+            for s in (future_slot, full_slot, past_slot, other_hub_slot):
+                await session.refresh(s)
+
+        from backend.app.repositories.consumer_repository import ConsumerRepository
+        from backend.app.repositories.orders_repository import OrdersRepository
+        from backend.app.services.orders_service import OrdersService
+        from backend.app.models import OrderStatus
+        import pytest
+
+        async with factory() as session:
+            svc = OrdersService(
+                OrdersRepository(session),
+                ConsumerRepository(session),
+                settings=custom_settings,
+            )
+            # ~2.22 km north of hub (20.3 -> 20.32 at lon 85.8)
+            opts = await svc.checkout_options(consumer.id, 20.32, 85.8)
+            hub_opt = next(h for h in opts.hubs if h.id == hub.id)
+            expected_travel = int(
+                (Decimal(str(hub_opt.distance_km)) / Decimal("15") * Decimal("60")).to_integral_value(
+                    rounding="ROUND_CEILING"
+                )
+            )
+            assert hub_opt.eta_min_minutes == 20 + expected_travel
+            assert hub_opt.eta_max_minutes == 20 + expected_travel + 12
+            # Only future_slot has starts_at > now and booked_count < capacity for this hub
+            assert [s.id for s in hub_opt.slots] == [future_slot.id]
+            assert hub_opt.slots[0].remaining_capacity == 1
+
+        # Reject past slot, full slot, other hub's slot, and missing slot without changing booked_count
+        for invalid_slot_id in (past_slot.id, full_slot.id, other_hub_slot.id, uuid4()):
+            async with factory() as session:
+                with pytest.raises(LifecycleConflict, match="delivery slot is no longer available"):
+                    await OrderLifecycleService(session, settings=custom_settings).create_checkout_order(
+                        LifecycleActor(consumer.id, UserRole.CONSUMER),
+                        hub_id=hub.id,
+                        delivery_slot_id=invalid_slot_id,
+                        latitude=20.32,
+                        longitude=85.8,
+                        address="12 Market Road, Bhubaneswar",
+                        settings=custom_settings,
+                    )
+
+        # ASAP checkout snapshots calculated promised window from settings
+        async with factory() as session:
+            before_order = datetime.now(timezone.utc)
+            asap_order_id = await OrderLifecycleService(session, settings=custom_settings).create_checkout_order(
+                LifecycleActor(consumer.id, UserRole.CONSUMER),
+                hub_id=hub.id,
+                delivery_slot_id=None,
+                latitude=20.32,
+                longitude=85.8,
+                address="12 Market Road, Bhubaneswar",
+                settings=custom_settings,
+            )
+            after_order = datetime.now(timezone.utc)
+            asap_order = await session.get(Order, asap_order_id)
+            window_minutes = round(
+                (asap_order.promised_window_end - asap_order.promised_window_start).total_seconds() / 60
+            )
+            assert window_minutes == 12
+            assert before_order + timedelta(minutes=20) <= asap_order.promised_window_start <= after_order + timedelta(minutes=35)
+            await OrderLifecycleService(session, settings=custom_settings).transition_order(
+                asap_order_id,
+                LifecycleActor(consumer.id, UserRole.CONSUMER),
+                OrderStatus.CANCELLED,
+            )
+            await session.commit()
+
+        # Slot-backed checkout increments booked_count and snapshots slot starts_at / ends_at
+        async with factory() as session:
+            cart = await session.scalar(select(Cart).where(Cart.consumer_id == consumer_profile.id))
+            session.add(CartItem(cart_id=cart.id, listing_id=listing.id, quantity=Decimal("2")))
+            await session.commit()
+
+        async with factory() as session:
+            slot_order_id = await OrderLifecycleService(session, settings=custom_settings).create_checkout_order(
+                LifecycleActor(consumer.id, UserRole.CONSUMER),
+                hub_id=hub.id,
+                delivery_slot_id=future_slot.id,
+                latitude=20.3,
+                longitude=85.8,
+                address="12 Market Road, Bhubaneswar",
+                settings=custom_settings,
+            )
+            slot_order = await session.get(Order, slot_order_id)
+            slot_row = await session.get(DeliverySlot, future_slot.id)
+            assert slot_order.delivery_slot_id == future_slot.id
+            assert slot_order.promised_window_start == future_slot.starts_at
+            assert slot_order.promised_window_end == future_slot.ends_at
+            assert slot_row.booked_count == 2
+
+            # Now slot is full (2/2), so checkout_options omits it
+            svc = OrdersService(
+                OrdersRepository(session),
+                ConsumerRepository(session),
+                settings=custom_settings,
+            )
+            opts_when_full = await svc.checkout_options(consumer.id, 20.3, 85.8)
+            hub_opt_full = next(h for h in opts_when_full.hubs if h.id == hub.id)
+            assert hub_opt_full.slots == []
+
+            # Cancelling order releases slot capacity back to 1
+            await OrderLifecycleService(session, settings=custom_settings).transition_order(
+                slot_order_id,
+                LifecycleActor(consumer.id, UserRole.CONSUMER),
+                OrderStatus.CANCELLED,
+            )
+            await session.commit()
+
+        async with factory() as verify_session:
+            slot_after_cancel = await verify_session.get(DeliverySlot, future_slot.id)
+            assert slot_after_cancel.booked_count == 1
+
+        # Failed payment and hold expiry also release slot capacity
+        for release_mode in ("failed_payment", "expired_hold"):
+            async with factory() as verify_session:
+                slot_before_iter = await verify_session.get(DeliverySlot, future_slot.id)
+                assert slot_before_iter.booked_count == 1
+                assert slot_before_iter.starts_at > datetime.now(timezone.utc)
+
+            async with factory() as session:
+                cart = await session.scalar(select(Cart).where(Cart.consumer_id == consumer_profile.id))
+                session.add(CartItem(cart_id=cart.id, listing_id=listing.id, quantity=Decimal("2")))
+                await session.commit()
+
+            async with factory() as session:
+                oid = await OrderLifecycleService(session, settings=custom_settings).create_checkout_order(
+                    LifecycleActor(consumer.id, UserRole.CONSUMER),
+                    hub_id=hub.id,
+                    delivery_slot_id=future_slot.id,
+                    latitude=20.3,
+                    longitude=85.8,
+                    address="12 Market Road, Bhubaneswar",
+                    settings=custom_settings,
+                )
+                assert (await session.get(DeliverySlot, future_slot.id)).booked_count == 2
+                if release_mode == "failed_payment":
+                    await OrderLifecycleService(session, settings=custom_settings).initiate_sandbox_payment(
+                        consumer.id, oid, "failed"
+                    )
+                else:
+                    res = await session.scalar(
+                        select(StockReservation).where(StockReservation.order_id == oid)
+                    )
+                    res.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+                    await session.flush()
+                    await OrderLifecycleService(session, settings=custom_settings).expire_holds()
+                await session.commit()
+
+            async with factory() as verify_session:
+                persisted_slot = await verify_session.get(DeliverySlot, future_slot.id)
+                assert persisted_slot.booked_count == 1
+
+        await engine.dispose()
+
+    async def cleanup_extra_slots_and_hubs():
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            orphan_hub_ids = list(
+                (
+                    await session.scalars(
+                        select(Hub.id).where(Hub.name.like("Other Hub %"))
+                    )
+                ).all()
+            )
+            target_hub_ids = list({hub.id, other_hub_id, *orphan_hub_ids})
+            await session.execute(
+                delete(DeliverySlot).where(DeliverySlot.hub_id.in_(target_hub_ids))
+            )
+            await session.execute(
+                delete(Hub).where(Hub.id.in_([other_hub_id, *orphan_hub_ids]))
+            )
+            await session.commit()
+        await engine.dispose()
+
+    try:
+        asyncio.run(exercise_phase4())
+    finally:
+        asyncio.run(cleanup_extra_slots_and_hubs())
+        cleanup(data)

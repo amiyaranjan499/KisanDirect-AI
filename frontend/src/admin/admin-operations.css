@@ -1,0 +1,76 @@
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 1rem;
+  align-items: end;
+}
+
+.admin-form-grid > label,
+.admin-action-reason {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.admin-location-tools,
+.admin-inline-action {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.admin-hub-map {
+  grid-column: 1 / -1;
+  height: 320px;
+  width: 100%;
+}
+
+.admin-hub-map .leaflet-container {
+  height: calc(100% - 1.5rem);
+  width: 100%;
+  border-radius: 0.5rem;
+}
+
+.admin-shipment-details {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.35fr) minmax(0, 1fr);
+  gap: 0.35rem 0.75rem;
+}
+
+.admin-shipment-details dt {
+  font-weight: 600;
+}
+
+.admin-shipment-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-table-subtext {
+  display: block;
+  opacity: 0.75;
+}
+
+.admin-shipment-card,
+.admin-hub-editor {
+  min-width: 0;
+}
+
+.admin-mobile-nav {
+  overflow-x: auto;
+}
+
+.admin-mobile-item {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 600px) {
+  .admin-shipment-details {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+
+  .admin-shipment-details dd {
+    margin-bottom: 0.4rem;
+  }
+}

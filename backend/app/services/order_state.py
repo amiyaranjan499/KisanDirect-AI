@@ -48,7 +48,11 @@ SHIPMENT_TRANSITIONS: Mapping[ShipmentStatus, frozenset[ShipmentStatus]] = {
     ),
     ShipmentStatus.PICKED_UP: frozenset({ShipmentStatus.OUT_FOR_DELIVERY}),
     ShipmentStatus.OUT_FOR_DELIVERY: frozenset(
-        {ShipmentStatus.ARRIVED, ShipmentStatus.FAILED_DELIVERY}
+        {
+            ShipmentStatus.ARRIVED,
+            ShipmentStatus.DELIVERED,
+            ShipmentStatus.FAILED_DELIVERY,
+        }
     ),
     ShipmentStatus.ARRIVED: frozenset(
         {ShipmentStatus.DELIVERED, ShipmentStatus.FAILED_DELIVERY}

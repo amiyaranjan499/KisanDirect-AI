@@ -39,6 +39,7 @@ from backend.app.models import (
     Rider,
     RiderApprovalStatus,
     RiderAvailability,
+    RiderOffer,
     Shipment,
     ShipmentStatus,
     StockReservation,
@@ -585,6 +586,112 @@ class OrderLifecycleService:
         assert shipment is not None
         return shipment
 
+    async def reassign_shipment(
+        self,
+        shipment_id: UUID,
+        rider_user_id: UUID,
+        actor: LifecycleActor,
+        *,
+        reason: str,
+    ) -> Shipment:
+        async with self.session.begin_nested():
+            self._require_reason(reason, required=True)
+            if actor.role is not UserRole.ADMIN:
+                raise LifecyclePermissionError("Only an admin may reassign a shipment")
+            await self._validate_actor(actor)
+            order_id = await self.session.scalar(
+                select(Shipment.order_id).where(Shipment.id == shipment_id)
+            )
+            if order_id is None:
+                raise LifecycleNotFound("Shipment not found")
+            await self._lock_order(order_id)
+            result = await self.session.execute(
+                select(Shipment).where(Shipment.id == shipment_id).with_for_update()
+            )
+            shipment = result.scalar_one_or_none()
+            if shipment is None:
+                raise LifecycleNotFound("Shipment not found")
+            if shipment.status in {ShipmentStatus.DELIVERED, ShipmentStatus.CANCELLED}:
+                raise LifecycleConflict("A delivered or cancelled shipment cannot be reassigned")
+            if shipment.status not in {
+                ShipmentStatus.READY_FOR_PICKUP,
+                ShipmentStatus.RIDER_ASSIGNED,
+            }:
+                raise LifecycleConflict("Shipment can only be reassigned before pickup")
+
+            target_result = await self.session.execute(
+                select(Rider)
+                .join(User, User.id == Rider.user_id)
+                .where(
+                    Rider.user_id == rider_user_id,
+                    Rider.approval_status == RiderApprovalStatus.APPROVED,
+                    Rider.availability == RiderAvailability.AVAILABLE,
+                    User.is_active.is_(True),
+                )
+                .with_for_update(of=Rider)
+            )
+            target_rider = target_result.scalar_one_or_none()
+            if target_rider is None:
+                raise LifecycleConflict("Target rider must be active, approved, and available")
+            if shipment.rider_id == target_rider.id:
+                raise LifecycleConflict("Shipment is already assigned to this rider")
+
+            current_status = shipment.status
+            current_rider_id = shipment.rider_id
+            active_offers = await self.session.execute(
+                select(RiderOffer)
+                .where(
+                    RiderOffer.shipment_id == shipment.id,
+                    RiderOffer.status.in_(("OFFERED", "ACCEPTED")),
+                )
+                .with_for_update()
+            )
+            for offer in active_offers.scalars():
+                offer.status = "SUPERSEDED"
+                offer.responded_at = datetime.now(timezone.utc)
+            if current_rider_id is not None:
+                old_rider_result = await self.session.execute(
+                    select(Rider).where(Rider.id == current_rider_id).with_for_update()
+                )
+                old_rider = old_rider_result.scalar_one_or_none()
+                if old_rider is not None:
+                    other_active = await self.session.scalar(
+                        select(func.count(Shipment.id)).where(
+                            Shipment.rider_id == old_rider.id,
+                            Shipment.id != shipment.id,
+                            Shipment.status.not_in(
+                                (
+                                    ShipmentStatus.DELIVERED,
+                                    ShipmentStatus.CANCELLED,
+                                    ShipmentStatus.RETURNED,
+                                )
+                            ),
+                        )
+                    )
+                    old_rider.availability = (
+                        RiderAvailability.BUSY
+                        if other_active
+                        else RiderAvailability.AVAILABLE
+                    )
+
+            if current_status is ShipmentStatus.RIDER_ASSIGNED:
+                await self.transition_shipment(
+                    shipment.id,
+                    actor,
+                    ShipmentStatus.READY_FOR_PICKUP,
+                    reason=f"Admin reassigning rider: {reason.strip()}",
+                )
+            reassigned = await self.transition_shipment(
+                shipment.id,
+                actor,
+                ShipmentStatus.RIDER_ASSIGNED,
+                reason=f"Admin assigned rider {rider_user_id}: {reason.strip()}",
+                assigned_rider_user_id=rider_user_id,
+            )
+            target_rider.availability = RiderAvailability.BUSY
+            await self.session.flush()
+        return reassigned
+
     async def _deliver_shipment_after_otp(
         self,
         shipment_id: UUID,
@@ -1069,7 +1176,41 @@ class OrderLifecycleService:
             target,
             assigned_rider_user_id=assigned_rider_user_id,
         )
-
+        if target is ShipmentStatus.CANCELLED:
+            offers_result = await self.session.execute(
+                select(RiderOffer)
+                .where(
+                    RiderOffer.shipment_id == shipment.id,
+                    RiderOffer.status.in_(("OFFERED", "ACCEPTED")),
+                )
+                .with_for_update()
+            )
+            for offer in offers_result.scalars():
+                offer.status = "SUPERSEDED"
+                offer.responded_at = datetime.now(timezone.utc)
+            if shipment.rider_id is not None:
+                rider = await self.session.scalar(
+                    select(Rider).where(Rider.id == shipment.rider_id).with_for_update()
+                )
+                if rider is not None:
+                    other_active = await self.session.scalar(
+                        select(func.count(Shipment.id)).where(
+                            Shipment.rider_id == rider.id,
+                            Shipment.id != shipment.id,
+                            Shipment.status.not_in(
+                                (
+                                    ShipmentStatus.DELIVERED,
+                                    ShipmentStatus.CANCELLED,
+                                    ShipmentStatus.RETURNED,
+                                )
+                            ),
+                        )
+                    )
+                    rider.availability = (
+                        RiderAvailability.BUSY
+                        if other_active
+                        else RiderAvailability.AVAILABLE
+                    )
         from_status = shipment.status
         if target is ShipmentStatus.READY_FOR_PICKUP and from_status is ShipmentStatus.PACKING:
             shipment.ready_for_pickup_at = datetime.now(timezone.utc)

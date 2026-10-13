@@ -29,6 +29,9 @@ import AdminPaymentsPage from "../admin/pages/AdminPaymentsPage";
 import AdminDeliveryPage from "../admin/pages/AdminDeliveryPage";
 import AdminReviewsPage from "../admin/pages/AdminReviewsPage";
 import AdminAnalyticsPage from "../admin/pages/AdminAnalyticsPage";
+import AdminRidersPage from "../admin/pages/AdminRidersPage";
+import AdminHubsPage from "../admin/pages/AdminHubsPage";
+import AdminHubStaffPage from "../admin/pages/AdminHubStaffPage";
 import CartOrders from "../consumer/ConsumerOrders";
 import ConsumerCheckout from "../consumer/ConsumerCheckout";
 import ConsumerDashboard from "../consumer/ConsumerDashboard";
@@ -136,6 +139,9 @@ export default function RouterApp({ user, logout, onAuthenticated }) {
               <Route path="/admin/orders" element={<AdminOrdersPage />} />
               <Route path="/admin/payments" element={<AdminPaymentsPage />} />
               <Route path="/admin/delivery" element={<AdminDeliveryPage />} />
+              <Route path="/admin/riders" element={<AdminRidersPage />} />
+              <Route path="/admin/hubs" element={<AdminHubsPage />} />
+              <Route path="/admin/hub-staff" element={<AdminHubStaffPage />} />
               <Route path="/admin/reviews" element={<AdminReviewsPage />} />
               <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
               <Route path="/admin/*" element={<Navigate to="/admin/dashboard" replace />} />

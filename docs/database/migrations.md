@@ -1,6 +1,6 @@
 # Migrations
 
-Alembic migrations are stored in `backend/alembic/versions`. The chain begins with the phase-one schema and adds listing details, fulfillment, order/payment fields, reviews, notification metadata, AI prediction fields, profile state, missing farmer-profile backfill, and structured address/delivery snapshot fields.
+Alembic migrations are stored in `backend/alembic/versions`. The chain begins with the phase-one schema and adds listing details, fulfillment, order/payment fields, reviews, notification metadata, AI prediction fields, profile state, missing farmer-profile backfill, structured address/delivery snapshot fields, and the admin audit-event table.
 
 Apply migrations:
 
@@ -16,4 +16,4 @@ Inspect current revision:
 ..\venv\Scripts\python.exe -m alembic heads
 ```
 
-The verified project state has no autogenerate drift. Temporary inspection revisions must be removed after a drift check.
+The current Phase 7 migration head has not been applied or drift-checked against the isolated test database in this work because `TEST_DATABASE_URL` was unavailable. Temporary inspection revisions must be removed after a drift check.

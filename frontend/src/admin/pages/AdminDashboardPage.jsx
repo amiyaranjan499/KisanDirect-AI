@@ -51,16 +51,17 @@ export default function AdminDashboardPage() {
     }));
   }, [payments]);
 
-  const deliveryOverview = useMemo(() => {
-    const counts = { "Ready for pickup": 0, "Out for delivery": 0, "Delivered today": 0 };
-    orders.forEach((order) => {
-      const deliveryStatus = order.delivery_status || "";
-      if (deliveryStatus === "READY") counts["Ready for pickup"] += 1;
-      if (deliveryStatus === "OUT_FOR_DELIVERY") counts["Out for delivery"] += 1;
-      if (deliveryStatus === "DELIVERED") counts["Delivered today"] += 1;
-    });
-    return counts;
-  }, [orders]);
+  const deliveryOverview = useMemo(
+    () => ({
+      "Active shipments": summary?.active_shipments ?? 0,
+      "Avg. placed to delivered":
+        summary?.average_placed_to_delivered_minutes == null
+          ? "N/A"
+          : `${Math.round(summary.average_placed_to_delivered_minutes)} min`,
+      "Failed deliveries": summary?.failed_deliveries ?? 0,
+    }),
+    [summary],
+  );
 
   if (error) return <section className="detail-view"><div className="error">{error}</div></section>;
   if (!summary) return <section className="detail-view"><div className="loading">Loading dashboard...</div></section>;
@@ -81,7 +82,9 @@ export default function AdminDashboardPage() {
         <div className="admin-stat-card"><span>Listings</span><strong>{summary.total_listings}</strong></div>
         <div className="admin-stat-card"><span>Orders</span><strong>{summary.total_orders}</strong></div>
         <div className="admin-stat-card"><span>Revenue 30d</span><strong>{money(summary.total_payment_volume || 0)}</strong></div>
-        <div className="admin-stat-card"><span>Active Deliveries</span><strong>{orders.filter((order) => order.delivery_status === "OUT_FOR_DELIVERY" || order.delivery_status === "READY").length}</strong></div>
+        <div className="admin-stat-card"><span>Active Shipments</span><strong>{summary.active_shipments}</strong></div>
+        <div className="admin-stat-card"><span>Average placed to delivered</span><strong>{summary.average_placed_to_delivered_minutes == null ? "No completed deliveries" : `${Math.round(summary.average_placed_to_delivered_minutes)} min`}</strong></div>
+        <div className="admin-stat-card"><span>Failed deliveries</span><strong>{summary.failed_deliveries}</strong></div>
         <div className="admin-stat-card"><span>Pending Payments</span><strong>{payments.filter((payment) => payment.status === "PENDING").length}</strong></div>
         <div className="admin-stat-card"><span>Avg. Rating</span><strong>{summary.total_reviews ? (Number(summary.total_reviews) / Math.max(listings.length || 1, 1)).toFixed(1) : "0.0"}</strong></div>
       </div>

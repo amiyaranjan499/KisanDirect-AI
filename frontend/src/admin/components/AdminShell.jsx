@@ -1,16 +1,23 @@
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useI18n } from "../../i18n";
+import "../admin-operations.css";
 
 const navItems = [
-  ["Dashboard", "/admin/dashboard", "bi-grid-1x2-fill"],
-  ["Users", "/admin/users", "bi-people"],
-  ["Farmers", "/admin/farmers", "bi-person-lines-fill"],
-  ["Orders", "/admin/orders", "bi-receipt"],
-  ["Analytics", "/admin/analytics", "bi-graph-up"],
+  ["adminNavDashboard", "/admin/dashboard", "bi-grid-1x2-fill"],
+  ["adminNavUsers", "/admin/users", "bi-people"],
+  ["adminNavFarmers", "/admin/farmers", "bi-person-lines-fill"],
+  ["adminNavOrders", "/admin/orders", "bi-receipt"],
+  ["adminNavDelivery", "/admin/delivery", "bi-truck"],
+  ["adminNavRiders", "/admin/riders", "bi-bicycle"],
+  ["adminNavHubs", "/admin/hubs", "bi-geo-alt"],
+  ["adminNavHubStaff", "/admin/hub-staff", "bi-person-badge"],
+  ["adminNavAnalytics", "/admin/analytics", "bi-graph-up"],
 ];
 
 export default function AdminShell({ user, logout }) {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
 
   return (
@@ -36,7 +43,7 @@ export default function AdminShell({ user, logout }) {
               onClick={() => setOpen(false)}
             >
               <i className={`bi ${icon}`} />
-              <span>{label}</span>
+              <span>{t(label)}</span>
             </NavLink>
           ))}
           <button type="button" className="admin-logout-button" onClick={() => { logout(); navigate("/admin/login"); }}>
@@ -76,7 +83,7 @@ export default function AdminShell({ user, logout }) {
           {navItems.map(([label, path, icon]) => (
             <NavLink key={path} end={path === "/admin/dashboard"} className={({ isActive }) => `admin-mobile-item ${isActive ? "active" : ""}`} to={path}>
               <i className={`bi ${icon}`} />
-              <span>{label}</span>
+              <span>{t(label)}</span>
             </NavLink>
           ))}
         </nav>

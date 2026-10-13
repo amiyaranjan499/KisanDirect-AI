@@ -24,7 +24,8 @@ The system addresses the gap between farm production and consumer access by givi
 - Legacy delivery and farmer-pickup fulfillment; hub checkout keeps the delivery destination and slot from its order snapshot
 - Ratings and reviews with purchase eligibility checks
 - User-owned notifications and read-state management
-- Admin dashboard with platform summaries and user status management
+- Admin dashboard and range-filtered delivery analytics backed by shipments and lifecycle events
+- Admin rider approval/suspension, hub setup and stock/delivery visibility, admin-created hub staff assignments, shipment reassignment/cancellation, and OTP-lockout reset; non-shipment admin changes are recorded in `admin_audit_events`
 - Responsive React/Vite frontend with role-aware navigation
 
 Checkout location is requested from the browser for an individual order and is
@@ -70,6 +71,8 @@ Rider dispatch timeout is configured by `RIDER_OFFER_TIMEOUT_SECONDS` (default
 location while online or on an active delivery.
 See [rider operations](docs/RIDER_OPERATIONS.md) and
 [OTP delivery confirmation and tracking](docs/OTP_AND_TRACKING.md).
+Admin operational flows and their audit rules are documented in
+[Admin Operations](docs/ADMIN_OPERATIONS.md).
 
 Sandbox payments and test notification creation are enabled by default only in `development` and `test`. Set `ENABLE_SANDBOX_PAYMENTS=false` to disable them; production rejects the setting when it is true.
 
@@ -127,4 +130,4 @@ The archive is generated from `git archive` and excludes environment files, virt
 
 ## Scope
 
-This repository documents and verifies the implemented Phase-I system. It does not claim production deployment, trained AI performance, real payment processing, or final demonstration materials.
+This repository documents the hub-based quick-commerce workflows through Phase 7. The current admin operations changes are implemented, but database-backed verification remains pending until the isolated test database is available. The project does not claim production deployment, trained AI performance, real payment processing, or final demonstration materials.

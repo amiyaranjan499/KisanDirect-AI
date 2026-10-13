@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import sys
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -6,13 +7,17 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 from geoalchemy2.elements import WKTElement
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.app.core.config import Settings
+from backend.app.core.security import create_access_token
 from backend.app.database.session import build_engine
+from backend.app.main import create_app
 from backend.app.models import (
+    AdminAuditEvent,
     AvailabilityStatus,
     Consumer,
     Crop,
@@ -200,7 +205,11 @@ def cleanup(data) -> None:
         engine = build_engine(Settings())
         factory = async_sessionmaker(engine, expire_on_commit=False)
         async with factory() as session:
-            await session.execute(delete(Order).where(Order.id == data["order_id"]))
+            await session.execute(
+                delete(Order).where(
+                    Order.id.in_([data["order_id"], *data.get("extra_order_ids", [])])
+                )
+            )
             await session.execute(
                 delete(HubStock).where(HubStock.listing_id == data["listing_id"])
             )
@@ -217,6 +226,11 @@ def cleanup(data) -> None:
                 )
             await session.execute(delete(Hub).where(Hub.id == data["hub_id"]))
             user_ids = data["user_ids"] + data.get("extra_user_ids", [])
+            await session.execute(
+                delete(AdminAuditEvent).where(
+                    AdminAuditEvent.actor_user_id.in_(user_ids)
+                )
+            )
             await session.execute(delete(User).where(User.id.in_(user_ids)))
             await session.commit()
         await engine.dispose()
@@ -1408,4 +1422,284 @@ def test_delivery_otp_lockout_reset_tracking_access_and_single_use(caplog):
     try:
         asyncio.run(exercise())
     finally:
+        cleanup(data)
+
+
+async def _create_out_for_delivery_shipment(session, data, settings):
+    lifecycle = OrderLifecycleService(session, settings=settings)
+    await lifecycle.transition_order(
+        data["order_id"],
+        LifecycleActor(data["farmer_user_id"], UserRole.FARMER),
+        OrderStatus.PROCESSING,
+    )
+    now = datetime.now(timezone.utc)
+    shipment = await lifecycle.create_shipment(
+        data["order_id"],
+        LifecycleActor(data["hub_staff_user_id"], UserRole.HUB_STAFF),
+        hub_id=data["hub_id"],
+        promised_window_start=now,
+        promised_window_end=now + timedelta(hours=1),
+        pickup_address_snapshot="Hub address",
+        dropoff_address_snapshot="Consumer address",
+    )
+    for target, actor in [
+        (
+            ShipmentStatus.READY_FOR_PICKUP,
+            LifecycleActor(data["hub_staff_user_id"], UserRole.HUB_STAFF),
+        ),
+        (
+            ShipmentStatus.RIDER_ASSIGNED,
+            LifecycleActor(data["rider_user_id"], UserRole.RIDER),
+        ),
+        (
+            ShipmentStatus.PICKED_UP,
+            LifecycleActor(data["rider_user_id"], UserRole.RIDER),
+        ),
+        (
+            ShipmentStatus.OUT_FOR_DELIVERY,
+            LifecycleActor(data["rider_user_id"], UserRole.RIDER),
+        ),
+    ]:
+        await lifecycle.transition_shipment(shipment.id, actor, target)
+    session.add(
+        RiderLocation(
+            rider_id=data["rider_id"],
+            location=WKTElement("POINT(85.801 20.301)", srid=4326),
+            recorded_at=datetime.now(timezone.utc),
+        )
+    )
+    await session.flush()
+    return shipment
+
+
+async def _get_delivery_otp_notifications(session, shipment_id, consumer_user_id):
+    return list(
+        (
+            await session.execute(
+                select(Notification)
+                .where(
+                    Notification.user_id == consumer_user_id,
+                    Notification.related_entity_type == "shipment_otp",
+                    Notification.related_entity_id == shipment_id,
+                )
+                .order_by(Notification.created_at, Notification.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _auth_headers(user_id, role):
+    token = create_access_token(str(user_id), role, Settings())
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_delivery_otp_plaintext_never_appears_in_logs(caplog):
+    caplog.set_level(logging.DEBUG)
+    data = seed(OrderStatus.CONFIRMED)
+    settings = Settings(otp_ttl_minutes=120, otp_max_attempts=2)
+    engine = build_engine(settings)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def exercise():
+        async with factory() as session:
+            shipment = await _create_out_for_delivery_shipment(session, data, settings)
+            notifications = await _get_delivery_otp_notifications(
+                session, shipment.id, data["consumer_user_id"]
+            )
+            first_code = notifications[0].message.rsplit(" ", 1)[1].rstrip(".")
+            wrong_code = "000000" if first_code != "000000" else "000001"
+            rider = LifecycleActor(data["rider_user_id"], UserRole.RIDER)
+            lifecycle = OrderLifecycleService(session, settings=settings)
+            assert not await lifecycle.verify_delivery_otp(
+                shipment.id, rider, wrong_code
+            )
+            assert not await lifecycle.verify_delivery_otp(
+                shipment.id, rider, wrong_code
+            )
+            await lifecycle.reset_delivery_otp(
+                shipment.id,
+                LifecycleActor(data["admin_user_id"], UserRole.ADMIN),
+                "Consumer requested a replacement code",
+            )
+            notifications = await _get_delivery_otp_notifications(
+                session, shipment.id, data["consumer_user_id"]
+            )
+            reset_code = notifications[-1].message.rsplit(" ", 1)[1].rstrip(".")
+            assert await lifecycle.verify_delivery_otp(
+                shipment.id, rider, reset_code
+            )
+            return first_code, reset_code
+
+    try:
+        codes = asyncio.run(exercise())
+        assert all(code not in caplog.text for code in codes)
+        assert all(
+            code not in record.getMessage() and code not in repr(record.args)
+            for record in caplog.records
+            for code in codes
+        )
+    finally:
+        asyncio.run(engine.dispose())
+        cleanup(data)
+
+
+def test_delivery_otp_plaintext_is_only_in_consumer_notifications_not_order_events():
+    data = seed(OrderStatus.CONFIRMED)
+    settings = Settings(otp_ttl_minutes=120, otp_max_attempts=2)
+    engine = build_engine(settings)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def exercise():
+        async with factory() as session:
+            shipment = await _create_out_for_delivery_shipment(session, data, settings)
+            notifications = await _get_delivery_otp_notifications(
+                session, shipment.id, data["consumer_user_id"]
+            )
+            first_code = notifications[0].message.rsplit(" ", 1)[1].rstrip(".")
+            wrong_code = "000000" if first_code != "000000" else "000001"
+            rider = LifecycleActor(data["rider_user_id"], UserRole.RIDER)
+            lifecycle = OrderLifecycleService(session, settings=settings)
+            assert not await lifecycle.verify_delivery_otp(
+                shipment.id, rider, wrong_code
+            )
+            assert not await lifecycle.verify_delivery_otp(
+                shipment.id, rider, wrong_code
+            )
+            await lifecycle.reset_delivery_otp(
+                shipment.id,
+                LifecycleActor(data["admin_user_id"], UserRole.ADMIN),
+                "Consumer requested a replacement code",
+            )
+            notifications = await _get_delivery_otp_notifications(
+                session, shipment.id, data["consumer_user_id"]
+            )
+            reset_code = notifications[-1].message.rsplit(" ", 1)[1].rstrip(".")
+            assert await lifecycle.verify_delivery_otp(
+                shipment.id, rider, reset_code
+            )
+
+            events = list(
+                (
+                    await session.scalars(
+                        select(OrderEvent).where(OrderEvent.order_id == data["order_id"])
+                    )
+                ).all()
+            )
+            event_text = [
+                value
+                for event in events
+                for column in OrderEvent.__table__.columns
+                if isinstance((value := getattr(event, column.key)), str)
+            ]
+            assert all(
+                code not in text for code in (first_code, reset_code) for text in event_text
+            )
+
+            all_notifications = list((await session.scalars(select(Notification))).all())
+            for code in (first_code, reset_code):
+                matches = [
+                    notification
+                    for notification in all_notifications
+                    if code in notification.message
+                ]
+                assert matches
+                assert all(
+                    notification.user_id == data["consumer_user_id"]
+                    and notification.related_entity_type == "shipment_otp"
+                    and notification.related_entity_id == shipment.id
+                    for notification in matches
+                )
+
+    try:
+        asyncio.run(exercise())
+    finally:
+        asyncio.run(engine.dispose())
+        cleanup(data)
+
+
+def test_delivery_tracking_http_access_and_otp_response_privacy():
+    data = seed(OrderStatus.CONFIRMED)
+    settings = Settings(otp_ttl_minutes=120, otp_max_attempts=2)
+    engine = build_engine(settings)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def setup():
+        async with factory() as session:
+            shipment = await _create_out_for_delivery_shipment(session, data, settings)
+            notifications = await _get_delivery_otp_notifications(
+                session, shipment.id, data["consumer_user_id"]
+            )
+            await session.commit()
+            return shipment.id, notifications[0].message.rsplit(" ", 1)[1].rstrip(".")
+
+    try:
+        shipment_id, expected_code = asyncio.run(setup())
+        asyncio.run(engine.dispose())
+        tracking_path = f"/api/v1/orders/{data['order_id']}/tracking"
+        with TestClient(create_app()) as client:
+            unauthenticated = client.get(tracking_path)
+            assert unauthenticated.status_code == 401
+
+            other_consumer = client.get(
+                tracking_path,
+                headers=_auth_headers(
+                    data["other_consumer_user_id"], UserRole.CONSUMER
+                ),
+            )
+            assert other_consumer.status_code in {403, 404}
+            assert expected_code not in other_consumer.text
+            assert "rider_location" not in other_consumer.text
+            assert "85.801" not in other_consumer.text
+            assert "20.301" not in other_consumer.text
+
+            owner_tracking = client.get(
+                tracking_path,
+                headers=_auth_headers(data["consumer_user_id"], UserRole.CONSUMER),
+            )
+            assert owner_tracking.status_code == 200, owner_tracking.text
+            assert owner_tracking.json()["delivery_otp"] == expected_code
+            assert owner_tracking.json()["rider_location"] is not None
+
+            rider_tracking = client.get(
+                tracking_path,
+                headers=_auth_headers(data["rider_user_id"], UserRole.RIDER),
+            )
+            assert rider_tracking.status_code == 200, rider_tracking.text
+            assert rider_tracking.json()["delivery_otp"] is None
+            assert expected_code not in rider_tracking.text
+
+            for user_id, role in (
+                (data["farmer_user_id"], UserRole.FARMER),
+                (data["hub_staff_user_id"], UserRole.HUB_STAFF),
+            ):
+                role_tracking = client.get(
+                    tracking_path, headers=_auth_headers(user_id, role)
+                )
+                assert role_tracking.status_code == 200, role_tracking.text
+                assert role_tracking.json()["events"]
+                assert role_tracking.json()["delivery_otp"] is None
+                assert role_tracking.json()["rider_location"] is None
+                assert expected_code not in role_tracking.text
+
+            wrong_code = "000000" if expected_code != "000000" else "000001"
+            failed_verification = client.post(
+                f"/api/v1/rider/shipments/{shipment_id}/otp-verification",
+                headers=_auth_headers(data["rider_user_id"], UserRole.RIDER),
+                json={"code": wrong_code},
+            )
+            assert failed_verification.status_code == 400
+            assert wrong_code not in failed_verification.text
+            assert expected_code not in failed_verification.text
+
+            successful_verification = client.post(
+                f"/api/v1/rider/shipments/{shipment_id}/otp-verification",
+                headers=_auth_headers(data["rider_user_id"], UserRole.RIDER),
+                json={"code": expected_code},
+            )
+            assert successful_verification.status_code == 200
+            assert expected_code not in successful_verification.text
+    finally:
+        asyncio.run(engine.dispose())
         cleanup(data)
