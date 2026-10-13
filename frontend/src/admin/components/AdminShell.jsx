@@ -22,6 +22,7 @@ export default function AdminShell({ user, logout }) {
 
   return (
     <div className="admin-shell">
+      {open && <div className="admin-sidebar-backdrop" onClick={() => setOpen(false)} aria-hidden="true" />}
       <aside className={`admin-sidebar ${open ? "open" : ""}`}>
         <div className="admin-sidebar-header">
           <div className="brand admin-brand">

@@ -5,6 +5,10 @@ export default function AppFrame({ user, logout }) {
   const navigate = useNavigate();
   const { language, setLanguage, t } = useI18n();
 
+  if (user?.role === "ADMIN") {
+    return <Outlet />;
+  }
+
   const home = user?.role === "FARMER"
     ? "/farmer/dashboard"
     : user?.role === "ADMIN"

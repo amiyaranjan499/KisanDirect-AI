@@ -9,10 +9,11 @@ export default function AuthPanel({ onAuthenticated, language, setLanguage, t = 
   const [activeSlide, setActiveSlide] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const slides = [
     {
-      image: "/assets/images/image.png",
+      image: "/assets/images/img.png",
       title: "Fresh Food",
       accent: "Brighter Tomorrows",
       caption: "Direct from farmers to families.",
@@ -112,7 +113,12 @@ export default function AuthPanel({ onAuthenticated, language, setLanguage, t = 
           <label htmlFor="reference-email">{t("auth.email")}</label>
           <input id="reference-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
           <label htmlFor="reference-password">{t("auth.password")}</label>
-          <input id="reference-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
+          <div className="password-field">
+            <input id="reference-password" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
+            <button type="button" className="password-toggle" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? t("auth.hidePassword") || "Hide password" : t("auth.showPassword") || "Show password"}>
+              <i className={`bi ${showPassword ? "bi-eye-slash" : "bi-eye"}`} aria-hidden="true" />
+            </button>
+          </div>
           {error && <div className="error">{error}</div>}
           <button type="submit" className="reference-submit" disabled={loading}>
             {loading ? "Working..." : <><span>{t("auth.login")}</span> <i className="bi bi-arrow-right" aria-hidden="true"></i></>}

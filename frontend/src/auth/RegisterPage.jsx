@@ -8,6 +8,7 @@ export default function RegisterPage({ language, setLanguage, t = (key) => key }
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState("CONSUMER");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -52,7 +53,12 @@ export default function RegisterPage({ language, setLanguage, t = (key) => key }
           <label htmlFor="register-email">{t("auth.email")}</label>
           <input id="register-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
           <label htmlFor="register-password">{t("auth.password")}</label>
-          <input id="register-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required />
+          <div className="password-field">
+            <input id="register-password" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required />
+            <button type="button" className="password-toggle" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? t("auth.hidePassword") || "Hide password" : t("auth.showPassword") || "Show password"}>
+              <i className={`bi ${showPassword ? "bi-eye-slash" : "bi-eye"}`} aria-hidden="true" />
+            </button>
+          </div>
           <label htmlFor="register-role">{t("auth.accountType")}</label>
           <select id="register-role" value={role} onChange={(event) => setRole(event.target.value)}>
             <option value="CONSUMER">Consumer</option>

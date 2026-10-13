@@ -10,7 +10,7 @@ export default function AdminLogin({ onAuthenticated, language = "en", setLangua
   const [activeSlide, setActiveSlide] = useState(0);
 
   const slides = [
-    { image: "/assets/images/image.png", title: "Fresh Food", accent: "Brighter Tomorrows", caption: "Direct from farmers to families." },
+    { image: "/assets/images/img.png", title: "Fresh Food", accent: "Brighter Tomorrows", caption: "Direct from farmers to families." },
     { image: "/assets/images/image1.png", title: "Stronger Farmers", accent: "Healthier Families", caption: "Every basket carries a better future." },
     { image: "/assets/images/image2.png", title: "Good Food", accent: "Good Communities", caption: "Fair prices, trusted quality, real impact." },
   ];
