@@ -1272,18 +1272,31 @@ def test_delivery_otp_lockout_reset_tracking_access_and_single_use(caplog):
                 minutes=30
             )
             await session.flush()
+            for attempt_idx in range(settings.otp_max_attempts):
+                assert not await lifecycle.verify_delivery_otp(
+                    shipment.id,
+                    LifecycleActor(data["rider_user_id"], UserRole.RIDER),
+                    "000000" if first_code != "000000" else "000001",
+                )
+                assert stored_shipment.otp_attempts == attempt_idx + 1
+
+            # Verify that OTP lockout persists until an authorized reset
+            # and that the correct OTP remains rejected while locked
             assert not await lifecycle.verify_delivery_otp(
                 shipment.id,
                 LifecycleActor(data["rider_user_id"], UserRole.RIDER),
-                "000000" if first_code != "000000" else "000001",
+                first_code,
             )
-            assert stored_shipment.otp_attempts == 1
+            assert stored_shipment.status is not ShipmentStatus.DELIVERED
+            assert stored_shipment.otp_attempts == settings.otp_max_attempts
+
+            # Subsequent invalid attempts while locked also remain rejected
             assert not await lifecycle.verify_delivery_otp(
                 shipment.id,
                 LifecycleActor(data["rider_user_id"], UserRole.RIDER),
-                "000000" if first_code != "000000" else "000001",
+                "999999",
             )
-            assert stored_shipment.otp_attempts == 2
+            assert stored_shipment.otp_attempts == settings.otp_max_attempts
 
             admin_actor = LifecycleActor(data["admin_user_id"], UserRole.ADMIN)
             with pytest.raises(LifecycleConflict):
@@ -1512,12 +1525,10 @@ def test_delivery_otp_plaintext_never_appears_in_logs(caplog):
             wrong_code = "000000" if first_code != "000000" else "000001"
             rider = LifecycleActor(data["rider_user_id"], UserRole.RIDER)
             lifecycle = OrderLifecycleService(session, settings=settings)
-            assert not await lifecycle.verify_delivery_otp(
-                shipment.id, rider, wrong_code
-            )
-            assert not await lifecycle.verify_delivery_otp(
-                shipment.id, rider, wrong_code
-            )
+            for _ in range(settings.otp_max_attempts):
+                assert not await lifecycle.verify_delivery_otp(
+                    shipment.id, rider, wrong_code
+                )
             await lifecycle.reset_delivery_otp(
                 shipment.id,
                 LifecycleActor(data["admin_user_id"], UserRole.ADMIN),
@@ -1561,12 +1572,10 @@ def test_delivery_otp_plaintext_is_only_in_consumer_notifications_not_order_even
             wrong_code = "000000" if first_code != "000000" else "000001"
             rider = LifecycleActor(data["rider_user_id"], UserRole.RIDER)
             lifecycle = OrderLifecycleService(session, settings=settings)
-            assert not await lifecycle.verify_delivery_otp(
-                shipment.id, rider, wrong_code
-            )
-            assert not await lifecycle.verify_delivery_otp(
-                shipment.id, rider, wrong_code
-            )
+            for _ in range(settings.otp_max_attempts):
+                assert not await lifecycle.verify_delivery_otp(
+                    shipment.id, rider, wrong_code
+                )
             await lifecycle.reset_delivery_otp(
                 shipment.id,
                 LifecycleActor(data["admin_user_id"], UserRole.ADMIN),

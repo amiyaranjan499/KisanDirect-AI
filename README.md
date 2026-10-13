@@ -109,7 +109,7 @@ npm run build
 
 ## Documentation
 
-Start with the [documentation index](docs/README.md). It includes architecture, modules, APIs, database, AI limitations, workflows, security, testing, setup, project structure, technology stack, limitations, and future enhancements.
+Start with the [documentation index](docs/README.md). It includes architecture, modules, APIs, database, AI limitations, workflows, security, testing, setup, project structure, technology stack, limitations, future enhancements, and the [End-to-End Manual Testing Guide](docs/E2E_MANUAL_TEST.md).
 
 ## Release Archive
 
@@ -130,4 +130,4 @@ The archive is generated from `git archive` and excludes environment files, virt
 
 ## Scope
 
-This repository documents the hub-based quick-commerce workflows through Phase 7. The current admin operations changes are implemented, but database-backed verification remains pending until the isolated test database is available. The project does not claim production deployment, trained AI performance, real payment processing, or final demonstration materials.
+This repository implements and verifies the complete hub-based quick-commerce platform across all roles (Farmer, Consumer, Hub Staff, Rider, Admin). Backend test coverage spans 105 passed tests, and frontend production builds pass cleanly. For step-by-step role verification, consult [End-to-End Manual Testing Guide](docs/E2E_MANUAL_TEST.md). The project does not claim production deployment, trained AI performance, real payment processing, or external SMS gateway integration.

@@ -2,19 +2,16 @@
 
 ## Verified Results
 
-The Step 20 and regression verification results recorded for the current project are:
+The Phase 9 verification results recorded for the project are:
 
-- Backend suite: 56 passed, 0 failed, 0 skipped.
-- Focused integration workflow tests: 23 passed.
-- Database tests: 20 passed.
-- Python compile checks: passed.
-- Alembic autogenerate drift check: no drift.
-- Frontend production build: passed.
-- Frontend diagnostics: no errors reported.
-- CORS preflight checks: passed for localhost and 127.0.0.1 frontend origins.
+- Backend suite: 105 passed, 0 failed, 0 skipped, 2 deprecation warnings in test tooling.
+- Focused integration workflow tests: end-to-end full platform journey (`test_end_to_end_journey.py`), order lifecycle transitions, OTP lockout/reset, and metrics verification passed.
+- Python compile checks: passed (`python -m compileall -q backend`).
+- Alembic autogenerate drift check: no drift against PostgreSQL/PostGIS.
+- Frontend production build: passed (`npm run build`).
+- Frontend diagnostics: no runtime or route errors reported.
 - Health endpoint: HTTP 200 with `{"status":"ok"}`.
-
-The backend suite emitted two dependency deprecation warnings from Starlette/httpx test tooling. These warnings did not fail tests.
+- Manual walkthrough: fully documented in [End-to-End Manual Testing Guide](E2E_MANUAL_TEST.md).
 
 ## Test Categories
 

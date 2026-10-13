@@ -18,9 +18,11 @@ This documentation describes the current hub-based quick-commerce system from it
 - [Zepto-Style Quick-Commerce Roadmap](ZEPTO_ROADMAP.md)
 - [Order, Shipment, and Payment Lifecycle](order-lifecycle.md)
 - [Checkout Reservations and ETA](checkout-reservations.md)
+- [Farmer-to-Hub Stock and Hub Operations](HUB_OPERATIONS.md)
 - [Rider Operations](RIDER_OPERATIONS.md)
 - [OTP Delivery Confirmation and Tracking](OTP_AND_TRACKING.md)
 - [Admin Operations](ADMIN_OPERATIONS.md)
+- [End-to-End Manual Testing Guide](E2E_MANUAL_TEST.md)
 
 ## API Documentation
 
