@@ -376,43 +376,35 @@ export default function FarmerProfile({ onBack, onDashboard, onLogout }) {
 
   return (
     <div className="farmer-page-content" style={{ padding: "24px 28px", maxWidth: "1100px", margin: "0 auto" }}>
-      {/* Top Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px", flexWrap: "wrap", gap: "16px" }}>
+      {/* Standard Farmer Page Header */}
+      <div className="farmer-page-header">
         <div>
-          <span style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--farmer-forest-med)" }}>
-            ACCOUNT MANAGEMENT
-          </span>
-          <h1 style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", fontSize: "1.85rem", fontWeight: 700, color: "var(--farmer-ink)", margin: "4px 0 6px" }}>
-            Farmer Profile
-          </h1>
-          <p style={{ margin: 0, fontSize: "0.88rem", color: "var(--farmer-muted)" }}>
-            Manage your personal farm details, registered contact information, and farm GPS location.
-          </p>
+          <div className="eyebrow"><i className="bi bi-person-circle me-1" /> ACCOUNT MANAGEMENT</div>
+          <h1 className="farmer-page-title">Farmer Profile</h1>
+          <p className="farmer-page-sub">Manage your personal farm details, registered contact information, and farm GPS location.</p>
         </div>
 
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        <div className="farmer-header-actions">
           {!editing ? (
             <button
               type="button"
-              className="farmer-action-pill primary"
+              className="kisan-btn-accent"
               onClick={() => {
                 setEditing(true);
                 setError("");
                 setSuccess("");
               }}
-              style={{ border: "none", cursor: "pointer", background: "var(--farmer-forest)", color: "#ffffff", padding: "8px 18px", borderRadius: "8px", fontWeight: 600, fontSize: "0.85rem", display: "inline-flex", alignItems: "center", gap: "8px" }}
             >
-              <i className="bi bi-pencil-square" /> Edit Profile
+              <i className="bi bi-pencil-square me-1" /> Edit Profile
             </button>
           ) : (
             <button
               type="button"
-              className="farmer-action-pill"
+              className="kisan-btn-outline"
               onClick={() => {
                 setEditing(false);
                 setError("");
               }}
-              style={{ border: "1px solid var(--farmer-border)", cursor: "pointer", background: "#ffffff", color: "var(--farmer-ink)", padding: "8px 16px", borderRadius: "8px", fontWeight: 600, fontSize: "0.85rem" }}
             >
               Cancel
             </button>
@@ -424,7 +416,7 @@ export default function FarmerProfile({ onBack, onDashboard, onLogout }) {
               onClick={onLogout}
               style={{ border: "1px solid #fecaca", background: "#fff1f2", color: "#dc2626", padding: "8px 16px", borderRadius: "8px", fontWeight: 600, fontSize: "0.85rem", cursor: "pointer" }}
             >
-              <i className="bi bi-box-arrow-right" style={{ marginRight: "6px" }} /> Sign Out
+              <i className="bi bi-box-arrow-right me-1" /> Sign Out
             </button>
           )}
         </div>

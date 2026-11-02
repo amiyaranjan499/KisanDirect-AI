@@ -147,17 +147,14 @@ export default function FarmerWallet() {
 
   return (
     <div style={{ maxWidth: "1080px", margin: "0 auto", padding: "16px 8px 60px" }}>
-      {/* Page Header */}
-      <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+      {/* Standard Farmer Page Header */}
+      <div className="farmer-page-header">
         <div>
-          <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", color: "#1B6B34", fontSize: "26px", fontWeight: 700, margin: 0 }}>
-            My Wallet & Payouts
-          </h1>
-          <p style={{ margin: "4px 0 0", color: "#79705F", fontSize: "14px" }}>
-            Track your produce sales revenue, check available balances, and withdraw earnings to your bank account or UPI.
-          </p>
+          <div className="eyebrow"><i className="bi bi-wallet2 me-1" /> PAYMENTS & DISBURSEMENTS</div>
+          <h1 className="farmer-page-title">My Wallet & Payouts</h1>
+          <p className="farmer-page-sub">Track your produce sales revenue, check available balances, and withdraw earnings directly to your bank account or UPI.</p>
         </div>
-        <div>
+        <div className="farmer-header-actions">
           <button
             type="button"
             className="kisan-btn-accent"

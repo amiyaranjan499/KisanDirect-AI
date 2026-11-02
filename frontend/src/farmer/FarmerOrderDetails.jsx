@@ -213,40 +213,94 @@ export default function FarmerOrderDetails() {
     return <span className="kisan-badge kisan-badge-neutral">{statusStr || "Pending"}</span>;
   };
 
+  const orderStats = useMemo(() => {
+    const total = orders.length;
+    const pendingAction = orders.filter((o) => {
+      const s = (o.status || "").toUpperCase();
+      return s === "PENDING" || s === "NEW" || s === "CONFIRMED" || s === "ACCEPTED";
+    }).length;
+    const inPrep = orders.filter((o) => {
+      const s = (o.status || "").toUpperCase();
+      return s === "PROCESSING" || s === "PREPARING" || s === "SHIPPED" || s === "READY" || s === "READY_FOR_PICKUP";
+    }).length;
+    const completed = orders.filter((o) => {
+      const s = (o.status || "").toUpperCase();
+      return s === "DELIVERED" || s === "COMPLETED";
+    }).length;
+    return { total, pendingAction, inPrep, completed };
+  }, [orders]);
+
   return (
-    <div className="farmer-dashboard-view">
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "18px",
-          flexWrap: "wrap",
-          gap: "10px",
-        }}
-      >
-        <h1
-          style={{
-            fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
-            fontSize: "26px",
-            color: "var(--forest, #1B6B34)",
-            margin: 0,
-            fontWeight: 700,
-            letterSpacing: "-0.01em",
-          }}
-        >
-          Orders
-        </h1>
-        <button
-          type="button"
-          className="kisan-btn-outline kisan-btn-sm"
-          onClick={loadAll}
-          title="Refresh live orders"
-          style={{ borderRadius: "8px", gap: "6px" }}
-        >
-          <i className="bi bi-arrow-clockwise" /> Refresh
-        </button>
+    <div className="farmer-dashboard-view farmer-orders-page">
+      {/* 1. Header */}
+      <div className="farmer-page-header">
+        <div>
+          <span className="eyebrow">CUSTOMER FULFILLMENT</span>
+          <h1>My Orders &amp; Fulfillment</h1>
+          <p>
+            Manage incoming orders, on-farm packing, hub staff delegations, and rider delivery handoffs.
+          </p>
+        </div>
+        <div className="farmer-header-actions">
+          <Link to="/farmer/dispatch" className="farmer-action-pill">
+            <i className="bi bi-truck" /> Dispatch Tracking
+          </Link>
+          <button
+            type="button"
+            className="farmer-action-pill primary"
+            onClick={loadAll}
+            title="Refresh live orders"
+          >
+            <i className="bi bi-arrow-clockwise" /> Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Top Summary KPI Cards */}
+      <div className="kisan-stat-grid" style={{ marginBottom: "20px" }}>
+        <div className="kisan-card kisan-card-pad">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "12px", color: "var(--farmer-muted, #65766e)", fontWeight: 600 }}>Total Orders</span>
+            <span style={{ color: "var(--farmer-forest, #073a26)" }}><i className="bi bi-receipt" /></span>
+          </div>
+          <div style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", fontSize: "28px", fontWeight: 700, color: "var(--farmer-forest, #073a26)", marginTop: "8px" }}>
+            {orderStats.total}
+          </div>
+          <div style={{ fontSize: "11.5px", color: "var(--farmer-muted, #65766e)", marginTop: "4px" }}>All customer orders</div>
+        </div>
+
+        <div className="kisan-card kisan-card-pad">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "12px", color: "var(--farmer-muted, #65766e)", fontWeight: 600 }}>Needs Action</span>
+            <span style={{ color: "#B27300" }}><i className="bi bi-exclamation-circle-fill" /></span>
+          </div>
+          <div style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", fontSize: "28px", fontWeight: 700, color: "#B27300", marginTop: "8px" }}>
+            {orderStats.pendingAction}
+          </div>
+          <div style={{ fontSize: "11.5px", color: "var(--farmer-muted, #65766e)", marginTop: "4px" }}>Awaiting acceptance/prep</div>
+        </div>
+
+        <div className="kisan-card kisan-card-pad">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "12px", color: "var(--farmer-muted, #65766e)", fontWeight: 600 }}>In Fulfillment</span>
+            <span style={{ color: "var(--farmer-forest-med, #0e5a3c)" }}><i className="bi bi-box-seam" /></span>
+          </div>
+          <div style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", fontSize: "28px", fontWeight: 700, color: "var(--farmer-forest-med, #0e5a3c)", marginTop: "8px" }}>
+            {orderStats.inPrep}
+          </div>
+          <div style={{ fontSize: "11.5px", color: "var(--farmer-muted, #65766e)", marginTop: "4px" }}>Preparing or out with rider</div>
+        </div>
+
+        <div className="kisan-card kisan-card-pad">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "12px", color: "var(--farmer-muted, #65766e)", fontWeight: 600 }}>Completed</span>
+            <span style={{ color: "#2E7D32" }}><i className="bi bi-check-circle-fill" /></span>
+          </div>
+          <div style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", fontSize: "28px", fontWeight: 700, color: "#2E7D32", marginTop: "8px" }}>
+            {orderStats.completed}
+          </div>
+          <div style={{ fontSize: "11.5px", color: "var(--farmer-muted, #65766e)", marginTop: "4px" }}>Delivered to doorstep</div>
+        </div>
       </div>
 
       {/* Notifications */}

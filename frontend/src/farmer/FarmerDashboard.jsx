@@ -358,7 +358,7 @@ export default function FarmerDashboard() {
             ? `Primary Crop: ${listings[0].crop_name} listed at ₹${listings[0].asking_price}/${listings[0].unit || "kg"}`
             : "Upload harvest photos for instant Grade A quality badges and consumer trust",
         ctaText: "Crop Quality AI",
-        ctaLink: "/farmer/crop-quality",
+        ctaLink: "/farmer/ai-insights",
         ctaIcon: SvgIcon.ai,
       },
     ],

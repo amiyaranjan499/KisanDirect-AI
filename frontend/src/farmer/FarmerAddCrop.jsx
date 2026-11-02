@@ -1503,40 +1503,24 @@ export default function FarmerAddCrop({ onBack }) {
   const isPublishable = !validateStep1() && !isNaN(Number(form.asking_price)) && Number(form.asking_price) > 0;
 
   return (
-    <section className="farmer-dashboard-view add-crop-page" style={{ maxWidth: "860px", margin: "0 auto", padding: "16px" }}>
-      <button
-        type="button"
-        className="btn-ghost"
-        style={{
-          padding: "5px 12px",
-          marginBottom: "14px",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "6px",
-          borderRadius: "6px",
-          border: "1.5px solid var(--clay, #79705F)",
-          color: "var(--forest, #1B6B34)",
-          background: "transparent",
-          fontSize: "13px",
-          fontWeight: 600,
-          cursor: "pointer",
-        }}
-        onClick={onBack || (() => navigate("/farmer/crops"))}
-      >
-        <i className="bi bi-chevron-left" /> Cancel
-      </button>
-
-      <h2
-        style={{
-          fontSize: "24px",
-          fontFamily: "'Fraunces', Georgia, serif",
-          color: "var(--forest, #1B6B34)",
-          marginBottom: "20px",
-          fontWeight: 700,
-        }}
-      >
-        {editingId ? "Edit Crop Listing" : "Add New Crop"}
-      </h2>
+    <section className="farmer-dashboard-view add-crop-page" style={{ maxWidth: "880px", margin: "0 auto", padding: "16px 8px 60px" }}>
+      {/* Standard Farmer Page Header */}
+      <div className="farmer-page-header">
+        <div>
+          <div className="eyebrow"><i className="bi bi-flower1 me-1" /> FARM PRODUCE & HARVEST</div>
+          <h1 className="farmer-page-title">{editingId ? "Edit Crop Listing" : "Add New Crop"}</h1>
+          <p className="farmer-page-sub">Step-by-step listing wizard with AI quality grading, APMC mandi rates, and automated price intelligence.</p>
+        </div>
+        <div className="farmer-header-actions">
+          <button
+            type="button"
+            className="kisan-btn-outline"
+            onClick={onBack || (() => navigate("/farmer/crops"))}
+          >
+            <i className="bi bi-chevron-left me-1" /> Back to My Crops
+          </button>
+        </div>
+      </div>
 
       {/* Stepper Dots Track */}
       <div

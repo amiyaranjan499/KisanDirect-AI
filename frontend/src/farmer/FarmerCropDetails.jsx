@@ -679,20 +679,70 @@ export default function FarmerCropDetails({ onBack }) {
   }
 
   // --- RENDER 2: CROP LISTINGS GRID ---
+  const activeCount = useMemo(() => {
+    const base = Array.isArray(listings) ? listings : listings?.items || [];
+    return base.filter((i) => String(i.availability_status || "AVAILABLE").toUpperCase() === "AVAILABLE").length;
+  }, [listings]);
+
   return (
     <section className="farmer-dashboard-view">
       {/* 1. Header Row */}
-      <div className="section-title" style={{ marginTop: "8px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-        <h2 style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", color: "var(--forest, #1B6B34)", margin: 0, fontWeight: 700 }}>
-          Crop Listings
-        </h2>
-        <button
-          type="button"
-          className="btn btn-accent btn-sm"
-          onClick={() => navigate("/farmer/crops/new")}
-        >
-          <i className="bi bi-plus-lg" /> Add New Crop
-        </button>
+      <div className="farmer-page-header">
+        <div>
+          <span className="eyebrow">HARVEST INVENTORY & CROPS</span>
+          <h1>My Crops & Listings</h1>
+          <p>Manage active produce harvests, stock levels, asking prices, and AI quality assurance badges.</p>
+        </div>
+        <div className="farmer-header-actions">
+          <button
+            type="button"
+            className="farmer-action-pill primary"
+            onClick={() => navigate("/farmer/crops/new")}
+          >
+            <i className="bi bi-plus-circle" /> Add New Crop
+          </button>
+          <button
+            type="button"
+            className="farmer-action-pill"
+            onClick={() => navigate("/farmer/ai-insights")}
+          >
+            <i className="bi bi-cpu" /> Crop Quality AI
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Stats Grid */}
+      <div className="kisan-stat-grid" style={{ marginBottom: "20px" }}>
+        <div className="kisan-card kisan-card-pad">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "12px", color: "var(--farmer-muted, #65766e)", fontWeight: 600 }}>Total Crops Listed</span>
+            <span style={{ color: "var(--farmer-forest, #073a26)" }}><i className="bi bi-basket2" /></span>
+          </div>
+          <div style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", fontSize: "28px", fontWeight: 700, color: "var(--farmer-forest, #073a26)", marginTop: "8px" }}>
+            {listings ? (Array.isArray(listings) ? listings.length : listings?.items?.length || 0) : "—"}
+          </div>
+          <div style={{ fontSize: "11.5px", color: "var(--farmer-muted, #65766e)", marginTop: "4px" }}>Across all categories</div>
+        </div>
+        <div className="kisan-card kisan-card-pad">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "12px", color: "var(--farmer-muted, #65766e)", fontWeight: 600 }}>Active & Live</span>
+            <span style={{ color: "#2E7D32" }}><i className="bi bi-check-circle-fill" /></span>
+          </div>
+          <div style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", fontSize: "28px", fontWeight: 700, color: "#2E7D32", marginTop: "8px" }}>
+            {activeCount}
+          </div>
+          <div style={{ fontSize: "11.5px", color: "var(--farmer-muted, #65766e)", marginTop: "4px" }}>Available for customer orders</div>
+        </div>
+        <div className="kisan-card kisan-card-pad">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "12px", color: "var(--farmer-muted, #65766e)", fontWeight: 600 }}>Sold Out / Inactive</span>
+            <span style={{ color: "#79705F" }}><i className="bi bi-pause-circle" /></span>
+          </div>
+          <div style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", fontSize: "28px", fontWeight: 700, color: "#79705F", marginTop: "8px" }}>
+            {listings ? ((Array.isArray(listings) ? listings.length : listings?.items?.length || 0) - activeCount) : "—"}
+          </div>
+          <div style={{ fontSize: "11.5px", color: "var(--farmer-muted, #65766e)", marginTop: "4px" }}>Restock or relist</div>
+        </div>
       </div>
 
       {/* Global Feedback Notifications */}

@@ -157,26 +157,67 @@ export default function FarmerMyHub() {
 
   return (
     <div style={{ maxWidth: "900px", margin: "0 auto", padding: "16px 12px 60px" }}>
-      {/* Page Header */}
-      <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+      {/* Standard Farmer Page Header */}
+      <div className="farmer-page-header">
         <div>
-          <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", color: "#1B6B34", fontSize: "26px", fontWeight: 700, margin: 0 }}>
-            My Hubs
-          </h1>
-          <p style={{ margin: "4px 0 0", color: "#79705F", fontSize: "14px" }}>
-            Manage your storage facilities and delivery coverage radiuses.
-          </p>
+          <div className="eyebrow"><i className="bi bi-building me-1" /> HUB INFRASTRUCTURE & DISPATCH</div>
+          <h1 className="farmer-page-title">My Kisan Hubs</h1>
+          <p className="farmer-page-sub">Manage your local storage facilities, packaging centers, and quick-commerce delivery coverage radiuses.</p>
         </div>
-        <button
-          type="button"
-          className="kisan-btn-accent kisan-btn-sm"
-          onClick={() => {
-            setCreateForm(emptyHubForm);
-            setShowCreateModal(true);
-          }}
-        >
-          <i className="bi bi-plus-lg me-1" /> Add Hub
-        </button>
+        <div className="farmer-header-actions">
+          <button
+            type="button"
+            className="kisan-btn-accent"
+            onClick={() => {
+              setCreateForm(emptyHubForm);
+              setShowCreateModal(true);
+            }}
+          >
+            <i className="bi bi-plus-lg me-1" /> Add Hub
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Summary Cards */}
+      <div className="farmer-kpis-grid mb-4">
+        <div className="farmer-kpi-card">
+          <div className="farmer-kpi-info">
+            <span className="farmer-kpi-label">Total Facilities</span>
+            <span className="farmer-kpi-value">{facilities.length}</span>
+            <span className="farmer-kpi-hint">Storage & dispatch locations</span>
+          </div>
+          <div className="farmer-kpi-icon" style={{ background: "#edf8df", color: "#073a26" }}>
+            <i className="bi bi-building-fill" />
+          </div>
+        </div>
+
+        <div className="farmer-kpi-card">
+          <div className="farmer-kpi-info">
+            <span className="farmer-kpi-label">Active Hubs</span>
+            <span className="farmer-kpi-value" style={{ color: "#0e5a3c" }}>
+              {facilities.filter((f) => (f.status || "").toUpperCase() !== "INACTIVE").length}
+            </span>
+            <span className="farmer-kpi-hint">Serving consumer orders</span>
+          </div>
+          <div className="farmer-kpi-icon" style={{ background: "#dcfce7", color: "#166534" }}>
+            <i className="bi bi-check-circle-fill" />
+          </div>
+        </div>
+
+        <div className="farmer-kpi-card">
+          <div className="farmer-kpi-info">
+            <span className="farmer-kpi-label">Max Delivery Radius</span>
+            <span className="farmer-kpi-value" style={{ color: "#073a26" }}>
+              {facilities.length > 0
+                ? `${Math.max(...facilities.map((f) => Number(f.service_radius_km || 0)))} km`
+                : "0 km"}
+            </span>
+            <span className="farmer-kpi-hint">Customer reach distance</span>
+          </div>
+          <div className="farmer-kpi-icon" style={{ background: "#fef3c7", color: "#92400e" }}>
+            <i className="bi bi-scooter" />
+          </div>
+        </div>
       </div>
 
       {/* Notifications / Alerts */}

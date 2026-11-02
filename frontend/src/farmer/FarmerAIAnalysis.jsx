@@ -225,36 +225,24 @@ export default function FarmerAIAnalysis({ onBack }) {
   }, [aiData, listings]);
 
   return (
-    <section className="detail-view ai-insights-page farmer-ai-page">
-      {/* Navigation & Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
+    <div className="farmer-dashboard-view farmer-ai-page">
+      {/* 1. Header */}
+      <div className="farmer-page-header">
         <div>
-          <button
-            type="button"
-            className="kisan-btn-outline kisan-btn-sm"
-            style={{ marginBottom: "10px", padding: "5px 12px", gap: "6px" }}
-            onClick={onBack || (() => navigate("/farmer/dashboard"))}
-          >
-            <i className="bi bi-arrow-left" /> Back to Dashboard
-          </button>
-          <h1
-            style={{
-              fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
-              fontSize: "26px",
-              color: "var(--forest, #1B6B34)",
-              margin: "0 0 4px",
-              fontWeight: 700,
-            }}
-          >
-            AI Crop Insights
-          </h1>
-          <div style={{ fontSize: "13px", color: "var(--clay, #79705F)" }}>
-            Computer vision quality evaluation, APMC benchmark rates, and live local demand analytics.
-          </div>
+          <span className="eyebrow">MACHINE LEARNING INFERENCE</span>
+          <h1>Crop Quality AI &amp; Predictive Insights</h1>
+          <p>
+            MobileNetV2 computer vision quality evaluation, APMC benchmark rates, and live regional demand analytics.
+          </p>
         </div>
-        <span className="kisan-badge kisan-badge-sage" style={{ padding: "6px 14px", fontSize: "12px" }}>
-          <i className="bi bi-cpu-fill me-1" /> Live AI Telemetry
-        </span>
+        <div className="farmer-header-actions">
+          <Link to="/farmer/crops/new" className="farmer-action-pill primary">
+            <i className="bi bi-plus-circle" /> Scan New Harvest
+          </Link>
+          <Link to="/farmer/prices" className="farmer-action-pill">
+            <i className="bi bi-tag" /> AI Fair Price
+          </Link>
+        </div>
       </div>
 
       {error ? (
@@ -335,7 +323,7 @@ export default function FarmerAIAnalysis({ onBack }) {
                   <p style={{ fontSize: "13px", color: "var(--clay, #79705F)", margin: "0 0 14px" }}>
                     {qualityTrend.note}
                   </p>
-                  <Link to="/farmer/crop-quality" className="kisan-btn-accent kisan-btn-sm">
+                  <Link to="/farmer/crops/new" className="kisan-btn-accent kisan-btn-sm">
                     + Run Quality Scan
                   </Link>
                 </div>
@@ -474,7 +462,7 @@ export default function FarmerAIAnalysis({ onBack }) {
           </div>
         </>
       )}
-    </section>
+    </div>
   );
 }
 

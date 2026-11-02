@@ -12,21 +12,23 @@ const navSections = [
     ],
   },
   {
-    groupTitle: "FARM",
+    groupTitle: "FARM & CROPS",
     items: [
       { path: "/farmer/crops", icon: "bi-basket2", label: "My Crops" },
       { path: "/farmer/crops/new", icon: "bi-plus-circle", label: "Add Crop" },
       { path: "/farmer/ai-insights", icon: "bi-cpu", label: "Crop Quality AI" },
       { path: "/farmer/orders", icon: "bi-receipt", label: "My Orders" },
+      { path: "/farmer/dispatch", icon: "bi-truck", label: "Dispatch & Tracking" },
       { path: "/farmer/sales", icon: "bi-graph-up", label: "Sales & Analytics" },
-      { path: "/farmer/prices", icon: "bi-tag", label: "AI Fair Price" },
+      { path: "/farmer/prices", icon: "bi-tag", label: "AI Fair Price & Market" },
       { path: "/farmer/wallet", icon: "bi-wallet2", label: "My Wallet" },
     ],
   },
   {
-    groupTitle: "HUB",
+    groupTitle: "HUB & LOGISTICS",
     items: [
       { path: "/farmer/hub", icon: "bi-building", label: "My Hub" },
+      { path: "/farmer/hub-supply", icon: "bi-box-seam", label: "Hub Supply" },
       { path: "/farmer/staff", icon: "bi-people", label: "Hub Staff" },
     ],
   },
@@ -34,6 +36,7 @@ const navSections = [
     groupTitle: "ACCOUNT",
     items: [
       { path: "/farmer/notifications", icon: "bi-bell", label: "Notifications" },
+      { path: "/farmer/reviews", icon: "bi-star", label: "Reviews" },
       { path: "/farmer/profile", icon: "bi-person", label: "Profile" },
       { path: "/farmer/settings", icon: "bi-gear", label: "Settings" },
       { path: "/farmer/help", icon: "bi-question-circle", label: "Help" },

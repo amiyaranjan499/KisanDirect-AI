@@ -177,45 +177,63 @@ export default function FarmerHubStaff() {
 
   return (
     <div className="farmer-dashboard-view">
-      {/* ── Page Header ──────────────────────────────────────────── */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: "20px",
-          flexWrap: "wrap",
-          gap: "12px",
-        }}
-      >
+      {/* Standard Farmer Page Header */}
+      <div className="farmer-page-header">
         <div>
-          <h1
-            style={{
-              fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
-              fontSize: "22px",
-              fontWeight: 700,
-              color: "var(--forest, #1B6B34)",
-              margin: "0 0 4px",
-            }}
-          >
-            Hub Staff
-          </h1>
-          <p style={{ fontSize: "13px", color: "var(--clay, #79705F)", margin: 0 }}>
-            Create and manage staff accounts for your Kisan Hub facilities.
-          </p>
+          <div className="eyebrow"><i className="bi bi-people me-1" /> HUB OPERATIONS & TEAM</div>
+          <h1 className="farmer-page-title">Hub Staff & Operators</h1>
+          <p className="farmer-page-sub">Create and manage operational staff credentials for order picking, packing, and dispatch across your Kisan Hubs.</p>
         </div>
-        {activeFacilities.length > 0 && (
-          <button
-            type="button"
-            className="kisan-btn-green"
-            onClick={handleOpenForm}
-            id="btn-create-staff-account"
-            style={{ display: "inline-flex", alignItems: "center", gap: "7px" }}
-          >
-            <i className="bi bi-person-plus-fill" aria-hidden="true" />
-            Create Staff Account
-          </button>
-        )}
+        <div className="farmer-header-actions">
+          {activeFacilities.length > 0 && (
+            <button
+              type="button"
+              className="kisan-btn-accent"
+              onClick={handleOpenForm}
+              id="btn-create-staff-account"
+            >
+              <i className="bi bi-person-plus-fill me-1" /> Create Staff Account
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* KPI Summary Cards */}
+      <div className="farmer-kpis-grid mb-4">
+        <div className="farmer-kpi-card">
+          <div className="farmer-kpi-info">
+            <span className="farmer-kpi-label">Total Staff</span>
+            <span className="farmer-kpi-value">{staffList.length}</span>
+            <span className="farmer-kpi-hint">Registered operators</span>
+          </div>
+          <div className="farmer-kpi-icon" style={{ background: "#edf8df", color: "#073a26" }}>
+            <i className="bi bi-people-fill" />
+          </div>
+        </div>
+
+        <div className="farmer-kpi-card">
+          <div className="farmer-kpi-info">
+            <span className="farmer-kpi-label">Active Facilities</span>
+            <span className="farmer-kpi-value" style={{ color: "#0e5a3c" }}>{activeFacilities.length}</span>
+            <span className="farmer-kpi-hint">Hub locations operating</span>
+          </div>
+          <div className="farmer-kpi-icon" style={{ background: "#dcfce7", color: "#166534" }}>
+            <i className="bi bi-building-check" />
+          </div>
+        </div>
+
+        <div className="farmer-kpi-card">
+          <div className="farmer-kpi-info">
+            <span className="farmer-kpi-label">Assigned Hubs</span>
+            <span className="farmer-kpi-value" style={{ color: "#073a26" }}>
+              {new Set(staffList.map((s) => s.facility_id)).size}
+            </span>
+            <span className="farmer-kpi-hint">Staffed facilities</span>
+          </div>
+          <div className="farmer-kpi-icon" style={{ background: "#fef3c7", color: "#92400e" }}>
+            <i className="bi bi-shield-check" />
+          </div>
+        </div>
       </div>
 
       {/* ── Global Alerts ────────────────────────────────────────── */}

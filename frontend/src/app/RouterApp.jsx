@@ -226,9 +226,9 @@ export default function RouterApp({ user, logout, onAuthenticated }) {
               <Route path="/farmer/my-hub" element={<FarmerMyHub />} />
               <Route path="/farmer/storage-staff" element={<FarmerMyHub />} />
               <Route path="/farmer/staff" element={<FarmerHubStaff />} />
-              <Route path="/farmer/hub-supply" element={<Navigate to="/farmer/hub" replace />} />
-              <Route path="/farmer/dispatch" element={<Navigate to="/farmer/orders" replace />} />
-              <Route path="/farmer/tracking" element={<Navigate to="/farmer/orders" replace />} />
+              <Route path="/farmer/hub-supply" element={<FarmerHubSupply />} />
+              <Route path="/farmer/dispatch" element={<FarmerDispatchTracking />} />
+              <Route path="/farmer/tracking" element={<FarmerDispatchTracking />} />
               <Route path="/farmer/sales" element={<FarmerSales />} />
               <Route path="/farmer/reviews" element={<FarmerReviews />} />
               <Route path="/farmer/notifications" element={<FarmerNotifications />} />

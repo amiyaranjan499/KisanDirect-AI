@@ -2578,3 +2578,123 @@
   padding: 4px 8px;
 }
 
+
+/* ==========================================================================
+   Advanced UI Buttons, Filter Tabs & Badges
+   ========================================================================== */
+
+.kisan-btn-primary {
+  background: linear-gradient(135deg, var(--farmer-forest, #073a26) 0%, var(--farmer-forest-med, #0e5a3c) 100%);
+  color: #FFFFFF !important;
+  border: none;
+  padding: 9px 20px;
+  border-radius: var(--farmer-radius-sm, 8px);
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(7, 58, 38, 0.22);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  text-decoration: none;
+}
+
+.kisan-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(7, 58, 38, 0.32);
+  color: #FFFFFF !important;
+}
+
+.kisan-btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.kisan-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.kisan-btn-accent {
+  background: linear-gradient(135deg, #d49343 0%, #c68a3d 100%);
+  color: #2a1b05 !important;
+  border: none;
+  padding: 9px 20px;
+  border-radius: var(--farmer-radius-sm, 8px);
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(198, 138, 61, 0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  text-decoration: none;
+}
+
+.kisan-btn-accent:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(198, 138, 61, 0.35);
+  color: #2a1b05 !important;
+}
+
+.kisan-btn-outline {
+  background: #FFFFFF;
+  color: var(--farmer-forest, #073a26) !important;
+  border: 1px solid var(--farmer-border, #E4DFD1);
+  padding: 8px 18px;
+  border-radius: var(--farmer-radius-sm, 8px);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+
+.kisan-btn-outline:hover:not(:disabled) {
+  background: var(--farmer-lime-soft, #edf8df);
+  border-color: var(--farmer-forest, #073a26);
+  color: var(--farmer-forest, #073a26) !important;
+}
+
+.kisan-btn-sm {
+  padding: 6px 14px !important;
+  font-size: 12.5px !important;
+  border-radius: 6px !important;
+}
+
+.farmer-filter-tab {
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 99px;
+  border: 1px solid var(--farmer-border, #E4DFD1);
+  background: #FFFFFF;
+  color: var(--farmer-ink, #183229);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.farmer-filter-tab:hover {
+  border-color: var(--farmer-forest, #073a26);
+}
+
+.farmer-filter-tab.active {
+  background: var(--farmer-forest, #073a26) !important;
+  color: #FFFFFF !important;
+  border-color: var(--farmer-forest, #073a26) !important;
+}
+
+.farmer-stars-row i {
+  color: #F59E0B;
+}
+
+.kisan-hairline {
+  height: 1px;
+  background-color: var(--farmer-border, #E4DFD1);
+  border: none;
+  width: 100%;
+}
