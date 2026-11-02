@@ -381,7 +381,20 @@ class ConsumerService:
             row = await self.repository.get_active_listing(listing.id)
             if row is not None:
                 listings.append(self._listing_response(row, await self._coordinates(listing)))
-        return FarmerMarketplaceResponse(id=farmer.id, name=farmer.name, location=await self._coordinates(farmer, "farmers"), rating=(sum(item.farmer_rating or 0 for item in listings) / len(listings) if listings else None), listings=listings)
+        return FarmerMarketplaceResponse(
+            id=farmer.id,
+            name=farmer.name,
+            location=await self._coordinates(farmer, "farmers"),
+            rating=(sum(item.farmer_rating or 0 for item in listings) / len(listings) if listings else None),
+            listings=listings,
+            city=farmer.city,
+            district=farmer.district,
+            state=farmer.state,
+            address=farmer.address or farmer.address_line,
+            pin_code=farmer.pin_code,
+            profile_image=getattr(farmer, "profile_image", None),
+            cover_image=getattr(farmer, "cover_image", None),
+        )
 
     async def _coordinates(self, listing, table="crop_listings") -> dict | None:
         result = await self.repository.session.execute(
@@ -417,5 +430,12 @@ class ConsumerService:
                     rating=float(rating) if rating is not None else None,
                     active_listing_count=int(active_count),
                     listings=listings,
+                    city=farmer.city,
+                    district=farmer.district,
+                    state=farmer.state,
+                    address=farmer.address or farmer.address_line,
+                    pin_code=farmer.pin_code,
+                    profile_image=getattr(farmer, "profile_image", None),
+                    cover_image=getattr(farmer, "cover_image", None),
                 ))
         return NearbyFarmerPage(items=items, latitude=latitude, longitude=longitude, radius_km=radius_km, page=page, page_size=page_size, total=total, pages=(total + page_size - 1) // page_size)

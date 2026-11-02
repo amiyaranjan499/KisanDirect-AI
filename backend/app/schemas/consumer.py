@@ -212,3 +212,10 @@ class FarmerMarketplaceResponse(BaseModel):
     location: LocationInput | None
     rating: float | None
     listings: list[MarketplaceListingResponse]
+    city: str | None = None
+    district: str | None = None
+    state: str | None = None
+    address: str | None = None
+    pin_code: str | None = None
+    profile_image: str | None = None
+    cover_image: str | None = None

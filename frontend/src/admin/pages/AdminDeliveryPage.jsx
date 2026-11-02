@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useI18n } from "../../i18n";
+import AdminDataTable from "../components/AdminDataTable";
+import AdminFilterTabs from "../components/AdminFilterTabs";
+import AdminDetailDrawer from "../components/AdminDetailDrawer";
+import AdminConfirmDialog from "../components/AdminConfirmDialog";
 import {
   cancelAdminShipment,
   listAdminRiders,
@@ -8,122 +11,493 @@ import {
   resetAdminDeliveryOtp,
 } from "../../services/adminApi";
 
+const formatDate = (value) =>
+  value
+    ? new Date(value).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "—";
+
 export default function AdminDeliveryPage() {
-  const { t } = useI18n();
   const [shipments, setShipments] = useState([]);
   const [riders, setRiders] = useState([]);
-  const [search, setSearch] = useState("");
-  const [riderSelections, setRiderSelections] = useState({});
-  const [reasons, setReasons] = useState({});
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
 
-  const refresh = useCallback(() => {
+  // Detail drawer
+  const [selectedShipment, setSelectedShipment] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Modals for actions
+  const [activeAction, setActiveAction] = useState(null); // 'reassign' | 'cancel' | 'otp-reset'
+  const [actionShipment, setActionShipment] = useState(null);
+  const [selectedRiderId, setSelectedRiderId] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState("");
+
+  const refresh = useCallback(async () => {
     setLoading(true);
-    Promise.all([listAdminShipments(), listAdminRiders()])
-      .then(([shipmentRows, riderRows]) => {
-        setShipments(Array.isArray(shipmentRows) ? shipmentRows : []);
-        setRiders(Array.isArray(riderRows) ? riderRows : []);
-      })
-      .catch((requestError) => setError(requestError.message || t("adminDeliveryLoadError")))
-      .finally(() => setLoading(false));
-  }, [t]);
-
-  useEffect(() => refresh(), [refresh]);
-
-  const eligibleRiders = useMemo(
-    () => riders.filter((rider) => rider.approval_status === "APPROVED" && rider.availability === "AVAILABLE"),
-    [riders],
-  );
-  const filteredRows = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return shipments.filter((shipment) =>
-      !query || `${shipment.id} ${shipment.order_id} ${shipment.hub_name} ${shipment.rider_name || ""} ${shipment.status}`.toLowerCase().includes(query),
-    );
-  }, [shipments, search]);
-
-  function getReason(shipmentId) {
-    return reasons[shipmentId] || "";
-  }
-
-  async function execute(shipment, action) {
-    setSavingId(shipment.id);
     setError("");
-    setNotice("");
     try {
-      const reason = getReason(shipment.id).trim();
-      if (action === "reassign") {
-        if (!reason || !riderSelections[shipment.id]) throw new Error(t("adminDeliverySelectRiderReason"));
-        await reassignAdminShipment(shipment.id, {
-          rider_user_id: riderSelections[shipment.id],
+      const [shipmentRows, riderRows] = await Promise.all([
+        listAdminShipments(),
+        listAdminRiders(),
+      ]);
+      setShipments(Array.isArray(shipmentRows) ? shipmentRows : []);
+      setRiders(Array.isArray(riderRows) ? riderRows : []);
+    } catch (err) {
+      setError(err.message || "Failed to load shipment operations.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const availableRiders = useMemo(() => {
+    return riders.filter(
+      (r) => r.approval_status === "APPROVED" && r.availability === "AVAILABLE"
+    );
+  }, [riders]);
+
+  const filteredShipments = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return shipments.filter((s) => {
+      const matchesSearch =
+        !q ||
+        `${s.id || ""} ${s.order_id || ""} ${s.hub_name || ""} ${s.rider_name || ""} ${s.delivery_address || ""}`
+          .toLowerCase()
+          .includes(q);
+      const matchesStatus =
+        statusFilter === "ALL" || (s.status || "").toUpperCase() === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [shipments, search, statusFilter]);
+
+  const handleOpenAction = (shipment, actionType, e) => {
+    if (e) e.stopPropagation();
+    setActionShipment(shipment);
+    setActiveAction(actionType);
+    setSelectedRiderId("");
+    setActionError("");
+  };
+
+  const handleExecuteAction = async (reason) => {
+    if (!actionShipment || !activeAction) return;
+    setActionLoading(true);
+    setActionError("");
+
+    try {
+      if (activeAction === "reassign") {
+        if (!selectedRiderId) {
+          throw new Error("Please select an available rider to reassign.");
+        }
+        await reassignAdminShipment(actionShipment.id, {
+          rider_user_id: selectedRiderId,
           reason,
         });
-      } else if (action === "cancel") {
-        if (!reason) throw new Error(t("adminDeliveryCancelReason"));
-        await cancelAdminShipment(shipment.id, { reason });
-      } else {
-        if (!reason) throw new Error(t("adminDeliveryResetReason"));
-        await resetAdminDeliveryOtp(shipment.id, { reason });
+        setNotice(`Shipment ${String(actionShipment.id).slice(0, 8)} successfully reassigned.`);
+      } else if (activeAction === "cancel") {
+        await cancelAdminShipment(actionShipment.id, { reason });
+        setNotice(`Shipment ${String(actionShipment.id).slice(0, 8)} cancelled.`);
+      } else if (activeAction === "otp-reset") {
+        await resetAdminDeliveryOtp(actionShipment.id, { reason });
+        setNotice(`Delivery OTP lockout reset for shipment ${String(actionShipment.id).slice(0, 8)}.`);
       }
-      setNotice(action === "reassign" ? t("adminDeliveryRiderReassigned") : action === "cancel" ? t("adminDeliveryCancelled") : t("adminDeliveryOtpReset"));
-      setReasons((current) => ({ ...current, [shipment.id]: "" }));
-      refresh();
-    } catch (requestError) {
-      setError(requestError.message || t("adminDeliveryError"));
+      setActiveAction(null);
+      setActionShipment(null);
+      await refresh();
+    } catch (err) {
+      setActionError(err.message || "Failed to complete delivery action.");
     } finally {
-      setSavingId("");
+      setActionLoading(false);
     }
-  }
+  };
+
+  const handleView = (shipment, e) => {
+    if (e) e.stopPropagation();
+    setSelectedShipment(shipment);
+    setDrawerOpen(true);
+  };
+
+  const columns = [
+    {
+      key: "id",
+      label: "Shipment ID",
+      sortable: true,
+      width: "130px",
+      render: (s) => (
+        <span className="font-monospace text-muted" title={s.id}>
+          {String(s.id).slice(0, 8).toUpperCase()}
+        </span>
+      ),
+    },
+    {
+      key: "order_id",
+      label: "Order Ref",
+      sortable: true,
+      width: "130px",
+      render: (s) => (
+        <strong className="font-monospace text-forest">
+          {`ORD-${String(s.order_id).slice(0, 8).toUpperCase()}`}
+        </strong>
+      ),
+    },
+    {
+      key: "hub_name",
+      label: "Dispatch Hub",
+      sortable: true,
+      render: (s) => (
+        <div>
+          <span>{s.hub_name}</span>
+          <div className="text-muted small text-truncate" style={{ maxWidth: "200px" }} title={s.pickup_address}>
+            {s.pickup_address}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "rider_name",
+      label: "Assigned Rider",
+      sortable: true,
+      render: (s) => (
+        s.rider_name ? (
+          <div className="d-flex align-items-center gap-2">
+            <i className="bi bi-person-badge text-forest" />
+            <span>{s.rider_name}</span>
+          </div>
+        ) : (
+          <span className="badge bg-light text-warning border">Unassigned</span>
+        )
+      ),
+    },
+    {
+      key: "delivery_address",
+      label: "Destination",
+      render: (s) => (
+        <span className="text-truncate d-inline-block" style={{ maxWidth: "200px" }} title={s.delivery_address}>
+          {s.delivery_address}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      sortable: true,
+      render: (s) => (
+        <span className={`admin-badge admin-badge-${String(s.status).toLowerCase()}`}>
+          {s.status}
+        </span>
+      ),
+    },
+    {
+      key: "otp_locked",
+      label: "Security",
+      render: (s) => (
+        s.otp_locked ? (
+          <span className="admin-badge admin-badge-inactive">
+            <i className="bi bi-lock-fill me-1" /> OTP Locked
+          </span>
+        ) : (
+          <span className="text-muted small">Normal</span>
+        )
+      ),
+    },
+    {
+      key: "actions",
+      label: "Actions",
+      width: "220px",
+      align: "right",
+      render: (s) => (
+        <div className="d-flex align-items-center justify-content-end gap-1 flex-wrap">
+          <button
+            type="button"
+            className="admin-table-action-btn"
+            onClick={(e) => handleView(s, e)}
+          >
+            <i className="bi bi-eye" />
+          </button>
+          <button
+            type="button"
+            className="admin-table-action-btn"
+            onClick={(e) => handleOpenAction(s, "reassign", e)}
+            title="Reassign rider"
+          >
+            <i className="bi bi-arrow-left-right" /> Reassign
+          </button>
+          {s.can_cancel && (
+            <button
+              type="button"
+              className="admin-table-action-btn text-danger"
+              onClick={(e) => handleOpenAction(s, "cancel", e)}
+              title="Cancel shipment"
+            >
+              <i className="bi bi-x-circle" />
+            </button>
+          )}
+          {s.otp_locked && (
+            <button
+              type="button"
+              className="admin-table-action-btn text-warning"
+              onClick={(e) => handleOpenAction(s, "otp-reset", e)}
+              title="Reset OTP lockout"
+            >
+              <i className="bi bi-key" /> Reset
+            </button>
+          )}
+        </div>
+      ),
+    },
+  ];
+
+  const statusTabs = [
+    { key: "ALL", label: "All Shipments", count: shipments.length },
+    {
+      key: "ASSIGNED",
+      label: "Assigned",
+      count: shipments.filter((s) => (s.status || "").toUpperCase() === "ASSIGNED").length,
+    },
+    {
+      key: "IN_TRANSIT",
+      label: "In Transit",
+      count: shipments.filter((s) => (s.status || "").toUpperCase() === "IN_TRANSIT").length,
+    },
+    {
+      key: "DELIVERED",
+      label: "Delivered",
+      count: shipments.filter((s) => (s.status || "").toUpperCase() === "DELIVERED").length,
+    },
+    {
+      key: "CANCELLED",
+      label: "Cancelled",
+      count: shipments.filter((s) => (s.status || "").toUpperCase() === "CANCELLED").length,
+    },
+  ];
 
   return (
-    <section className="detail-view admin-page-explicit">
-      <div className="consumer-screen-header admin-header-block">
-        <div><span className="eyebrow">{t("adminDeliveryEyebrow")}</span><h1>{t("adminDeliveryTitle")}</h1></div>
-      </div>
-      <div className="admin-toolbar">
-        <div className="admin-search-box"><i className="bi bi-search" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("adminDeliverySearch")} /></div>
-      </div>
-      {error ? <div className="error" role="alert">{error}</div> : null}
-      {notice ? <div className="success-message" role="status">{notice}</div> : null}
-      {loading ? <div className="loading">{t("adminDeliveryLoading")}</div> : null}
-      {!loading && !filteredRows.length ? <div className="empty"><h2>{shipments.length ? t("adminDeliveryNoMatches") : t("adminDeliveryEmptyTitle")}</h2><p>{t("adminDeliveryEmptyText")}</p></div> : null}
-      {!loading && filteredRows.length ? (
-        <div className="admin-section-grid admin-shipment-grid">
-          {filteredRows.map((shipment) => (
-            <article className="admin-panel admin-shipment-card" key={shipment.id}>
-              <div className="admin-panel-header">
-                <div><h2>{t("adminDeliveryShipment")} {String(shipment.id).slice(0, 8)}</h2><small>{t("adminDeliveryOrder")} {String(shipment.order_id).slice(0, 8)}</small></div>
-                <span className="admin-badge admin-badge-status">{shipment.status.replaceAll("_", " ")}</span>
-              </div>
-              <dl className="admin-shipment-details">
-                <dt>{t("adminDeliveryRider")}</dt><dd>{shipment.rider_name || t("adminDeliveryUnassigned")}</dd>
-                <dt>{t("adminDeliveryHub")}</dt><dd>{shipment.hub_name}</dd>
-                <dt>{t("adminDeliveryEta")}</dt><dd>{shipment.eta_start ? new Date(shipment.eta_start).toLocaleString() : t("adminDeliveryNotSet")} – {shipment.eta_end ? new Date(shipment.eta_end).toLocaleString() : t("adminDeliveryNotSet")}</dd>
-                <dt>{t("adminDeliveryPickup")}</dt><dd>{shipment.pickup_address}</dd>
-                <dt>{t("adminDeliveryDropoff")}</dt><dd>{shipment.delivery_address}</dd>
-              </dl>
-              <label className="admin-action-reason">{t("adminDeliveryActionReason")}
-                <input className="form-control" value={getReason(shipment.id)} maxLength={1000} onChange={(event) => setReasons((current) => ({ ...current, [shipment.id]: event.target.value }))} />
-              </label>
-              {shipment.status === "READY_FOR_PICKUP" || shipment.status === "RIDER_ASSIGNED" ? (
-                <div className="admin-inline-action">
-                  <select className="form-select" aria-label={t("adminDeliverySelectRider")} value={riderSelections[shipment.id] || ""} onChange={(event) => setRiderSelections((current) => ({ ...current, [shipment.id]: event.target.value }))}>
-                    <option value="">{t("adminDeliverySelectRider")}</option>
-                    {eligibleRiders.filter((rider) => rider.user_id !== riders.find((candidate) => candidate.id === shipment.rider_id)?.user_id).map((rider) => <option key={rider.id} value={rider.user_id}>{rider.display_name}</option>)}
-                  </select>
-                  <button type="button" className="btn btn-sm btn-outline-primary" disabled={savingId === shipment.id} onClick={() => execute(shipment, "reassign")}>{t("adminDeliveryReassign")}</button>
-                </div>
-              ) : null}
-              <div className="admin-inline-action">
-                {shipment.can_cancel ? <button type="button" className="btn btn-sm btn-outline-danger" disabled={savingId === shipment.id} onClick={() => execute(shipment, "cancel")}>{t("adminDeliveryCancel")}</button> : null}
-                {shipment.otp_locked ? <button type="button" className="btn btn-sm btn-outline-warning" disabled={savingId === shipment.id} onClick={() => execute(shipment, "otp")}>{t("adminDeliveryResetOtp")}</button> : null}
-              </div>
-            </article>
-          ))}
+    <div className="admin-page-container">
+      <div className="admin-page-header">
+        <div>
+          <span className="eyebrow">Logistics & Delivery</span>
+          <h1>Shipment Operations</h1>
+          <p>Supervise active deliveries, reassign riders, reset delivery OTP lockouts, and track route progress.</p>
         </div>
-      ) : null}
-    </section>
+        <div className="admin-header-actions">
+          <button type="button" className="admin-btn-secondary" onClick={refresh} disabled={loading}>
+            <i className={`bi bi-arrow-clockwise ${loading ? "spin" : ""}`} /> Refresh
+          </button>
+        </div>
+      </div>
+
+      {notice && (
+        <div className="alert alert-success d-flex align-items-center justify-content-between mb-3" role="status">
+          <div><i className="bi bi-check-circle-fill me-2" />{notice}</div>
+          <button type="button" className="btn-close" onClick={() => setNotice("")} aria-label="Close" />
+        </div>
+      )}
+
+      <AdminFilterTabs tabs={statusTabs} activeTab={statusFilter} onChange={setStatusFilter} />
+
+      <AdminDataTable
+        columns={columns}
+        data={filteredShipments}
+        loading={loading}
+        error={error}
+        onRetry={refresh}
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search shipments by order, hub, destination, or rider..."
+        pageSize={12}
+        emptyTitle="No shipments found"
+        emptyDescription="There are no active or historical deliveries matching your criteria."
+        onRowClick={handleView}
+      />
+
+      {/* Shipment Detail Drawer */}
+      <AdminDetailDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title={`Shipment ${String(selectedShipment?.id || "").slice(0, 8).toUpperCase()}`}
+        subtitle={`Order: ${selectedShipment?.order_id || ""}`}
+        badge={
+          selectedShipment && (
+            <span className={`admin-badge admin-badge-${String(selectedShipment.status).toLowerCase()}`}>
+              {selectedShipment.status}
+            </span>
+          )
+        }
+      >
+        {selectedShipment && (
+          <>
+            <section className="admin-detail-section">
+              <h4>Dispatch Coordinates</h4>
+              <dl className="admin-detail-list">
+                <dt>Shipment ID</dt>
+                <dd className="font-monospace">{selectedShipment.id}</dd>
+                <dt>Order Reference</dt>
+                <dd className="font-monospace">{selectedShipment.order_id}</dd>
+                <dt>Kisan Hub</dt>
+                <dd>{selectedShipment.hub_name}</dd>
+                <dt>Pickup Address</dt>
+                <dd>{selectedShipment.pickup_address}</dd>
+                <dt>Delivery Address</dt>
+                <dd>{selectedShipment.delivery_address}</dd>
+                <dt>Created Timestamp</dt>
+                <dd>{formatDate(selectedShipment.created_at)}</dd>
+              </dl>
+            </section>
+
+            <section className="admin-detail-section">
+              <h4>Assigned Courier</h4>
+              <dl className="admin-detail-list">
+                <dt>Rider Name</dt>
+                <dd>{selectedShipment.rider_name || "Unassigned"}</dd>
+                <dt>Rider ID</dt>
+                <dd className="font-monospace">{selectedShipment.rider_id || "None"}</dd>
+                <dt>ETA Window</dt>
+                <dd>
+                  {selectedShipment.eta_start
+                    ? `${formatDate(selectedShipment.eta_start)} – ${formatDate(selectedShipment.eta_end)}`
+                    : "Not calculated"}
+                </dd>
+                <dt>OTP Security</dt>
+                <dd>
+                  {selectedShipment.otp_locked ? (
+                    <span className="text-danger fw-bold">
+                      <i className="bi bi-lock-fill" /> Locked after failed attempts
+                    </span>
+                  ) : (
+                    <span className="text-success">
+                      <i className="bi bi-shield-check" /> Active & Unlocked
+                    </span>
+                  )}
+                </dd>
+              </dl>
+            </section>
+          </>
+        )}
+      </AdminDetailDrawer>
+
+      {/* Reassign Rider Modal */}
+      {activeAction === "reassign" && (
+        <div className="admin-modal-root" role="dialog" aria-modal="true">
+          <div className="admin-modal-backdrop" onClick={() => !actionLoading && setActiveAction(null)} />
+          <div className="admin-modal-card">
+            <header className="admin-modal-header">
+              <div className="admin-modal-icon primary">
+                <i className="bi bi-arrow-left-right" />
+              </div>
+              <div className="admin-modal-title-area">
+                <h3>Reassign Delivery Rider</h3>
+                <p>Transfer shipment to an active, approved delivery courier.</p>
+              </div>
+            </header>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const reason = e.target.elements.reason.value;
+                handleExecuteAction(reason);
+              }}
+            >
+              <div className="admin-modal-reason-group">
+                <label htmlFor="rider-select-dropdown">
+                  Select Available Rider <span className="text-danger">*</span>
+                </label>
+                <select
+                  id="rider-select-dropdown"
+                  className="form-select mb-2"
+                  value={selectedRiderId}
+                  onChange={(e) => setSelectedRiderId(e.target.value)}
+                  required
+                >
+                  <option value="">-- Choose Rider ({availableRiders.length} Available) --</option>
+                  {availableRiders.map((r) => (
+                    <option key={r.id} value={r.user_id}>
+                      {r.display_name} ({r.email}) - {r.active_shipment_count} active
+                    </option>
+                  ))}
+                </select>
+
+                <label htmlFor="reassign-reason-input">
+                  Audit Reason <span className="text-danger">*</span>
+                </label>
+                <textarea
+                  id="reassign-reason-input"
+                  name="reason"
+                  rows={3}
+                  placeholder="State reason for courier reassignment..."
+                  required
+                  maxLength={1000}
+                />
+              </div>
+
+              {actionError && (
+                <div className="admin-modal-error" role="alert">
+                  <i className="bi bi-x-circle-fill" /> {actionError}
+                </div>
+              )}
+
+              <footer className="admin-modal-footer">
+                <button
+                  type="button"
+                  className="admin-btn-secondary"
+                  onClick={() => setActiveAction(null)}
+                  disabled={actionLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-btn-primary"
+                  disabled={actionLoading || !selectedRiderId}
+                >
+                  {actionLoading ? "Reassigning..." : "Reassign Rider"}
+                </button>
+              </footer>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Shipment Modal */}
+      <AdminConfirmDialog
+        isOpen={activeAction === "cancel"}
+        onClose={() => setActiveAction(null)}
+        onConfirm={handleExecuteAction}
+        title="Cancel Shipment"
+        message={`Are you sure you want to cancel shipment ${String(actionShipment?.id || "").slice(0, 8)}?`}
+        confirmLabel="Cancel Shipment"
+        confirmVariant="danger"
+        requireReason={true}
+        reasonPlaceholder="Specify why this shipment is being cancelled..."
+        loading={actionLoading}
+        error={actionError}
+      />
+
+      {/* Reset Delivery OTP Lockout Modal */}
+      <AdminConfirmDialog
+        isOpen={activeAction === "otp-reset"}
+        onClose={() => setActiveAction(null)}
+        onConfirm={handleExecuteAction}
+        title="Reset Delivery OTP Lockout"
+        message="This will generate a fresh delivery OTP and clear the security lockout."
+        confirmLabel="Reset OTP"
+        confirmVariant="warning"
+        requireReason={true}
+        reasonPlaceholder="Specify why the OTP lockout is being reset..."
+        loading={actionLoading}
+        error={actionError}
+      />
+    </div>
   );
 }

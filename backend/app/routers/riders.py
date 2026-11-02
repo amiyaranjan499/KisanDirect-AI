@@ -11,6 +11,7 @@ from backend.app.dependencies import get_current_user
 from backend.app.models import ShipmentStatus, User, UserRole
 from backend.app.repositories.rider_repository import RiderRepository
 from backend.app.schemas.rider import (
+    RiderProfileUpdate,
     RiderAvailabilityUpdate,
     RiderHistoryResponse,
     RiderLocationCreate,
@@ -66,6 +67,22 @@ def _raise_http_error(error: Exception) -> None:
     if isinstance(error, LifecycleConflict):
         raise HTTPException(status_code=409, detail=str(error)) from error
     raise error
+
+
+@router.patch("/profile", response_model=RiderSelfResponse)
+async def update_rider_profile(
+    payload: RiderProfileUpdate,
+    current_user: Annotated[User, Depends(rider_user)],
+    service: Annotated[RiderService, Depends(get_rider_service)],
+) -> RiderSelfResponse:
+    try:
+        return await service.update_profile(
+            _actor(current_user),
+            display_name=payload.display_name,
+            vehicle_type=payload.vehicle_type,
+        )
+    except (LifecycleNotFound, LifecyclePermissionError, LifecycleConflict) as exc:
+        _raise_http_error(exc)
 
 
 @router.get("/me", response_model=RiderSelfResponse)

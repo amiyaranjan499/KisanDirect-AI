@@ -20,7 +20,13 @@ def get_notifications_service(session: Annotated[AsyncSession, Depends(get_db_se
 
 
 async def require_user(current_user: Annotated[User, Depends(get_current_user)]) -> User:
-    if current_user.role not in {UserRole.CONSUMER, UserRole.FARMER, UserRole.ADMIN}:
+    if current_user.role not in {
+        UserRole.CONSUMER,
+        UserRole.FARMER,
+        UserRole.HUB_STAFF,
+        UserRole.RIDER,
+        UserRole.ADMIN,
+    }:
         raise HTTPException(status_code=403, detail="Notification access is restricted")
     return current_user
 
@@ -71,6 +77,26 @@ async def mark_all_notifications_read(
     service: Annotated[NotificationsService, Depends(get_notifications_service)],
 ) -> dict[str, int]:
     return await service.mark_all_read(current_user.id)
+
+
+@router.delete("/notifications/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_notification(
+    notification_id: UUID,
+    current_user: Annotated[User, Depends(require_user)],
+    service: Annotated[NotificationsService, Depends(get_notifications_service)],
+) -> None:
+    try:
+        await service.delete(current_user.id, notification_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/notifications", response_model=dict[str, int], status_code=status.HTTP_200_OK)
+async def delete_all_notifications(
+    current_user: Annotated[User, Depends(require_user)],
+    service: Annotated[NotificationsService, Depends(get_notifications_service)],
+) -> dict[str, int]:
+    return await service.delete_all(current_user.id)
 
 
 @router.post("/notifications/test-create", response_model=NotificationResponse, status_code=status.HTTP_201_CREATED)

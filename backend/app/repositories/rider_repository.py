@@ -39,6 +39,12 @@ class RiderRepository:
             statement = statement.with_for_update(of=Rider)
         return await self.session.scalar(statement)
 
+    async def update_rider(self, rider: Rider, values: dict) -> Rider:
+        for key, value in values.items():
+            setattr(rider, key, value)
+        await self.session.flush()
+        return rider
+
     async def get_offer(
         self, offer_id: UUID, *, for_update: bool = False
     ) -> RiderOffer | None:

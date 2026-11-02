@@ -3,8 +3,11 @@ from decimal import Decimal
 from math import ceil
 from uuid import UUID
 
+from sqlalchemy import select
+
 from backend.app.core.config import Settings
 from backend.app.models import (
+    HubStaff,
     NotificationType,
     Order,
     OrderStatus,
@@ -65,7 +68,8 @@ class OrdersService:
             item_subtotal = (Decimal(listing.asking_price) * Decimal(item.quantity)).quantize(Decimal("0.01"))
             subtotal += item_subtotal
             total_quantity += item.quantity
-            items.append(CartItemResponse(id=item.id, listing_id=listing.id, crop_name=listing.crop.name, farmer_name=listing.farmer.name, quantity=item.quantity, available_quantity=listing.quantity, minimum_order_quantity=listing.minimum_order_quantity, unit=listing.unit, unit_price=listing.asking_price, subtotal=item_subtotal))
+            image_url = listing.images[0].storage_url if getattr(listing, 'images', None) else None
+            items.append(CartItemResponse(id=item.id, listing_id=listing.id, crop_name=listing.crop.name, farmer_name=listing.farmer.name, quantity=item.quantity, available_quantity=listing.quantity, minimum_order_quantity=listing.minimum_order_quantity, unit=listing.unit, unit_price=listing.asking_price, subtotal=item_subtotal, image_url=image_url))
         return CartResponse(id=cart.id, items=items, subtotal=subtotal, total_quantity=total_quantity)
 
     @staticmethod
@@ -420,23 +424,59 @@ class OrdersService:
     async def _notify_order_created(self, order, consumer_user_id: UUID) -> None:
         if self.notification_service is None:
             return
+        order_code = f"ORD-{str(order.id)[:8].upper()}"
         await self.notification_service.create(
             user_id=consumer_user_id,
             notification_type=NotificationType.ORDER,
             title="Order created",
-            message=f"Your order {str(order.id)[:8]} has been placed successfully.",
+            message=f"Your order {order_code} has been placed successfully. Total: ₹{order.total_amount}.",
             related_entity_type="order",
             related_entity_id=order.id,
         )
+
+        # 1. Group items per farmer so each farmer gets a single comprehensive notification
+        farmer_items_map: dict[UUID, list] = {}
         for item in order.items:
-            farmer_user_id = item.listing.farmer.user_id
-            if farmer_user_id == consumer_user_id:
-                continue
+            f_uid = item.listing.farmer.user_id
+            if f_uid != consumer_user_id:
+                farmer_items_map.setdefault(f_uid, []).append(item)
+
+        created_str = (
+            order.created_at.strftime("%d %b %Y, %I:%M %p")
+            if getattr(order, "created_at", None)
+            else "recently"
+        )
+        for farmer_uid, items in farmer_items_map.items():
+            crop_summary = ", ".join(
+                f"{item.quantity} {item.listing.unit} {item.listing.crop.name}"
+                for item in items
+            )
             await self.notification_service.create(
-                user_id=farmer_user_id,
+                user_id=farmer_uid,
                 notification_type=NotificationType.ORDER,
                 title="New order received",
-                message=f"A new order for {item.listing.crop.name} has been placed.",
+                message=(
+                    f"New order {order_code} placed on {created_str}: {crop_summary}. "
+                    f"Status: {order.status.value}. View at /farmer/orders"
+                ),
                 related_entity_type="order",
                 related_entity_id=order.id,
             )
+
+        # 2. Notify assigned hub staff for picking
+        if order.hub_id is not None:
+            staff_res = await self.repository.session.execute(
+                select(HubStaff.user_id).where(HubStaff.hub_id == order.hub_id)
+            )
+            for staff_uid in set(staff_res.scalars()):
+                await self.notification_service.create(
+                    user_id=staff_uid,
+                    notification_type=NotificationType.ORDER,
+                    title="New order assigned for picking",
+                    message=(
+                        f"Order {order_code} ({len(order.items)} items) assigned to your hub for picking. "
+                        f"Status: {order.status.value}. View at /hub-staff/operations"
+                    ),
+                    related_entity_type="order",
+                    related_entity_id=order.id,
+                )

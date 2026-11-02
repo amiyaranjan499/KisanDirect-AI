@@ -12,7 +12,23 @@ export default function useSession() {
     getCurrentUser().then(setUser).catch(() => { localStorage.removeItem("kisandirect_access_token"); setToken(""); setUser(null); }).finally(() => setLoading(false));
   }, [token]);
 
-  function authenticate(nextToken) { localStorage.setItem("kisandirect_access_token", nextToken); setToken(nextToken); }
+  async function authenticate(nextToken) {
+    localStorage.setItem("kisandirect_access_token", nextToken);
+    setToken(nextToken);
+    setLoading(true);
+    try {
+      const currentUser = await getCurrentUser();
+      setUser(currentUser);
+      return currentUser;
+    } catch {
+      localStorage.removeItem("kisandirect_access_token");
+      setToken("");
+      setUser(null);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }
   function logout() { localStorage.removeItem("kisandirect_access_token"); setToken(""); setUser(null); }
   return { token, user, loading, authenticate, logout };
 }

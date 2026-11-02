@@ -175,9 +175,13 @@ class Farmer(TimestampMixin, Base):
     pin_code: Mapped[str | None] = mapped_column(String(6))
     address_line: Mapped[str | None] = mapped_column(Text)
     location: Mapped[Any | None] = mapped_column(Geography(geometry_type="POINT", srid=4326))
+    profile_image: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    cover_image: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="farmer")
     listings: Mapped[list["CropListing"]] = relationship(back_populates="farmer")
+    hubs: Mapped[list["Hub"]] = relationship(back_populates="farmer")
+    withdrawals: Mapped[list["FarmerWithdrawal"]] = relationship(back_populates="farmer", cascade="all, delete-orphan")
 
 
 class Consumer(TimestampMixin, Base):
@@ -243,6 +247,8 @@ class CropListing(TimestampMixin, Base):
     __tablename__ = "crop_listings"
     __table_args__ = (
         Index("ix_crop_listings_status", "availability_status"),
+        Index("ix_crop_listings_farmer_created", "farmer_id", "created_at"),
+        Index("ix_crop_listings_status_created", "availability_status", "created_at"),
         CheckConstraint("quantity > 0", name="ck_crop_listings_quantity_positive"),
         CheckConstraint("asking_price >= 0", name="ck_crop_listings_price_nonnegative"),
     )
@@ -486,7 +492,11 @@ class Hub(TimestampMixin, Base):
     status: Mapped[HubStatus] = mapped_column(
         enum_type(HubStatus, "hub_status"), default=HubStatus.ACTIVE, nullable=False
     )
+    farmer_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("farmers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
+    farmer: Mapped["Farmer | None"] = relationship(back_populates="hubs")
     staff_assignments: Mapped[list["HubStaff"]] = relationship(back_populates="hub")
     stock: Mapped[list["HubStock"]] = relationship(back_populates="hub")
     orders: Mapped[list[Order]] = relationship(back_populates="hub")
@@ -753,3 +763,28 @@ class AdminAuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class FarmerWithdrawal(TimestampMixin, Base):
+    __tablename__ = "farmer_withdrawals"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_farmer_withdrawals_amount_positive"),
+        Index("ix_farmer_withdrawals_farmer_status", "farmer_id", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    farmer_id: Mapped[UUID] = mapped_column(ForeignKey("farmers.id", ondelete="CASCADE"), index=True, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    payout_method: Mapped[str] = mapped_column(String(32), nullable=False, default="BANK_TRANSFER")
+    account_holder_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    account_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ifsc_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    bank_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    upi_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="COMPLETED")
+    reference_id: Mapped[str] = mapped_column(String(80), nullable=False, unique=True, index=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    farmer: Mapped[Farmer] = relationship(back_populates="withdrawals")
+

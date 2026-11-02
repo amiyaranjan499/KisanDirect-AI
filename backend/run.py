@@ -9,4 +9,5 @@ if __name__ == "__main__":
         host=settings.api_host,
         port=settings.api_port,
         loop="backend.uvicorn_loop:selector_loop_factory",
+        reload=settings.app_env == "development",
     )

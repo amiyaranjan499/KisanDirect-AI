@@ -1,4 +1,4 @@
-﻿const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
 export function getApiBaseUrl() {
   return API_BASE_URL;
@@ -71,6 +71,9 @@ export function mediaUrl(path) {
   if (!path) return "";
   const storagePath = typeof path === "string" ? path : path.storage_url;
   if (!storagePath) return "";
+  if (storagePath.startsWith("http://") || storagePath.startsWith("https://") || storagePath.startsWith("data:") || storagePath.startsWith("/assets/")) {
+    return storagePath;
+  }
   return `${API_BASE_URL}/media/${storagePath.replace(/^\/+/, "")}`;
 }
 
@@ -88,6 +91,13 @@ export function getCurrentUser() {
 
 export function getRiderStatus() {
   return request("/api/v1/rider/me");
+}
+
+export function updateRiderProfile(payload) {
+  return request("/api/v1/rider/profile", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function updateRiderAvailability(online) {
@@ -195,6 +205,18 @@ export function updateFarmerProfile(payload) {
   });
 }
 
+export function uploadFarmerProfileImage(image) {
+  const body = new FormData();
+  body.append("image", image);
+  return request("/api/v1/farmers/me/profile-image", { method: "POST", body, headers: {} });
+}
+
+export function uploadFarmerCoverImage(image) {
+  const body = new FormData();
+  body.append("image", image);
+  return request("/api/v1/farmers/me/cover-image", { method: "POST", body, headers: {} });
+}
+
 export function listMyFarmerListings() {
   return request("/api/v1/farmers/me/listings");
 }
@@ -215,6 +237,10 @@ export function uploadFarmerListingImage(listingId, image) {
   const body = new FormData();
   body.append("image", image);
   return request(`/api/v1/farmers/me/listings/${listingId}/images`, { method: "POST", body, headers: {} });
+}
+
+export function reverseGeocodeLocation(latitude, longitude) {
+  return request(`/api/v1/farmers/reverse-geocode?latitude=${latitude}&longitude=${longitude}`);
 }
 
 export function getFarmerDashboardSummary() {
@@ -252,10 +278,12 @@ export function getHubOperationsOverview(hubId) {
   return request(`/api/v1/hub-operations/hub-staff/hubs/${encodeURIComponent(hubId)}/overview`);
 }
 
-export function receiveHubStockDelivery(hubId, deliveryId) {
-  return request(`/api/v1/hub-operations/hub-staff/hubs/${encodeURIComponent(hubId)}/stock-deliveries/${encodeURIComponent(deliveryId)}/receive`, {
-    method: "POST",
-  });
+export function receiveHubStockDelivery(hubId, deliveryId, payload = null) {
+  const options = { method: "POST" };
+  if (payload) {
+    options.body = JSON.stringify(payload);
+  }
+  return request(`/api/v1/hub-operations/hub-staff/hubs/${encodeURIComponent(hubId)}/stock-deliveries/${encodeURIComponent(deliveryId)}/receive`, options);
 }
 
 export function startHubOrderPacking(hubId, orderId) {
@@ -472,6 +500,10 @@ export function placeCheckoutOrder(payload) {
   });
 }
 
+export function getOrderTracking(orderId) {
+  return request(`/api/v1/orders/${orderId}/tracking`);
+}
+
 export function paymentRequest(path, options = {}) {
   return request(`/api/v1${path}`, options);
 }
@@ -521,3 +553,71 @@ export function removeConsumerPaymentMethod(paymentMethodId) {
     method: "DELETE",
   });
 }
+
+export function listFarmerFacilities() {
+  return request("/api/v1/farmers/me/facilities");
+}
+
+export function createFarmerFacility(payload) {
+  return request("/api/v1/farmers/me/facilities", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateFarmerFacility(facilityId, payload) {
+  return request(`/api/v1/farmers/me/facilities/${facilityId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listFarmerStaff(facilityId) {
+  const query = facilityId ? `?facility_id=${encodeURIComponent(facilityId)}` : "";
+  return request(`/api/v1/farmers/me/staff${query}`);
+}
+
+export function createFarmerStaff(facilityId, payload) {
+  return request(`/api/v1/farmers/me/facilities/${facilityId}/staff`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function removeFarmerStaff(facilityId, staffUserId) {
+  return request(`/api/v1/farmers/me/facilities/${facilityId}/staff/${staffUserId}`, {
+    method: "DELETE",
+  });
+}
+
+export function assignFarmerOrderStaff(orderId, payload) {
+  return request(`/api/v1/farmers/me/orders/${orderId}/assign-staff`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function prepareFarmerOrderPersonally(orderId, payload = {}) {
+  return request(`/api/v1/farmers/me/orders/${orderId}/prepare-personally`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function markFarmerOrderReadyForPickup(orderId) {
+  return request(`/api/v1/farmers/me/orders/${orderId}/ready-for-pickup`, {
+    method: "POST",
+  });
+}
+
+export function getFarmerWallet() {
+  return request("/api/v1/farmers/wallet");
+}
+
+export function requestFarmerWithdrawal(payload) {
+  return request("/api/v1/farmers/wallet/withdraw", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+

@@ -1,6 +1,7 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import select
@@ -13,7 +14,9 @@ from backend.app.models import (
     CropListing,
     Farmer,
     Hub,
+    HubStaff,
     HubStockDelivery,
+    NotificationType,
     Order,
     OrderItem,
     Shipment,
@@ -57,9 +60,20 @@ class HubOperationsService:
     async def farmer_hubs(
         self, actor: LifecycleActor
     ) -> list[FarmerHubOptionResponse]:
-        await self._validate_actor(actor, UserRole.FARMER)
+        farmer_user_id = await self._validate_actor(actor, UserRole.FARMER)
+        farmer = await self.session.scalar(
+            select(Farmer).where(Farmer.user_id == farmer_user_id)
+        )
+        farmer_id = farmer.id if farmer else None
         return [
-            FarmerHubOptionResponse(id=hub.id, name=hub.name, address=hub.address)
+            FarmerHubOptionResponse(
+                id=hub.id,
+                name=hub.name,
+                address=hub.address,
+                farmer_id=hub.farmer_id,
+                facility_type="FARMER_OWNED" if hub.farmer_id else "PLATFORM",
+                is_owned=bool(farmer_id and hub.farmer_id == farmer_id),
+            )
             for hub in await self.repository.list_active_hubs()
         ]
 
@@ -88,6 +102,24 @@ class HubOperationsService:
             )
             await self.session.flush()
             await self.session.refresh(delivery)
+
+            if self.lifecycle.notifications is not None:
+                staff_users = await self.session.execute(
+                    select(HubStaff.user_id).where(HubStaff.hub_id == hub.id)
+                )
+                for staff_id in staff_users.scalars():
+                    await self.lifecycle.notifications.stage(
+                        user_id=staff_id,
+                        notification_type=NotificationType.ORDER,
+                        title="Incoming produce delivery",
+                        message=(
+                            f"New produce delivery submitted: {delivery.quantity} {listing.unit} of "
+                            f"{listing.crop.name} from {listing.farmer.name}."
+                        ),
+                        related_entity_type="hub_stock_delivery",
+                        related_entity_id=delivery.id,
+                    )
+
             return self._delivery_response(
                 delivery, hub, listing, listing.crop.name, listing.farmer.name
             )
@@ -120,7 +152,9 @@ class HubOperationsService:
         hub = await self.repository.get_hub(hub_id)
         if hub is None:
             raise LifecycleNotFound("Hub not found")
-        deliveries, orders, shipments = await self.repository.hub_overview(hub_id)
+        deliveries, orders, packing_shipments, ready_shipments, completed_shipments = (
+            await self.repository.hub_overview(hub_id)
+        )
         return HubOperationsOverviewResponse(
             hub=HubStaffHubResponse(id=hub.id, name=hub.name, address=hub.address),
             incoming_deliveries=[
@@ -133,12 +167,22 @@ class HubOperationsService:
                 self._order_response(order) for order in orders
             ],
             packing_shipments=[
-                self._shipment_response(shipment) for shipment in shipments
+                self._shipment_response(shipment) for shipment in packing_shipments
+            ],
+            ready_shipments=[
+                self._shipment_response(shipment) for shipment in ready_shipments
+            ],
+            completed_shipments=[
+                self._shipment_response(shipment) for shipment in completed_shipments
             ],
         )
 
     async def receive_stock_delivery(
-        self, actor: LifecycleActor, hub_id: UUID, delivery_id: UUID
+        self,
+        actor: LifecycleActor,
+        hub_id: UUID,
+        delivery_id: UUID,
+        received_quantity: Decimal | None = None,
     ) -> StockDeliveryResponse:
         async with self._transaction():
             user_id = await self._validate_actor(actor, UserRole.HUB_STAFF)
@@ -152,13 +196,43 @@ class HubOperationsService:
             self._assert_stock_delivery_transition(
                 delivery.status, "RECEIVED"
             )
+            accepted_qty = (
+                received_quantity
+                if received_quantity is not None and received_quantity > 0
+                else delivery.quantity
+            )
+            delivery.quantity = accepted_qty
             await self.repository.increment_hub_stock(
-                delivery.hub_id, delivery.listing_id, delivery.quantity
+                delivery.hub_id, delivery.listing_id, accepted_qty
             )
             delivery.status = "RECEIVED"
             delivery.received_by_user_id = user_id
             delivery.received_at = datetime.now(timezone.utc)
             await self.session.flush()
+
+            # Notify the farmer who supplied the produce
+            if self.lifecycle.notifications is not None:
+                listing_row = await self.session.execute(
+                    select(CropListing)
+                    .where(CropListing.id == delivery.listing_id)
+                    .options(selectinload(CropListing.crop))
+                )
+                listing = listing_row.scalar_one_or_none()
+                crop_name = listing.crop.name if listing and listing.crop else "produce"
+                hub = await self.repository.get_hub(hub_id)
+                hub_name = hub.name if hub else "hub"
+                await self.lifecycle.notifications.stage(
+                    user_id=delivery.farmer_user_id,
+                    notification_type=NotificationType.ORDER,
+                    title="Produce received at hub",
+                    message=(
+                        f"Your delivery of {accepted_qty} {listing.unit if listing else 'kg'} of "
+                        f"{crop_name} was verified and received at {hub_name}. Produce is now available for orders."
+                    ),
+                    related_entity_type="hub_stock_delivery",
+                    related_entity_id=delivery.id,
+                )
+
             return await self._loaded_delivery_response(delivery)
 
     async def start_packing(
@@ -232,18 +306,38 @@ class HubOperationsService:
 
     @staticmethod
     def _order_response(order: Order) -> HubOrderToPackResponse:
+        farmer_name = None
+        for item in order.items:
+            if item.listing and item.listing.farmer:
+                farmer_name = item.listing.farmer.name
+                break
+        address = None
+        city = None
+        if order.delivery:
+            address = order.delivery.dropoff_address
+            city = order.delivery.city
+
         return HubOrderToPackResponse(
             id=order.id,
             consumer_name=order.consumer.name if order.consumer else "Consumer",
             status=order.status.value,
             total_amount=order.total_amount,
             created_at=order.created_at,
+            consumer_address=address,
+            consumer_city=city,
+            farmer_name=farmer_name,
             items=HubOperationsService._order_items(order),
         )
 
     @staticmethod
     def _shipment_response(shipment: Shipment) -> HubShipmentResponse:
         order = shipment.order
+        rider_name = None
+        rider_vehicle = None
+        if shipment.rider:
+            rider_name = shipment.rider.display_name or "Rider Partner"
+            rider_vehicle = shipment.rider.vehicle_type
+
         return HubShipmentResponse(
             id=shipment.id,
             order_id=order.id,
@@ -252,6 +346,9 @@ class HubOperationsService:
             total_amount=order.total_amount,
             promised_window_start=shipment.promised_window_start,
             promised_window_end=shipment.promised_window_end,
+            rider_name=rider_name,
+            rider_vehicle=rider_vehicle,
+            dropoff_address=shipment.dropoff_address_snapshot,
             items=HubOperationsService._order_items(order),
         )
 

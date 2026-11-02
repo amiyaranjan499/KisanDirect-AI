@@ -16,6 +16,8 @@ class AuthenticationService:
         role: UserRole,
         display_name: str | None = None,
     ) -> User:
+        if role in (UserRole.ADMIN, UserRole.HUB_STAFF):
+            raise ValueError("Public registration for this role is not permitted")
         existing_user = await self.user_repository.get_by_email(email)
         if existing_user is not None:
             raise ValueError("An account with this email already exists")

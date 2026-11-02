@@ -78,7 +78,7 @@ export default function ConsumerTracking({ orderId, onBack }) {
     try {
       await orderRequest(`/orders/${orderId}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "CANCELLED" }),
+        body: JSON.stringify({ status: "CANCELLED", reason: "Cancelled by customer" }),
       });
       await load();
     } catch (requestError) {
@@ -111,7 +111,9 @@ export default function ConsumerTracking({ orderId, onBack }) {
       <button className="back-button" type="button" onClick={onBack}>← {t("back")}</button>
       <header className="consumer-screen-header">
         <span className="eyebrow">{t("tracking.title")}</span>
-        <h2>{t("tracking.order")} {tracking.order_id.slice(0, 8)}</h2>
+        <h2 style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", color: "var(--forest, #1B6B34)", fontSize: "24px", fontWeight: 700, margin: 0 }}>
+          {t("tracking.order")} {tracking.order_id.slice(0, 8)}
+        </h2>
         {tracking.shipment_status && (
           <p>
             {t(`tracking.${eventLabels[tracking.shipment_status] || "title"}`)}
@@ -206,7 +208,38 @@ export default function ConsumerTracking({ orderId, onBack }) {
           )}
         </>
       ) : (
-        <div className="empty"><p>{t("tracking.noShipment")}</p></div>
+        <div className="card card-pad" style={{ padding: "32px 20px", textAlign: "center", background: "#FFFFFF", borderRadius: "14px", border: "1px solid var(--line, #E4DFD1)", margin: "16px 0" }}>
+          <i className="bi bi-clock-history" style={{ fontSize: "36px", color: "var(--ochre, #C68A3D)", display: "block", marginBottom: "12px" }} />
+          <h3 style={{ fontSize: "17px", fontWeight: 700, margin: "0 0 6px", color: "var(--forest, #1B6B34)", fontFamily: "'Fraunces', Georgia, serif" }}>
+            Order Placed & Processing
+          </h3>
+          <p style={{ fontSize: "13px", color: "var(--clay, #79705F)", maxWidth: "420px", margin: "0 auto 16px" }}>
+            Your produce is being packaged and prepared for dispatch at the nearest Kisan Hub. Live tracking will activate as soon as a delivery rider is assigned.
+          </p>
+          {tracking.can_cancel && (
+            <button
+              type="button"
+              className="secondary-button danger"
+              onClick={cancelOrder}
+              style={{
+                background: "#FFF1F2",
+                border: "1px solid #FECDD3",
+                color: "#E11D48",
+                fontSize: "13px",
+                fontWeight: 600,
+                padding: "6px 14px",
+                borderRadius: "8px",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                margin: "0 auto",
+              }}
+            >
+              <i className="bi bi-x-circle" /> {t("tracking.cancel")}
+            </button>
+          )}
+        </div>
       )}
     </section>
   );

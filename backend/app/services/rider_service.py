@@ -55,12 +55,37 @@ class RiderService:
         self.settings = settings
         self.notifications = NotificationsService(NotificationRepository(session))
 
-    async def self_status(self, actor: LifecycleActor) -> RiderSelfResponse:
-        rider = await self._rider_for_actor(actor)
+    def _rider_response(self, rider: Rider, user: User | None) -> RiderSelfResponse:
+        name = rider.display_name or (user.email.split("@")[0].replace(".", " ").title() if user else "Delivery Rider")
         return RiderSelfResponse(
+            id=rider.id,
             approval_status=rider.approval_status.value,
             availability=rider.availability.value,
+            display_name=name,
+            vehicle_type=rider.vehicle_type or "Motorcycle / Delivery Bike",
+            email=user.email if user else None,
+            created_at=rider.created_at,
         )
+
+    async def self_status(self, actor: LifecycleActor) -> RiderSelfResponse:
+        rider = await self._rider_for_actor(actor)
+        user = await self.session.get(User, rider.user_id)
+        return self._rider_response(rider, user)
+
+    async def update_profile(
+        self, actor: LifecycleActor, *, display_name: str | None = None, vehicle_type: str | None = None
+    ) -> RiderSelfResponse:
+        async with self._transaction():
+            rider = await self._rider_for_actor(actor, for_update=True)
+            values = {}
+            if display_name is not None:
+                values["display_name"] = display_name.strip() or None
+            if vehicle_type is not None:
+                values["vehicle_type"] = vehicle_type.strip() or None
+            if values:
+                await self.repository.update_rider(rider, values)
+            user = await self.session.get(User, rider.user_id)
+            return self._rider_response(rider, user)
 
     async def set_availability(
         self, actor: LifecycleActor, *, online: bool
@@ -81,10 +106,8 @@ class RiderService:
                     )
                 rider.availability = RiderAvailability.OFFLINE
             await self.session.flush()
-            return RiderSelfResponse(
-                approval_status=rider.approval_status.value,
-                availability=rider.availability.value,
-            )
+            user = await self.session.get(User, rider.user_id)
+            return self._rider_response(rider, user)
 
     async def post_location(
         self,

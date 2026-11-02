@@ -1,0 +1,662 @@
+/* ==========================================================================
+   KISAN DIRECT - HUB STAFF OPERATIONS (PERFECT MOBILE-FIRST DESIGN)
+   ========================================================================== */
+
+.hub-staff-page {
+  min-height: 100vh;
+  background-color: #F6F8F6;
+  color: #1C1C16;
+  font-family: var(--font-body, 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif);
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 1. Top Navbar (Compact, Clean & Responsive) ────────────────────────── */
+.hub-staff-header {
+  background-color: #0B301C;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  box-shadow: 0 2px 10px rgba(7, 38, 23, 0.25);
+  padding: 10px 16px;
+}
+
+.hub-header-inner {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hub-brand-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hub-brand-logo {
+  background: #FFFFFF;
+  padding: 4px 8px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+}
+
+.hub-brand-logo img {
+  height: 22px;
+  width: auto;
+  object-fit: contain;
+}
+
+.hub-brand-title {
+  font-family: var(--font-display, 'Fraunces', Georgia, serif);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin: 0;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.hub-role-badge {
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #E2F0D9;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 99px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.hub-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-btn-refresh {
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #FFFFFF;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 36px;
+}
+
+.hub-btn-refresh:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.hub-btn-logout {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #FCA5A5;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 36px;
+}
+
+.hub-btn-logout:hover {
+  background: rgba(239, 68, 68, 0.35);
+  color: #FFFFFF;
+}
+
+/* ── 2. Hub Facility Banner Card (Clean, Simple & Modern) ────────────────── */
+.hub-facility-card {
+  background: #FFFFFF;
+  border-bottom: 1px solid #E2E8F0;
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.hub-facility-card-inner {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.hub-facility-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hub-facility-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: #E8F5E9;
+  color: #1B6B34;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+
+.hub-facility-name {
+  font-family: var(--font-display, 'Fraunces', Georgia, serif);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0B301C;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.hub-facility-address {
+  font-size: 0.8rem;
+  color: #64748B;
+  margin-top: 2px;
+}
+
+.hub-facility-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hub-staff-pill {
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  color: #475569;
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hub-select-multi {
+  background: #F8FAF8;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1E293B;
+  outline: none;
+  cursor: pointer;
+}
+
+/* ── 3. Horizontal Operations Pill Tabs (Touch-Scrollable & NEVER Overlapping) */
+.hub-tabs-container {
+  background: #FFFFFF;
+  border-bottom: 1px solid #E2E8F0;
+  position: sticky;
+  top: 57px;
+  z-index: 990;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.hub-tabs-scrollable {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hub-tabs-scrollable::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.hub-pill-tab {
+  flex-shrink: 0 !important;
+  flex-grow: 0 !important;
+  white-space: nowrap !important;
+  min-width: max-content !important;
+  box-sizing: border-box;
+  border: 1px solid #CBD5E1;
+  background: #F8FAFC;
+  color: #475569;
+  padding: 8px 14px;
+  border-radius: 99px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.hub-pill-tab:hover {
+  background: #E2E8F0;
+  color: #1E293B;
+  border-color: #94A3B8;
+}
+
+.hub-pill-tab.active {
+  background: #1B6B34 !important;
+  color: #FFFFFF !important;
+  border-color: #1B6B34 !important;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(27, 107, 52, 0.28);
+}
+
+.hub-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.hub-pill-tab.active .hub-tab-count {
+  background: #FFFFFF;
+  color: #1B6B34;
+}
+
+.hub-pill-tab:not(.active) .hub-tab-count {
+  background: #E2E8F0;
+  color: #475569;
+}
+
+.hub-tab-text-full {
+  display: inline;
+}
+
+.hub-tab-text-short {
+  display: none;
+}
+
+/* ── 4. Main Body Content ────────────────────────────────────────────────── */
+.hub-content-wrap {
+  max-width: 1000px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 16px;
+  flex: 1;
+}
+
+/* ── 5. Responsive Order Cards ───────────────────────────────────────────── */
+.hub-orders-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.hub-order-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s ease;
+}
+
+.hub-order-card:hover {
+  border-color: #CBD5E1;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.06);
+}
+
+.hub-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.hub-order-title {
+  font-family: var(--font-display, 'Fraunces', Georgia, serif);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0B301C;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.hub-customer-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1E293B;
+  margin-top: 2px;
+}
+
+.hub-supplier-tag {
+  font-size: 0.75rem;
+  color: #64748B;
+  margin-top: 1px;
+}
+
+.hub-time-badge {
+  font-size: 0.75rem;
+  color: #64748B;
+  background: #F8FAF8;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #E2E8F0;
+  white-space: nowrap;
+}
+
+.hub-address-box {
+  background: #F8FAF8;
+  border: 1px solid #EFECE3;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  color: #334155;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.35;
+}
+
+.hub-items-box {
+  background: #FAF7EF;
+  border: 1px solid #EAE5D8;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.hub-items-heading {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #79705F;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.hub-produce-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.86rem;
+  padding: 3px 0;
+  color: #1C1C16;
+}
+
+.hub-produce-qty {
+  font-weight: 700;
+  color: #1B6B34;
+}
+
+.hub-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid #F1F5F9;
+  padding-top: 12px;
+}
+
+.hub-total-price {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1B6B34;
+}
+
+/* ── Primary Action Button (Minimum 44px for Thumb Tap) ──────────────────── */
+.hub-primary-btn {
+  background: #1B6B34;
+  color: #FFFFFF;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  box-shadow: 0 2px 8px rgba(27, 107, 52, 0.22);
+  transition: all 0.15s ease;
+}
+
+.hub-primary-btn:hover:not(:disabled) {
+  background: #14532D;
+}
+
+.hub-primary-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.hub-primary-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+/* ── Packing Checklist ───────────────────────────────────────────────────── */
+.hub-checklist-group {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.hub-check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  background: #FFFFFF;
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+  min-height: 44px;
+  transition: all 0.12s ease;
+}
+
+.hub-check-row.checked {
+  background: #F0FDF4;
+  border-color: #86EFAC;
+}
+
+.hub-check-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #1B6B34;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.hub-check-content {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.hub-check-content.struck {
+  text-decoration: line-through;
+  color: #166534;
+}
+
+/* ── Rider Status Indicators ─────────────────────────────────────────────── */
+.hub-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.hub-status-assigned {
+  background: #F0FDF4;
+  border: 1px solid #86EFAC;
+  color: #166534;
+}
+
+.hub-status-searching {
+  background: #FFFBEB;
+  border: 1px solid #FCD34D;
+  color: #92400E;
+}
+
+/* ── Clean Empty State ───────────────────────────────────────────────────── */
+.hub-empty-card {
+  background: #FFFFFF;
+  border: 1px dashed #CBD5E1;
+  border-radius: 12px;
+  padding: 40px 16px;
+  text-align: center;
+  color: #64748B;
+}
+
+.hub-empty-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #F1F5F9;
+  color: #94A3B8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  margin: 0 auto 10px;
+}
+
+.hub-empty-heading {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #334155;
+  margin: 0 0 4px;
+}
+
+.hub-empty-desc {
+  font-size: 0.84rem;
+  margin: 0;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+/* ── Mobile View Overrides (<= 640px) ────────────────────────────────────── */
+@media (max-width: 640px) {
+  .hub-staff-header {
+    padding: 8px 12px;
+  }
+
+  .hub-brand-title {
+    font-size: 1.05rem;
+  }
+
+  .hub-facility-card {
+    padding: 10px 12px;
+  }
+
+  .hub-facility-card-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .hub-facility-meta {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .hub-facility-name {
+    font-size: 0.98rem;
+  }
+
+  .hub-facility-address {
+    font-size: 0.78rem;
+    line-height: 1.3;
+  }
+
+  .hub-tabs-container {
+    top: 53px;
+  }
+
+  .hub-tabs-scrollable {
+    padding: 6px 10px;
+    gap: 6px;
+    overflow-x: auto;
+  }
+
+  .hub-tab-text-full {
+    display: none !important;
+  }
+
+  .hub-tab-text-short {
+    display: inline !important;
+    font-weight: 600;
+  }
+
+  .hub-pill-tab {
+    padding: 7px 11px;
+    font-size: 0.8rem;
+    gap: 5px;
+    min-height: 40px;
+  }
+
+  .hub-tab-count {
+    padding: 1px 6px;
+    font-size: 0.7rem;
+  }
+
+  .hub-content-wrap {
+    padding: 12px;
+  }
+
+  .hub-order-card {
+    padding: 14px 12px;
+  }
+
+  .hub-card-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .hub-primary-btn {
+    width: 100%;
+    min-height: 46px;
+    font-size: 0.92rem;
+  }
+}

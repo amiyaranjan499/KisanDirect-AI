@@ -65,6 +65,7 @@ export default function RegisterPage({ language, setLanguage, t = (key) => key }
             <option value="FARMER">Farmer</option>
             <option value="RIDER">{t("auth.rider")}</option>
           </select>
+
           {role === "RIDER" && (
             <>
               <label htmlFor="register-display-name">{t("auth.riderName")}</label>
@@ -87,6 +88,11 @@ export default function RegisterPage({ language, setLanguage, t = (key) => key }
           </button>
         </form>
         <p className="reference-card-subtitle"><Link to="/login">{t("auth.backToLogin")}</Link></p>
+        <div className="auth-portal-links">
+          <Link className="reference-portal-link" to="/admin/login">
+            Admin Login
+          </Link>
+        </div>
       </section>
     </main>
   );

@@ -1777,6 +1777,11 @@ class OrderLifecycleService:
             )
             if rider_user_id is not None:
                 user_ids.add(rider_user_id)
+        if order.hub_id is not None:
+            staff_result = await self.session.execute(
+                select(HubStaff.user_id).where(HubStaff.hub_id == order.hub_id)
+            )
+            user_ids.update(staff_result.scalars())
         if actor.user_id is not None:
             user_ids.discard(actor.user_id)
         for user_id in user_ids:
@@ -1819,6 +1824,9 @@ class OrderLifecycleService:
                 selectinload(Order.items)
                 .selectinload(OrderItem.listing)
                 .selectinload(CropListing.farmer),
+                selectinload(Order.items)
+                .selectinload(OrderItem.listing)
+                .selectinload(CropListing.crop),
                 selectinload(Order.consumer),
                 selectinload(Order.payment),
                 selectinload(Order.shipment),

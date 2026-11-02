@@ -1,140 +1,134 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useI18n } from "../../i18n";
+import AdminDataTable from "../components/AdminDataTable";
 import {
-  assignAdminHubStaff,
-  createAdminHubStaff,
   listAdminHubStaff,
-  listAdminHubs,
-  unassignAdminHubStaff,
 } from "../../services/adminApi";
 
 export default function AdminHubStaffPage() {
-  const { t } = useI18n();
   const [staff, setStaff] = useState([]);
-  const [hubs, setHubs] = useState([]);
-  const [email, setEmail] = useState("");
-  const [initialPassword, setInitialPassword] = useState("");
-  const [newHubId, setNewHubId] = useState("");
-  const [assignments, setAssignments] = useState({});
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [search, setSearch] = useState("");
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     setLoading(true);
-    Promise.all([listAdminHubStaff(), listAdminHubs()])
-      .then(([staffRows, hubRows]) => {
-        setStaff(Array.isArray(staffRows) ? staffRows : []);
-        setHubs(Array.isArray(hubRows) ? hubRows : []);
-      })
-      .catch((requestError) => setError(requestError.message || t("adminStaffLoadError")))
-      .finally(() => setLoading(false));
-  }, [t]);
+    setError("");
+    try {
+      const staffRows = await listAdminHubStaff();
+      setStaff(Array.isArray(staffRows) ? staffRows : []);
+    } catch (err) {
+      setError(err.message || "Failed to load hub staff.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  useEffect(() => refresh(), [refresh]);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
+  // Group multiple assignments per user
   const groupedStaff = useMemo(() => {
     const grouped = new Map();
     staff.forEach((entry) => {
-      if (!grouped.has(entry.user_id)) grouped.set(entry.user_id, { ...entry, assignments: [] });
-      if (entry.hub_id) grouped.get(entry.user_id).assignments.push({ hub_id: entry.hub_id, hub_name: entry.hub_name });
+      if (!grouped.has(entry.user_id)) {
+        grouped.set(entry.user_id, {
+          user_id: entry.user_id,
+          email: entry.email,
+          display_name: entry.display_name,
+          assignments: [],
+        });
+      }
+      if (entry.hub_id) {
+        grouped.get(entry.user_id).assignments.push({
+          hub_id: entry.hub_id,
+          hub_name: entry.hub_name,
+        });
+      }
     });
     return [...grouped.values()];
   }, [staff]);
 
-  async function submitCreate(event) {
-    event.preventDefault();
-    setSaving(true);
-    setError("");
-    setNotice("");
-    try {
-      await createAdminHubStaff({ email, initial_password: initialPassword, hub_id: newHubId });
-      setEmail("");
-      setInitialPassword("");
-      setNewHubId("");
-      setNotice(t("adminStaffCreated"));
-      refresh();
-    } catch (requestError) {
-      setError(requestError.message || t("adminStaffCreateError"));
-    } finally {
-      setSaving(false);
-    }
-  }
+  const filteredStaff = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return groupedStaff.filter((s) => {
+      return (
+        !q ||
+        `${s.display_name || ""} ${s.email || ""} ${s.user_id || ""}`.toLowerCase().includes(q)
+      );
+    });
+  }, [groupedStaff, search]);
 
-  async function assign(userId) {
-    const hubId = assignments[userId];
-    if (!hubId) return;
-    setSaving(true);
-    setError("");
-    setNotice("");
-    try {
-      await assignAdminHubStaff({ user_id: userId, hub_id: hubId });
-      setNotice(t("adminStaffAssigned"));
-      refresh();
-    } catch (requestError) {
-      setError(requestError.message || t("adminStaffAssignError"));
-    } finally {
-      setSaving(false);
-    }
-  }
 
-  async function unassign(userId, hubId) {
-    setSaving(true);
-    setError("");
-    setNotice("");
-    try {
-      await unassignAdminHubStaff(userId, hubId);
-      setNotice(t("adminStaffUnassigned"));
-      refresh();
-    } catch (requestError) {
-      setError(requestError.message || t("adminStaffUnassignError"));
-    } finally {
-      setSaving(false);
-    }
-  }
+  const columns = [
+    {
+      key: "display_name",
+      label: "Staff Member",
+      sortable: true,
+      render: (s) => (
+        <div className="admin-entity-cell">
+          <span className="admin-avatar-mini">
+            {(s.display_name || s.email || "S").slice(0, 1).toUpperCase()}
+          </span>
+          <div>
+            <strong>{s.display_name}</strong>
+            <div className="text-muted small">{s.email}</div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "assignments",
+      label: "Assigned Kisan Hubs",
+      render: (s) => (
+        <div className="d-flex flex-wrap gap-2">
+          {s.assignments.length === 0 ? (
+            <span className="badge bg-light text-warning border">No Hub Assigned</span>
+          ) : (
+            s.assignments.map((a) => (
+              <span
+                key={a.hub_id}
+                className="badge bg-light text-dark border d-inline-flex align-items-center gap-1"
+              >
+                <i className="bi bi-geo-alt-fill text-forest" />
+                {a.hub_name}
+              </span>
+            ))
+          )}
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <section className="detail-view admin-page-explicit">
-      <div className="consumer-screen-header admin-header-block"><div><span className="eyebrow">{t("adminStaffEyebrow")}</span><h1>{t("adminStaffTitle")}</h1></div></div>
-      <section className="admin-panel">
-        <div className="admin-panel-header"><h2>{t("adminStaffCreateTitle")}</h2></div>
-        <form className="admin-form-grid" onSubmit={submitCreate}>
-          <label>{t("adminStaffEmail")}<input className="form-control" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required maxLength={320} /></label>
-          <label>{t("adminStaffInitialPassword")}<input className="form-control" type="password" value={initialPassword} onChange={(event) => setInitialPassword(event.target.value)} required minLength={12} maxLength={128} autoComplete="new-password" /></label>
-          <label>{t("adminStaffHub")}<select className="form-select" value={newHubId} onChange={(event) => setNewHubId(event.target.value)} required><option value="">{t("adminStaffSelectHub")}</option>{hubs.map((hub) => <option key={hub.id} value={hub.id}>{hub.name}</option>)}</select></label>
-          <button className="btn btn-primary" type="submit" disabled={saving || !hubs.length}>{saving ? t("adminStaffSaving") : t("adminStaffCreateAssign")}</button>
-        </form>
-      </section>
-      {error ? <div className="error" role="alert">{error}</div> : null}
-      {notice ? <div className="success-message" role="status">{notice}</div> : null}
-      {loading ? <div className="loading">{t("adminStaffLoading")}</div> : null}
-      {!loading && !groupedStaff.length ? <div className="empty"><h2>{t("adminStaffEmptyTitle")}</h2><p>{t("adminStaffEmptyText")}</p></div> : null}
-      <div className="admin-section-grid">
-        {groupedStaff.map((person) => {
-          const assignedIds = new Set(person.assignments.map((assignment) => assignment.hub_id));
-          const availableHubs = hubs.filter((hub) => !assignedIds.has(hub.id));
-          return (
-            <section className="admin-panel" key={person.user_id}>
-              <div className="admin-panel-header"><h2>{person.display_name}</h2><span>{person.email}</span></div>
-              {person.assignments.map((assignment) => (
-                <div className="admin-list-item" key={assignment.hub_id}>
-                  <span>{assignment.hub_name}</span>
-                  <button className="btn btn-sm btn-outline-danger" type="button" disabled={saving} onClick={() => unassign(person.user_id, assignment.hub_id)}>{t("adminStaffUnassign")}</button>
-                </div>
-              ))}
-              {availableHubs.length ? (
-                <div className="admin-inline-action">
-                  <select className="form-select" aria-label={`${t("adminStaffHub")} ${person.email}`} value={assignments[person.user_id] || ""} onChange={(event) => setAssignments((current) => ({ ...current, [person.user_id]: event.target.value }))}>
-                    <option value="">{t("adminStaffSelectAnotherHub")}</option>{availableHubs.map((hub) => <option key={hub.id} value={hub.id}>{hub.name}</option>)}
-                  </select>
-                  <button className="btn btn-sm btn-outline-primary" type="button" disabled={saving || !assignments[person.user_id]} onClick={() => assign(person.user_id)}>{t("adminStaffAssign")}</button>
-                </div>
-              ) : null}
-            </section>
-          );
-        })}
+    <div className="admin-page-container">
+      <div className="admin-page-header">
+        <div>
+          <span className="eyebrow">Facility Workforce</span>
+          <h1>Hub Staff Directory</h1>
+          <p>Platform directory of warehouse personnel assigned to farmer-owned Kisan Hubs.</p>
+        </div>
+        <div className="admin-header-actions">
+          <button type="button" className="admin-btn-secondary" onClick={refresh} disabled={loading}>
+            <i className={`bi bi-arrow-clockwise ${loading ? "spin" : ""}`} /> Refresh
+          </button>
+        </div>
       </div>
-    </section>
+
+      <AdminDataTable
+        columns={columns}
+        data={filteredStaff}
+        loading={loading}
+        error={error}
+        onRetry={refresh}
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search hub staff by name, email, or user ID..."
+        pageSize={12}
+        emptyTitle="No hub staff members found"
+        emptyDescription="No hub staff members currently active."
+        keyField="user_id"
+      />
+    </div>
   );
 }

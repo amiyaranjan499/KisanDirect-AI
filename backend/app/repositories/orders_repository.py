@@ -40,6 +40,7 @@ class OrdersRepository:
             select(Cart).where(Cart.consumer_id == consumer_id).options(
                 selectinload(Cart.items).selectinload(CartItem.listing).selectinload(CropListing.crop),
                 selectinload(Cart.items).selectinload(CartItem.listing).selectinload(CropListing.farmer),
+                selectinload(Cart.items).selectinload(CartItem.listing).selectinload(CropListing.images),
             )
         )
         cart = result.scalar_one_or_none()
@@ -51,6 +52,7 @@ class OrdersRepository:
                 select(Cart).where(Cart.id == cart.id).options(
                     selectinload(Cart.items).selectinload(CartItem.listing).selectinload(CropListing.crop),
                     selectinload(Cart.items).selectinload(CartItem.listing).selectinload(CropListing.farmer),
+                    selectinload(Cart.items).selectinload(CartItem.listing).selectinload(CropListing.images),
                 )
             )
             cart = result.scalar_one()
@@ -58,7 +60,7 @@ class OrdersRepository:
 
     async def get_cart_item(self, consumer_id: UUID, item_id: UUID) -> CartItem | None:
         result = await self.session.execute(
-            select(CartItem).join(CartItem.cart).where(Cart.consumer_id == consumer_id, CartItem.id == item_id).options(selectinload(CartItem.listing).selectinload(CropListing.crop), selectinload(CartItem.listing).selectinload(CropListing.farmer))
+            select(CartItem).join(CartItem.cart).where(Cart.consumer_id == consumer_id, CartItem.id == item_id).options(selectinload(CartItem.listing).selectinload(CropListing.crop), selectinload(CartItem.listing).selectinload(CropListing.farmer), selectinload(CartItem.listing).selectinload(CropListing.images))
         )
         return result.scalar_one_or_none()
 

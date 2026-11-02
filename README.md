@@ -49,6 +49,7 @@ From the repository root, configure `backend/.env` from `backend/.env.example`, 
 
 ```powershell
 cd backend
+$env:PYTHONPATH='..'
 ..\venv\Scripts\python.exe -m alembic upgrade head
 cd ..
 .\venv\Scripts\python.exe -m backend.run

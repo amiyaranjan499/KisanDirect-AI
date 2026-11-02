@@ -9,6 +9,16 @@ from pydantic import BaseModel, Field
 class RiderSelfResponse(BaseModel):
     approval_status: str
     availability: str
+    id: UUID | None = None
+    display_name: str | None = None
+    vehicle_type: str | None = None
+    email: str | None = None
+    created_at: datetime | None = None
+
+
+class RiderProfileUpdate(BaseModel):
+    display_name: str | None = None
+    vehicle_type: str | None = None
 
 
 class RiderAvailabilityUpdate(BaseModel):

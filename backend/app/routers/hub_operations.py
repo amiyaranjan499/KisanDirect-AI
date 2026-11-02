@@ -15,6 +15,7 @@ from backend.app.schemas.hub_operations import (
     HubShipmentResponse,
     HubStaffHubResponse,
     StockDeliveryCreate,
+    StockDeliveryReceiveRequest,
     StockDeliveryResponse,
 )
 from backend.app.services.hub_operations_service import HubOperationsService
@@ -132,10 +133,14 @@ async def receive_stock_delivery(
     delivery_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     service: Annotated[HubOperationsService, Depends(get_hub_operations_service)],
+    payload: StockDeliveryReceiveRequest | None = None,
 ) -> StockDeliveryResponse:
     try:
         return await service.receive_stock_delivery(
-            _actor(current_user), hub_id, delivery_id
+            _actor(current_user),
+            hub_id,
+            delivery_id,
+            received_quantity=payload.received_quantity if payload else None,
         )
     except (LifecycleNotFound, LifecyclePermissionError, LifecycleConflict) as exc:
         raise _http_error(exc) from exc

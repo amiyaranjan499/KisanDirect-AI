@@ -14,6 +14,13 @@ class NearbyFarmerResponse(BaseModel):
     rating: float | None
     active_listing_count: int
     listings: list[MarketplaceListingResponse] = Field(default_factory=list)
+    city: str | None = None
+    district: str | None = None
+    state: str | None = None
+    address: str | None = None
+    pin_code: str | None = None
+    profile_image: str | None = None
+    cover_image: str | None = None
 
 
 class NearbyFarmerPage(BaseModel):

@@ -39,6 +39,16 @@ class NotificationsService:
         marked = await self.repository.mark_all_read(user_id)
         return {"marked": marked}
 
+
+    async def delete(self, user_id: UUID, notification_id: UUID) -> None:
+        deleted = await self.repository.delete_for_user(user_id, notification_id)
+        if not deleted:
+            raise LookupError("Notification not found")
+
+    async def delete_all(self, user_id: UUID) -> dict[str, int]:
+        count = await self.repository.delete_all_for_user(user_id)
+        return {"deleted": count}
+
     async def create(
         self,
         *,

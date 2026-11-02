@@ -1,101 +1,362 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import AdminDataTable from "../components/AdminDataTable";
+import AdminFilterTabs from "../components/AdminFilterTabs";
+import AdminDetailDrawer from "../components/AdminDetailDrawer";
+import AdminConfirmDialog from "../components/AdminConfirmDialog";
 import { listAdminConsumers, listAdminFarmers, updateAdminUserStatus } from "../../services/adminApi";
 
-const formatDate = (value) => new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+const formatDate = (value) =>
+  value
+    ? new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+    : "—";
+
+const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 export default function AdminUsersPage() {
-  const [tab, setTab] = useState("All");
-  const [search, setSearch] = useState("");
   const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [savingId, setSavingId] = useState(null);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
 
-  const loadUsers = async () => {
+  // Drawer detail state
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Status toggle confirmation modal state
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [userToToggle, setUserToToggle] = useState(null);
+  const [toggleLoading, setToggleLoading] = useState(false);
+  const [toggleError, setToggleError] = useState("");
+
+  const loadUsers = useCallback(async () => {
+    setLoading(true);
+    setError("");
     try {
       const [consumers, farmers] = await Promise.all([listAdminConsumers(), listAdminFarmers()]);
       const merged = [
-        ...consumers.map((user) => ({ ...user, role: "CONSUMER", status: user.is_active ? "Active" : "Inactive" })),
-        ...farmers.map((user) => ({ ...user, role: "FARMER", status: user.is_active ? "Active" : "Inactive" })),
+        ...consumers.map((u) => ({
+          ...u,
+          id: u.user_id || u.id,
+          role: "CONSUMER",
+          statusText: u.is_active ? "Active" : "Inactive",
+        })),
+        ...farmers.map((u) => ({
+          ...u,
+          id: u.user_id || u.id,
+          role: "FARMER",
+          statusText: u.is_active ? "Active" : "Inactive",
+        })),
       ];
       setUsers(merged);
-    } catch (requestError) {
-      setError(requestError.message || "Unable to load users.");
+    } catch (err) {
+      setError(err.message || "Failed to load platform users.");
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadUsers();
-  }, []);
+  }, [loadUsers]);
 
   const filteredUsers = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return users.filter((user) => {
-      const matchesTab = tab === "All" ? true : user.status === tab;
-      const matchesQuery = !query || `${user.name || ""} ${user.email || ""}`.toLowerCase().includes(query);
-      return matchesTab && matchesQuery;
+    const q = search.trim().toLowerCase();
+    return users.filter((u) => {
+      const matchesSearch =
+        !q ||
+        `${u.name || ""} ${u.email || ""} ${u.phone || ""} ${u.id || ""}`.toLowerCase().includes(q);
+      const matchesRole = roleFilter === "ALL" || u.role === roleFilter;
+      const matchesStatus =
+        statusFilter === "ALL" || (statusFilter === "ACTIVE" ? u.is_active : !u.is_active);
+      return matchesSearch && matchesRole && matchesStatus;
     });
-  }, [search, tab, users]);
+  }, [users, search, roleFilter, statusFilter]);
 
-  const toggleStatus = async (user) => {
+  const handleOpenToggle = (user, e) => {
+    if (e) e.stopPropagation();
+    setUserToToggle(user);
+    setToggleError("");
+    setConfirmModalOpen(true);
+  };
+
+  const handleConfirmToggle = async () => {
+    if (!userToToggle) return;
+    setToggleLoading(true);
+    setToggleError("");
     try {
-      setSavingId(user.user_id || user.id);
-      await updateAdminUserStatus(user.user_id || user.id, { is_active: !user.is_active });
+      await updateAdminUserStatus(userToToggle.id, { is_active: !userToToggle.is_active });
+      setConfirmModalOpen(false);
+      setUserToToggle(null);
       await loadUsers();
-    } catch (requestError) {
-      setError(requestError.message || "Unable to update user status.");
+    } catch (err) {
+      setToggleError(err.message || "Unable to update account status.");
     } finally {
-      setSavingId(null);
+      setToggleLoading(false);
     }
   };
 
+  const handleViewUser = (user, e) => {
+    if (e) e.stopPropagation();
+    setSelectedUser(user);
+    setDrawerOpen(true);
+  };
+
+  const columns = [
+    {
+      key: "id",
+      label: "User ID",
+      width: "120px",
+      render: (u) => (
+        <span className="font-monospace text-muted" title={u.id}>
+          {String(u.id).slice(0, 8).toUpperCase()}
+        </span>
+      ),
+    },
+    {
+      key: "name",
+      label: "Name / Email",
+      sortable: true,
+      render: (u) => (
+        <div className="admin-entity-cell">
+          <span className="admin-avatar-mini">
+            {(u.name || u.email || "U").slice(0, 1).toUpperCase()}
+          </span>
+          <div>
+            <strong>{u.name || "Unnamed"}</strong>
+            <div className="text-muted small">{u.email}</div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "role",
+      label: "Role",
+      sortable: true,
+      width: "120px",
+      render: (u) => (
+        <span className={`admin-badge admin-badge-${u.role.toLowerCase()}`}>
+          {u.role}
+        </span>
+      ),
+    },
+    {
+      key: "phone",
+      label: "Phone",
+      render: (u) => u.phone || "—",
+    },
+    {
+      key: "created_at",
+      label: "Joined",
+      sortable: true,
+      width: "130px",
+      render: (u) => formatDate(u.created_at),
+    },
+    {
+      key: "is_active",
+      label: "Status",
+      sortable: true,
+      width: "110px",
+      render: (u) => (
+        <span className={`admin-badge admin-badge-${u.is_active ? "active" : "inactive"}`}>
+          {u.is_active ? "Active" : "Inactive"}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      label: "Actions",
+      width: "180px",
+      align: "right",
+      render: (u) => (
+        <div className="d-flex align-items-center justify-content-end gap-2">
+          <button
+            type="button"
+            className="admin-table-action-btn"
+            onClick={(e) => handleViewUser(u, e)}
+          >
+            <i className="bi bi-eye" /> View
+          </button>
+          <button
+            type="button"
+            className={`admin-table-action-btn ${u.is_active ? "text-danger" : "text-success"}`}
+            onClick={(e) => handleOpenToggle(u, e)}
+          >
+            <i className={`bi ${u.is_active ? "bi-person-x" : "bi-person-check"}`} />
+            {u.is_active ? "Deactivate" : "Activate"}
+          </button>
+        </div>
+      ),
+    },
+  ];
+
+  const roleTabs = [
+    { key: "ALL", label: "All Roles", count: users.length },
+    { key: "CONSUMER", label: "Consumers", count: users.filter((u) => u.role === "CONSUMER").length },
+    { key: "FARMER", label: "Farmers", count: users.filter((u) => u.role === "FARMER").length },
+  ];
+
+  const statusTabs = [
+    { key: "ALL", label: "All Status" },
+    { key: "ACTIVE", label: "Active" },
+    { key: "INACTIVE", label: "Inactive" },
+  ];
+
   return (
-    <section className="detail-view admin-page-explicit">
-      <div className="consumer-screen-header admin-header-block">
+    <div className="admin-page-container">
+      <div className="admin-page-header">
         <div>
-          <span className="eyebrow">Users</span>
-          <h1>Platform users</h1>
+          <span className="eyebrow">User Directory</span>
+          <h1>User Management</h1>
+          <p>Supervise registered platform accounts, roles, access statuses, and activity history.</p>
+        </div>
+        <div className="admin-header-actions">
+          <button
+            type="button"
+            className="admin-btn-secondary"
+            onClick={loadUsers}
+            disabled={loading}
+          >
+            <i className={`bi bi-arrow-clockwise ${loading ? "spin" : ""}`} /> Refresh
+          </button>
         </div>
       </div>
 
-      <div className="admin-toolbar">
-        <div className="admin-search-box">
-          <i className="bi bi-search" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search users..." />
-        </div>
+      {/* Filter Tabs Rows */}
+      <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <AdminFilterTabs tabs={roleTabs} activeTab={roleFilter} onChange={setRoleFilter} />
+        <AdminFilterTabs tabs={statusTabs} activeTab={statusFilter} onChange={setStatusFilter} />
       </div>
 
-      <div className="farmer-filter-tabs admin-tabs">
-        {['All', 'Active', 'Inactive'].map((item) => (
-          <button key={item} type="button" className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>
-        ))}
-      </div>
+      {/* Data Table */}
+      <AdminDataTable
+        columns={columns}
+        data={filteredUsers}
+        loading={loading}
+        error={error}
+        onRetry={loadUsers}
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search by name, email, phone, or ID..."
+        pageSize={12}
+        emptyTitle="No users found"
+        emptyDescription="No platform accounts match your current filter criteria."
+        onRowClick={handleViewUser}
+      />
 
-      {error ? <div className="error">{error}</div> : null}
+      {/* User Detail Drawer */}
+      <AdminDetailDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title={selectedUser?.name || "User Details"}
+        subtitle={selectedUser?.email}
+        badge={
+          selectedUser && (
+            <span
+              className={`admin-badge admin-badge-${
+                selectedUser.is_active ? "active" : "inactive"
+              }`}
+            >
+              {selectedUser.is_active ? "Active" : "Inactive"}
+            </span>
+          )
+        }
+        footer={
+          selectedUser && (
+            <>
+              <button
+                type="button"
+                className="admin-btn-secondary"
+                onClick={() => setDrawerOpen(false)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className={selectedUser.is_active ? "admin-btn-danger" : "admin-btn-primary"}
+                onClick={() => {
+                  setDrawerOpen(false);
+                  handleOpenToggle(selectedUser);
+                }}
+              >
+                {selectedUser.is_active ? "Deactivate Account" : "Activate Account"}
+              </button>
+            </>
+          )
+        }
+      >
+        {selectedUser && (
+          <>
+            <section className="admin-detail-section">
+              <h4>Account Identity</h4>
+              <dl className="admin-detail-list">
+                <dt>User ID</dt>
+                <dd className="font-monospace">{selectedUser.id}</dd>
+                <dt>Role</dt>
+                <dd>
+                  <span className={`admin-badge admin-badge-${selectedUser.role.toLowerCase()}`}>
+                    {selectedUser.role}
+                  </span>
+                </dd>
+                <dt>Full Name</dt>
+                <dd>{selectedUser.name || "Not provided"}</dd>
+                <dt>Email</dt>
+                <dd>{selectedUser.email}</dd>
+                <dt>Phone</dt>
+                <dd>{selectedUser.phone || "Not specified"}</dd>
+                <dt>Address</dt>
+                <dd>{selectedUser.address || "No address on file"}</dd>
+                <dt>Joined On</dt>
+                <dd>{formatDate(selectedUser.created_at)}</dd>
+              </dl>
+            </section>
 
-      <div className="admin-table-wrap admin-table-large">
-        <table>
-          <thead>
-            <tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th>Status</th><th>Action</th></tr>
-          </thead>
-          <tbody>
-            {filteredUsers.map((user) => (
-              <tr key={user.user_id || user.id}>
-                <td>{String(user.user_id || user.id).slice(0, 8).toUpperCase()}</td>
-                <td>{user.name || "Unknown"}</td>
-                <td>{user.email || "No email"}</td>
-                <td>{user.role}</td>
-                <td>{formatDate(user.created_at || new Date())}</td>
-                <td><span className={`admin-badge admin-badge-${user.is_active ? "active" : "inactive"}`}>{user.is_active ? "Active" : "Inactive"}</span></td>
-                <td>
-                  <button type="button" className="admin-action-button" onClick={() => toggleStatus(user)} disabled={savingId === (user.user_id || user.id)}>
-                    {savingId === (user.user_id || user.id) ? "Updating..." : user.is_active ? "Deactivate" : "Activate"}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+            <section className="admin-detail-section">
+              <h4>Activity Metrics</h4>
+              <dl className="admin-detail-list">
+                {selectedUser.role === "CONSUMER" ? (
+                  <>
+                    <dt>Orders Placed</dt>
+                    <dd>{selectedUser.order_count ?? 0}</dd>
+                    <dt>Total Spend</dt>
+                    <dd>{money(selectedUser.total_spend ?? 0)}</dd>
+                    <dt>Reviews Submitted</dt>
+                    <dd>{selectedUser.review_count ?? 0}</dd>
+                  </>
+                ) : (
+                  <>
+                    <dt>Listings Created</dt>
+                    <dd>{selectedUser.listing_count ?? 0}</dd>
+                    <dt>Active Listings</dt>
+                    <dd>{selectedUser.active_listing_count ?? 0}</dd>
+                    <dt>Orders Fulfilled</dt>
+                    <dd>{selectedUser.order_count ?? 0}</dd>
+                    <dt>Gross Farm Sales</dt>
+                    <dd>{money(selectedUser.total_sales ?? 0)}</dd>
+                  </>
+                )}
+              </dl>
+            </section>
+          </>
+        )}
+      </AdminDetailDrawer>
+
+      {/* Status Toggle Confirm Modal */}
+      <AdminConfirmDialog
+        isOpen={confirmModalOpen}
+        onClose={() => setConfirmModalOpen(false)}
+        onConfirm={handleConfirmToggle}
+        title={userToToggle?.is_active ? "Deactivate User Account" : "Activate User Account"}
+        message={`Are you sure you want to ${
+          userToToggle?.is_active ? "deactivate" : "activate"
+        } account access for ${userToToggle?.name || userToToggle?.email}?`}
+        confirmLabel={userToToggle?.is_active ? "Deactivate" : "Activate"}
+        confirmVariant={userToToggle?.is_active ? "danger" : "primary"}
+        requireReason={false}
+        loading={toggleLoading}
+        error={toggleError}
+      />
+    </div>
   );
 }

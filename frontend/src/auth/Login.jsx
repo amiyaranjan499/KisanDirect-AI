@@ -128,7 +128,11 @@ export default function AuthPanel({ onAuthenticated, language, setLanguage, t = 
         <p className="reference-card-subtitle"><Link to="/register">Create an account</Link></p>
         <p className="reference-terms">By continuing, you agree to our <a href="#terms">Terms of Use</a> and <a href="#privacy">Privacy Policy</a>.</p>
         <div className="reference-sustainability"><strong>🌿 Together for a Sustainable Future</strong><small>Better Farmers&nbsp; | &nbsp;Healthier Food&nbsp; | &nbsp;Stronger Communities</small></div>
-        <a className="reference-admin-link" href="/admin/login">Admin Login</a>
+        <div className="auth-portal-links">
+          <Link className="reference-portal-link" to="/admin/login">
+            Admin Login
+          </Link>
+        </div>
       </section>
     </main>
   );

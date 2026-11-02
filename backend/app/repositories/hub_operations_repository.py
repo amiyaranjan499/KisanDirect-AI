@@ -131,6 +131,8 @@ class HubOperationsRepository:
         list[tuple[HubStockDelivery, CropListing, Crop, Farmer]],
         list[Order],
         list[Shipment],
+        list[Shipment],
+        list[Shipment],
     ]:
         delivery_result = await self.session.execute(
             select(HubStockDelivery, CropListing, Crop, Farmer)
@@ -154,9 +156,13 @@ class HubOperationsRepository:
             )
             .options(
                 selectinload(Order.consumer),
+                selectinload(Order.delivery),
                 selectinload(Order.items)
                 .selectinload(OrderItem.listing)
-                .selectinload(CropListing.crop),
+                .options(
+                    selectinload(CropListing.crop),
+                    selectinload(CropListing.farmer),
+                ),
             )
             .order_by(Order.created_at, Order.id)
         )
@@ -168,18 +174,75 @@ class HubOperationsRepository:
                 Shipment.status == ShipmentStatus.PACKING,
             )
             .options(
-                selectinload(Shipment.order).selectinload(Order.consumer),
-                selectinload(Shipment.order)
-                .selectinload(Order.items)
-                .selectinload(OrderItem.listing)
-                .selectinload(CropListing.crop),
+                selectinload(Shipment.rider),
+                selectinload(Shipment.order).options(
+                    selectinload(Order.consumer),
+                    selectinload(Order.delivery),
+                    selectinload(Order.items)
+                    .selectinload(OrderItem.listing)
+                    .options(
+                        selectinload(CropListing.crop),
+                        selectinload(CropListing.farmer),
+                    ),
+                ),
             )
             .order_by(Shipment.created_at, Shipment.id)
+        )
+        ready_result = await self.session.execute(
+            select(Shipment)
+            .join(Order, Order.id == Shipment.order_id)
+            .where(
+                Shipment.hub_id == hub_id,
+                Shipment.status == ShipmentStatus.READY_FOR_PICKUP,
+            )
+            .options(
+                selectinload(Shipment.rider),
+                selectinload(Shipment.order).options(
+                    selectinload(Order.consumer),
+                    selectinload(Order.delivery),
+                    selectinload(Order.items)
+                    .selectinload(OrderItem.listing)
+                    .options(
+                        selectinload(CropListing.crop),
+                        selectinload(CropListing.farmer),
+                    ),
+                ),
+            )
+            .order_by(Shipment.updated_at.desc(), Shipment.id)
+            .limit(25)
+        )
+        completed_result = await self.session.execute(
+            select(Shipment)
+            .join(Order, Order.id == Shipment.order_id)
+            .where(
+                Shipment.hub_id == hub_id,
+                Shipment.status.in_([
+                    ShipmentStatus.OUT_FOR_DELIVERY,
+                    ShipmentStatus.DELIVERED,
+                ]),
+            )
+            .options(
+                selectinload(Shipment.rider),
+                selectinload(Shipment.order).options(
+                    selectinload(Order.consumer),
+                    selectinload(Order.delivery),
+                    selectinload(Order.items)
+                    .selectinload(OrderItem.listing)
+                    .options(
+                        selectinload(CropListing.crop),
+                        selectinload(CropListing.farmer),
+                    ),
+                ),
+            )
+            .order_by(Shipment.updated_at.desc(), Shipment.id)
+            .limit(25)
         )
         return (
             list(delivery_result.all()),
             list(order_result.scalars().unique().all()),
             list(shipment_result.scalars().unique().all()),
+            list(ready_result.scalars().unique().all()),
+            list(completed_result.scalars().unique().all()),
         )
 
     async def get_stock_delivery_for_update(

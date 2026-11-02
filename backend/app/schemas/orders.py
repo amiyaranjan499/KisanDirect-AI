@@ -27,6 +27,7 @@ class CartItemResponse(BaseModel):
     unit: str
     unit_price: Decimal
     subtotal: Decimal
+    image_url: str | None = None
 
 
 class CartResponse(BaseModel):

@@ -2,7 +2,7 @@ export const routes = {
   home: "/",
   adminLogin: "/admin/login",
   adminDashboard: "/admin/dashboard",
-  consumerDashboard: "/consumer/dashboard",
+  consumerDashboard: "/",
   farmerDashboard: "/farmer/dashboard",
 };
 

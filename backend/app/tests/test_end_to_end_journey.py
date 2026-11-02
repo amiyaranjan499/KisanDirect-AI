@@ -440,6 +440,39 @@ def test_full_farmer_to_consumer_delivery_end_to_end_journey():
             assert order_data["status"] == "PENDING"
             assert Decimal(order_data["subtotal"]) == Decimal("425.00")
 
+            # Verify farmer notification with order ID, crop, quantity, status, and navigation link
+            farmer_notifs_resp = client.get(
+                "/api/v1/notifications",
+                headers=auth_header(farmer_user),
+            )
+            assert farmer_notifs_resp.status_code == 200
+            farmer_items = farmer_notifs_resp.json()["items"]
+            assert any(
+                "New order received" in n["title"] and "/farmer/orders" in n["message"]
+                for n in farmer_items
+            )
+
+            # Verify assigned hub staff picking notification
+            staff_notifs_resp = client.get(
+                "/api/v1/notifications",
+                headers=auth_header(hub_staff_user),
+            )
+            assert staff_notifs_resp.status_code == 200
+            staff_items = staff_notifs_resp.json()["items"]
+            assert any(
+                "picking" in n["title"].lower() and "/hub-staff/operations" in n["message"]
+                for n in staff_items
+            )
+
+            # Verify notification isolation: unrelated consumer does not receive order notifications
+            other_notifs_resp = client.get(
+                "/api/v1/notifications",
+                headers=auth_header(other_consumer_user),
+            )
+            assert other_notifs_resp.status_code == 200
+            other_items = other_notifs_resp.json()["items"]
+            assert not any(str(order_id)[:8].upper() in n["message"] for n in other_items)
+
             # Complete sandbox payment
             payment_resp = client.post(
                 f"/api/v1/payments/test/{order_id}",

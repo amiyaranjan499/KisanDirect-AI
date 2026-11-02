@@ -1,6 +1,9 @@
 from uuid import UUID
+from decimal import Decimal
 
-from sqlalchemy import func, or_, select, text
+from geoalchemy2 import Geometry
+from geoalchemy2.elements import WKTElement
+from sqlalchemy import cast, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -9,11 +12,17 @@ from backend.app.models import (
     CropImage,
     CropListing,
     Farmer,
+    FarmerWithdrawal,
+    Hub,
+    HubStaff,
+    HubStatus,
     HubStock,
     Notification,
     Order,
     OrderItem,
     Review,
+    User,
+    UserRole,
 )
 
 
@@ -40,7 +49,7 @@ class FarmerRepository:
         return farmer
 
     async def get_coordinates(self, table_name: str, record_id: UUID) -> tuple[float, float] | None:
-        if table_name not in {"farmers", "crop_listings"}:
+        if table_name not in {"farmers", "crop_listings", "hubs"}:
             raise ValueError("Unsupported location table")
         result = await self.session.execute(
             text(f"SELECT ST_Y(location::geometry), ST_X(location::geometry) FROM {table_name} WHERE id = :record_id"),
@@ -48,6 +57,17 @@ class FarmerRepository:
         )
         row = result.one_or_none()
         return (float(row[0]), float(row[1])) if row and row[0] is not None else None
+
+    async def get_coordinates_batch(self, table_name: str, record_ids: list[UUID]) -> dict[UUID, tuple[float, float]]:
+        if not record_ids:
+            return {}
+        if table_name not in {"farmers", "crop_listings", "hubs"}:
+            raise ValueError("Unsupported location table")
+        result = await self.session.execute(
+            text(f"SELECT id, ST_Y(location::geometry), ST_X(location::geometry) FROM {table_name} WHERE id = ANY(:ids) AND location IS NOT NULL"),
+            {"ids": record_ids},
+        )
+        return {row[0]: (float(row[1]), float(row[2])) for row in result.all()}
 
     async def get_listing(self, listing_id: UUID, farmer_id: UUID) -> CropListing | None:
         result = await self.session.execute(
@@ -90,6 +110,9 @@ class FarmerRepository:
                 Farmer.user_id == farmer_user_id,
                 or_(
                     Order.hub_id.is_(None),
+                    select(Hub.id)
+                    .where(Hub.id == Order.hub_id, Hub.farmer_id == Farmer.id)
+                    .exists(),
                     select(HubStock.id)
                     .where(
                         HubStock.hub_id == Order.hub_id,
@@ -183,3 +206,193 @@ class FarmerRepository:
         await self.session.commit()
         await self.session.refresh(image)
         return image
+
+    async def get_farmer_coordinates(self, farmer_id: UUID) -> tuple[float, float] | None:
+        coords_res = await self.session.execute(
+            select(
+                func.ST_Y(cast(Farmer.location, Geometry)),
+                func.ST_X(cast(Farmer.location, Geometry)),
+            ).where(Farmer.id == farmer_id)
+        )
+        row = coords_res.one_or_none()
+        if row and row[0] is not None and row[1] is not None:
+            return (float(row[0]), float(row[1]))
+        return None
+
+    async def list_facilities(self, farmer_id: UUID) -> list[tuple[Hub, int, float | None, float | None]]:
+        result = await self.session.execute(
+            select(
+                Hub,
+                func.count(HubStaff.user_id).label("staff_count"),
+                func.ST_Y(cast(Hub.location, Geometry)).label("latitude"),
+                func.ST_X(cast(Hub.location, Geometry)).label("longitude"),
+            )
+            .outerjoin(HubStaff, HubStaff.hub_id == Hub.id)
+            .where(Hub.farmer_id == farmer_id)
+            .group_by(Hub.id)
+            .order_by(Hub.name, Hub.id)
+        )
+        return [
+            (
+                hub,
+                int(staff_count),
+                float(lat) if lat is not None else None,
+                float(lng) if lng is not None else None,
+            )
+            for hub, staff_count, lat, lng in result.all()
+        ]
+
+    async def get_facility(self, farmer_id: UUID, facility_id: UUID) -> tuple[Hub, int, float | None, float | None] | None:
+        result = await self.session.execute(
+            select(
+                Hub,
+                func.count(HubStaff.user_id).label("staff_count"),
+                func.ST_Y(cast(Hub.location, Geometry)).label("latitude"),
+                func.ST_X(cast(Hub.location, Geometry)).label("longitude"),
+            )
+            .outerjoin(HubStaff, HubStaff.hub_id == Hub.id)
+            .where(Hub.id == facility_id, Hub.farmer_id == farmer_id)
+            .group_by(Hub.id)
+        )
+        row = result.first()
+        if not row:
+            return None
+        hub, staff_count, lat, lng = row
+        return (
+            hub,
+            int(staff_count),
+            float(lat) if lat is not None else None,
+            float(lng) if lng is not None else None,
+        )
+
+    async def get_facility_for_update(self, farmer_id: UUID, facility_id: UUID) -> Hub | None:
+        result = await self.session.execute(
+            select(Hub).where(Hub.id == facility_id, Hub.farmer_id == farmer_id).with_for_update()
+        )
+        return result.scalar_one_or_none()
+
+    async def create_facility(
+        self,
+        farmer_id: UUID,
+        name: str,
+        address: str,
+        pincode: str,
+        latitude: float | None,
+        longitude: float | None,
+        service_radius_km: Decimal,
+    ) -> tuple[Hub, float | None, float | None]:
+        lat = latitude if latitude is not None else 20.2961
+        lng = longitude if longitude is not None else 85.8245
+        location = WKTElement(f"POINT({lng} {lat})", srid=4326)
+        hub = Hub(
+            name=name,
+            address=address,
+            pincode=pincode,
+            service_radius_km=service_radius_km,
+            status=HubStatus.ACTIVE,
+            farmer_id=farmer_id,
+            location=location,
+        )
+        self.session.add(hub)
+        await self.session.flush()
+        return (hub, latitude, longitude)
+
+    async def update_facility(
+        self,
+        facility: Hub,
+        values: dict,
+        latitude: float | None = None,
+        longitude: float | None = None,
+    ) -> tuple[Hub, float | None, float | None]:
+        for key, value in values.items():
+            if value is not None:
+                if key == "status":
+                    setattr(facility, key, HubStatus(value))
+                else:
+                    setattr(facility, key, value)
+        if latitude is not None and longitude is not None:
+            facility.location = WKTElement(f"POINT({longitude} {latitude})", srid=4326)
+        await self.session.flush()
+        coords_res = await self.session.execute(
+            select(
+                func.ST_Y(cast(Hub.location, Geometry)),
+                func.ST_X(cast(Hub.location, Geometry)),
+            ).where(Hub.id == facility.id)
+        )
+        row = coords_res.one_or_none()
+        lat = float(row[0]) if row and row[0] is not None else None
+        lng = float(row[1]) if row and row[1] is not None else None
+        return (facility, lat, lng)
+
+    async def list_facility_staff(self, farmer_id: UUID) -> list[tuple[User, Hub]]:
+        result = await self.session.execute(
+            select(User, Hub)
+            .join(HubStaff, HubStaff.user_id == User.id)
+            .join(Hub, Hub.id == HubStaff.hub_id)
+            .where(Hub.farmer_id == farmer_id, User.role == UserRole.HUB_STAFF)
+            .order_by(Hub.name, User.email)
+        )
+        return list(result.all())
+
+    async def list_staff_for_facility(self, farmer_id: UUID, facility_id: UUID) -> list[tuple[User, Hub]]:
+        result = await self.session.execute(
+            select(User, Hub)
+            .join(HubStaff, HubStaff.user_id == User.id)
+            .join(Hub, Hub.id == HubStaff.hub_id)
+            .where(Hub.id == facility_id, Hub.farmer_id == farmer_id, User.role == UserRole.HUB_STAFF)
+            .order_by(User.email)
+        )
+        return list(result.all())
+
+    async def get_user_by_email(self, email: str) -> User | None:
+        result = await self.session.execute(select(User).where(User.email == email))
+        return result.scalar_one_or_none()
+
+    async def create_facility_staff(
+        self,
+        facility_id: UUID,
+        email: str,
+        hashed_password: str,
+        display_name: str | None = None,
+    ) -> tuple[User, Hub]:
+        user = User(
+            email=email,
+            hashed_password=hashed_password,
+            role=UserRole.HUB_STAFF,
+            is_active=True,
+        )
+        self.session.add(user)
+        await self.session.flush()
+        self.session.add(HubStaff(user_id=user.id, hub_id=facility_id))
+        await self.session.flush()
+        hub = await self.session.get(Hub, facility_id)
+        return (user, hub)
+
+    async def remove_facility_staff(self, facility_id: UUID, staff_user_id: UUID) -> bool:
+        result = await self.session.execute(
+            select(HubStaff).where(
+                HubStaff.hub_id == facility_id,
+                HubStaff.user_id == staff_user_id,
+            )
+        )
+        assignment = result.scalar_one_or_none()
+        if assignment is None:
+            return False
+        await self.session.delete(assignment)
+        await self.session.flush()
+        return True
+
+    async def list_withdrawals(self, farmer_id: UUID) -> list[FarmerWithdrawal]:
+        result = await self.session.execute(
+            select(FarmerWithdrawal)
+            .where(FarmerWithdrawal.farmer_id == farmer_id)
+            .order_by(FarmerWithdrawal.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def create_withdrawal(self, withdrawal: FarmerWithdrawal) -> FarmerWithdrawal:
+        self.session.add(withdrawal)
+        await self.session.commit()
+        await self.session.refresh(withdrawal)
+        return withdrawal
+

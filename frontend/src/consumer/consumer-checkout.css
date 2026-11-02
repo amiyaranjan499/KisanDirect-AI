@@ -1,0 +1,590 @@
+/* Zepto Style Checkout Page                                 */
+/* ========================================================= */
+.zepto-checkout-page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 16px 16px 64px;
+}
+
+.zepto-checkout-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.zepto-checkout-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--forest, #1B6B34);
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.zepto-checkout-back-btn:hover {
+  background: #E8F5E9;
+}
+
+.zepto-checkout-title {
+  font-family: var(--font-display, 'Fraunces', Georgia, serif) !important;
+  font-size: clamp(1.45rem, 2.4vw, 1.85rem) !important;
+  font-weight: 800 !important;
+  color: var(--heading-color-main, #0c3324) !important;
+  letter-spacing: -0.025em !important;
+  margin: 0 !important;
+}
+
+.zepto-checkout-step-badge {
+  background: #F0FDF4;
+  color: var(--forest, #1B6B34);
+  border: 1px solid #BBF7D0;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.zepto-checkout-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 840px) {
+  .zepto-checkout-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}
+
+.zepto-checkout-left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.zepto-checkout-card {
+  background: #FFFFFF;
+  border: 1px solid var(--line, #E4DFD1);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(27, 107, 52, 0.04);
+}
+
+.zepto-checkout-card-header {
+  padding: 13px 18px;
+  background: #FAF9F6;
+  border-bottom: 1px solid var(--line, #E4DFD1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.zepto-checkout-card-title {
+  font-family: var(--font-display, 'Fraunces', Georgia, serif);
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--heading-color-section, #104230);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zepto-checkout-card-action {
+  background: transparent;
+  border: none;
+  color: var(--forest, #1B6B34);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.zepto-checkout-card-action:hover {
+  background: #E8F5E9;
+}
+
+.zepto-checkout-card-body {
+  padding: 16px 18px;
+}
+
+/* Address Card styles */
+.zepto-checkout-address-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.zepto-checkout-address-text {
+  font-size: 14px;
+  color: var(--ink, #1C1C16);
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.zepto-checkout-gps-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--clay, #79705F);
+  background: #F4F1EA;
+  padding: 3px 8px;
+  border-radius: 6px;
+  width: fit-content;
+}
+
+.zepto-checkout-address-edit textarea {
+  border: 1px solid var(--line, #E4DFD1);
+  border-radius: 8px;
+  font-size: 13.5px;
+  resize: vertical;
+}
+
+.zepto-checkout-address-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.zepto-checkout-detect-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #FAF9F6;
+  border: 1px solid var(--line, #E4DFD1);
+  color: var(--forest, #1B6B34);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.zepto-checkout-detect-btn:hover:not(:disabled) {
+  background: #E8F5E9;
+}
+
+/* Delivery speed box */
+.zepto-checkout-delivery-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #F0FDF4;
+  color: #166534;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 12px;
+  border: 1px solid #BBF7D0;
+}
+
+.zepto-checkout-speed-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: #F8FBF8;
+  border: 1.5px solid #22C55E;
+  border-radius: 10px;
+}
+
+.zepto-checkout-speed-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.zepto-checkout-speed-badge {
+  background: #DCFCE7;
+  color: #15803D;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.zepto-checkout-speed-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.zepto-checkout-speed-text strong {
+  font-size: 13.5px;
+  color: var(--ink, #1C1C16);
+}
+
+.zepto-checkout-speed-text span {
+  font-size: 12px;
+  color: var(--clay, #79705F);
+}
+
+/* Hub info pill */
+.zepto-checkout-hub-info-pill {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #F0FDF4;
+  border: 1px solid #DCFCE7;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #166534;
+  line-height: 1.4;
+}
+
+/* Items in Order with Farm Attribution */
+.zepto-checkout-items-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.zepto-checkout-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-bottom: 1px solid #F0ECE4;
+  gap: 14px;
+}
+
+.zepto-checkout-item-row:last-child {
+  border-bottom: none;
+}
+
+.zepto-checkout-item-img {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  background: #FAF9F6;
+  border: 1px solid #ECE8DF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  padding: 3px;
+}
+
+.zepto-checkout-item-img img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.zepto-checkout-item-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.zepto-checkout-item-meta .crop-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink, #1C1C16);
+  text-transform: capitalize;
+}
+
+.zepto-checkout-item-meta .farm-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #166534;
+  background: #F0FDF4;
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin: 3px 0;
+}
+
+.zepto-checkout-item-meta .farm-tag strong {
+  font-weight: 700;
+  color: #14532D;
+}
+
+.zepto-checkout-item-meta .qty-price {
+  font-size: 12px;
+  color: var(--clay, #79705F);
+}
+
+.zepto-checkout-item-price {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink, #1C1C16);
+  flex-shrink: 0;
+}
+
+/* Right Column: Bill Details */
+.zepto-checkout-bill-card {
+  background: #FFFFFF;
+  border: 1px solid var(--line, #E4DFD1);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 4px 18px rgba(27, 107, 52, 0.04);
+  position: sticky;
+  top: 80px;
+}
+
+.zepto-checkout-bill-card .bill-title {
+  font-size: 1.15rem !important;
+  font-weight: 700 !important;
+  color: var(--heading-color-section, #104230) !important;
+  margin: 0 0 14px 0 !important;
+  font-family: var(--font-display, 'Fraunces', Georgia, serif) !important;
+  letter-spacing: -0.015em !important;
+}
+
+.zepto-checkout-bill-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13.5px;
+  color: var(--clay, #79705F);
+  margin-bottom: 10px;
+}
+
+.zepto-checkout-bill-row b {
+  color: var(--ink, #1C1C16);
+  font-weight: 600;
+}
+
+.zepto-checkout-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1.5px dashed var(--line, #E4DFD1);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink, #1C1C16);
+}
+
+.zepto-checkout-total-row .total-amount {
+  font-size: 20px;
+  color: var(--forest, #1B6B34);
+  font-weight: 800;
+}
+
+.zepto-checkout-reservation-notice {
+  margin-top: 12px;
+  margin-bottom: 16px;
+  padding: 8px 10px;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: #92400E;
+}
+
+.zepto-checkout-trust-box {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #F0ECE4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.zepto-checkout-trust-box .trust-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--clay, #79705F);
+}
+
+/* Loading & Empty Cards */
+.zepto-checkout-loading-card,
+.zepto-checkout-empty-card {
+  background: #FFFFFF;
+  border: 1px solid var(--line, #E4DFD1);
+  border-radius: 14px;
+  padding: 48px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.zepto-checkout-empty-card i {
+  font-size: 44px;
+  color: var(--forest, #1B6B34);
+  margin-bottom: 12px;
+}
+
+.zepto-checkout-empty-card h3 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.zepto-checkout-empty-card p {
+  font-size: 13.5px;
+  color: var(--clay, #79705F);
+  margin-bottom: 18px;
+}
+
+.zepto-checkout-btn-small {
+  background: var(--forest, #1B6B34);
+  color: #FFFFFF;
+  border: none;
+  padding: 9px 20px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Order Placed Success Card */
+.zepto-checkout-success-card {
+  max-width: 620px;
+  margin: 20px auto;
+  background: #FFFFFF;
+  border: 1px solid var(--line, #E4DFD1);
+  border-radius: 16px;
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 8px 30px rgba(27, 107, 52, 0.08);
+}
+
+.zepto-checkout-success-icon {
+  font-size: 54px;
+  color: var(--forest, #1B6B34);
+  margin-bottom: 12px;
+}
+
+.zepto-checkout-success-title {
+  font-family: var(--font-display, 'Fraunces', Georgia, serif) !important;
+  font-size: clamp(1.5rem, 2.8vw, 2rem) !important;
+  font-weight: 800 !important;
+  color: var(--heading-color-main, #0c3324) !important;
+  margin: 0 0 6px 0 !important;
+  text-align: center;
+  letter-spacing: -0.025em !important;
+}
+
+.zepto-checkout-success-sub {
+  font-size: 13.5px;
+  color: var(--clay, #79705F);
+  text-align: center;
+  margin-bottom: 22px;
+  max-width: 440px;
+}
+
+.zepto-checkout-success-order-box {
+  width: 100%;
+  background: #FAF9F6;
+  border: 1px solid var(--line, #E4DFD1);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.zepto-checkout-success-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.zepto-checkout-success-row .label {
+  color: var(--clay, #79705F);
+}
+
+.zepto-checkout-success-row .val {
+  color: var(--ink, #1C1C16);
+  font-weight: 600;
+  text-align: right;
+}
+
+.zepto-checkout-success-row.total-row {
+  border-top: 1px solid var(--line, #E4DFD1);
+  padding-top: 10px;
+  font-size: 15px;
+}
+
+.zepto-checkout-success-row.total-row .val {
+  font-size: 18px;
+  color: var(--forest, #1B6B34);
+  font-weight: 800;
+}
+
+.zepto-checkout-success-items {
+  width: 100%;
+  margin-top: 18px;
+  border-top: 1px solid #F0ECE4;
+  padding-top: 14px;
+}
+
+.zepto-checkout-success-items-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink, #1C1C16);
+  margin-bottom: 10px;
+}
+
+.zepto-checkout-success-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px dashed #F0ECE4;
+  font-size: 12.5px;
+}
+
+.zepto-checkout-success-item-row:last-child {
+  border-bottom: none;
+}
+
+.zepto-checkout-success-item-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.zepto-checkout-success-item-info .item-name {
+  font-weight: 700;
+  color: var(--ink, #1C1C16);
+  text-transform: capitalize;
+}
+
+.zepto-checkout-success-item-info .item-farm {
+  font-size: 11.5px;
+  color: #166534;
+  margin-top: 2px;
+}
+
+.zepto-checkout-success-item-qty {
+  font-weight: 600;
+  color: var(--ink, #1C1C16);
+}
+
+.zepto-checkout-success-actions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 24px;
+}

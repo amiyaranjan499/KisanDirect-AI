@@ -452,3 +452,40 @@ def test_declining_offer_immediately_dispatches_to_next_nearest_rider():
         asyncio.run(exercise())
     finally:
         cleanup(data)
+
+
+def test_rider_self_status_and_update_profile():
+    data = seed()
+    rider_user_id = data["rider_user_id"]
+    settings = Settings()
+
+    async def exercise():
+        engine = build_engine(settings)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            service = RiderService(
+                session,
+                RiderRepository(session),
+                OrderLifecycleService(session),
+                settings,
+            )
+            actor = LifecycleActor(rider_user_id, UserRole.RIDER)
+            status_resp = await service.self_status(actor)
+            assert status_resp.approval_status == "APPROVED"
+            assert status_resp.availability in {"AVAILABLE", "OFFLINE"}
+            assert status_resp.vehicle_type is not None
+
+            updated = await service.update_profile(
+                actor,
+                display_name="Kisan Delivery Champion",
+                vehicle_type="Electric Scooter (EV Bike)",
+            )
+            assert updated.display_name == "Kisan Delivery Champion"
+            assert updated.vehicle_type == "Electric Scooter (EV Bike)"
+            await session.commit()
+        await engine.dispose()
+
+    try:
+        asyncio.run(exercise())
+    finally:
+        cleanup(data)

@@ -29,7 +29,13 @@ class QualityService:
             processed = self.preprocessor.preprocess(source.read_bytes())
         except (OSError, InvalidCropImageError) as exc:
             raise ValueError("Stored crop image is invalid or unavailable") from exc
-        result = self.inference.predict(processed)
+        crop_name = None
+        if image.listing is not None and getattr(image.listing, "crop", None) is not None:
+            crop_name = image.listing.crop.name
+        try:
+            result = self.inference.predict(processed, crop_name=crop_name)
+        except TypeError:
+            result = self.inference.predict(processed)
         prediction = await self.repository.create_prediction(
             {
                 "listing_id": image.listing_id,

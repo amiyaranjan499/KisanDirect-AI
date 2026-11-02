@@ -102,3 +102,21 @@ class NotificationRepository:
             .limit(1)
         )
         return result.scalar_one_or_none()
+
+    async def delete_for_user(self, user_id: UUID, notification_id: UUID) -> bool:
+        notification = await self.get_for_user(user_id, notification_id)
+        if notification is None:
+            return False
+        await self.session.delete(notification)
+        await self.session.commit()
+        return True
+
+    async def delete_all_for_user(self, user_id: UUID) -> int:
+        result = await self.session.execute(
+            select(Notification).where(Notification.user_id == user_id)
+        )
+        notifications = list(result.scalars().all())
+        for item in notifications:
+            await self.session.delete(item)
+        await self.session.commit()
+        return len(notifications)

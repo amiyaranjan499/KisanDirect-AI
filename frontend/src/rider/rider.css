@@ -1,0 +1,875 @@
+/* KisanDirect Express - Rider Fleet Styles */
+:root {
+  --rider-forest: #1b6b34;
+  --rider-forest-dark: #124d24;
+  --rider-forest-light: #e8f5e9;
+  --rider-amber: #d97706;
+  --rider-amber-light: #fef3c7;
+  --rider-red: #dc2626;
+  --rider-red-light: #fee2e2;
+  --rider-surface: #ffffff;
+  --rider-bg: #f8faf8;
+  --rider-border: #e2e8f0;
+  --rider-text: #1e293b;
+  --rider-muted: #64748b;
+  --rider-shadow: 0 4px 12px rgba(27, 107, 52, 0.08);
+  --rider-radius: 12px;
+}
+
+.rider-app-wrapper {
+  min-height: 100vh;
+  background: var(--rider-bg);
+  color: var(--rider-text);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header Navbar - Dark Forest Green matching Image 1 */
+.rider-navbar {
+  background: #0B301C;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 4px 18px rgba(7, 38, 23, 0.35);
+}
+
+.rider-navbar-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.rider-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: inherit;
+}
+
+/* White Pill Badge matching Image 1 */
+.rider-logo-pill {
+  background: #ffffff;
+  padding: 4px 10px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
+.rider-logo-img {
+  height: 32px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.rider-brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.rider-brand-title {
+  font-family: var(--font-display, 'Fraunces', Georgia, serif);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.rider-brand-badge {
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #E2F0D9;
+  border-radius: 99px;
+  padding: 1px 7px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: 0.02em;
+}
+
+.rider-brand-sub {
+  font-size: 0.75rem;
+  color: #C8E6C9;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.rider-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rider-nav-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: #E2F0D9;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+
+.rider-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.rider-nav-btn.active {
+  background: #1B6B34;
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.rider-logout-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #E2F0D9;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  transition: all 0.18s ease;
+}
+
+.rider-logout-btn:hover {
+  background: rgba(220, 38, 38, 0.25);
+  color: #ff9999;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* Status Pill in Navbar */
+.rider-approval-pill {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.rider-approval-pill.approved {
+  background: var(--rider-forest-light);
+  color: var(--rider-forest);
+  border: 1px solid #81c784;
+}
+
+.rider-approval-pill.pending {
+  background: var(--rider-amber-light);
+  color: var(--rider-amber);
+  border: 1px solid #fcd34d;
+}
+
+.rider-approval-pill.suspended {
+  background: var(--rider-red-light);
+  color: var(--rider-red);
+  border: 1px solid #fca5a5;
+}
+
+/* Content Container */
+.rider-content-container {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 20px 16px 80px;
+  width: 100%;
+  flex: 1;
+}
+
+/* ==========================================================================
+   Rider Hero Header Banner (Matching Image 2)
+   ========================================================================== */
+.rider-hero-carousel {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  height: 155px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 18px rgba(11, 48, 28, 0.14);
+  border: 1px solid rgba(228, 223, 209, 0.6);
+  background: #0E3A24;
+}
+
+.rider-hero-slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1), transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: scale(1.02);
+  z-index: 1;
+}
+
+.rider-hero-slide.active {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+  z-index: 2;
+}
+
+.rider-hero-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.65;
+}
+
+.rider-hero-gradient {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+.rider-hero-content {
+  position: relative;
+  z-index: 3;
+  height: 100%;
+  padding: 14px 28px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.rider-hero-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  flex: 1;
+}
+
+.rider-hero-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #E2F0D9;
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 2px 10px;
+  border-radius: 99px;
+  width: fit-content;
+  margin-bottom: 4px;
+}
+
+.rider-hero-title {
+  font-family: var(--font-display, 'Fraunces', Georgia, serif);
+  font-size: clamp(1.35rem, 2.2vw, 1.65rem);
+  font-weight: 800;
+  color: #FFFFFF;
+  margin: 0 0 2px 0;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+}
+
+.rider-hero-subtitle {
+  font-family: var(--font-body, 'Work Sans', 'DM Sans', sans-serif);
+  font-size: 12.5px;
+  color: #DCE8D4;
+  margin-bottom: 5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rider-hero-highlight {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display, 'Fraunces', Georgia, serif);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #FFE6A8;
+  letter-spacing: 0.01em;
+}
+
+.rider-hero-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding-right: 6px;
+}
+
+.rider-hero-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: #C68A3D;
+  color: #2A1B05 !important;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 18px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+  white-space: nowrap;
+  width: auto !important;
+  max-width: fit-content !important;
+}
+
+.rider-hero-cta:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  color: #2A1B05 !important;
+}
+
+@media (max-width: 680px) {
+  .rider-hero-carousel {
+    height: auto;
+    min-height: 160px;
+  }
+  .rider-hero-content {
+    padding: 14px 16px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .rider-hero-right {
+    padding-right: 0;
+    width: 100%;
+  }
+  .rider-hero-cta {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
+
+/* Quick Metrics Row */
+.rider-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.rider-metric-card {
+  background: #ffffff;
+  border: 1px solid var(--rider-border);
+  border-radius: var(--rider-radius);
+  padding: 16px;
+  box-shadow: var(--rider-shadow);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.rider-metric-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.rider-metric-icon.green {
+  background: var(--rider-forest-light);
+  color: var(--rider-forest);
+}
+
+.rider-metric-icon.amber {
+  background: var(--rider-amber-light);
+  color: var(--rider-amber);
+}
+
+.rider-metric-icon.blue {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.rider-metric-info span {
+  font-size: 0.78rem;
+  color: var(--rider-muted);
+  display: block;
+  font-weight: 500;
+}
+
+.rider-metric-info strong {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--rider-text);
+}
+
+/* Online / Offline Banner */
+.rider-duty-card {
+  background: #ffffff;
+  border: 1px solid var(--rider-border);
+  border-radius: var(--rider-radius);
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  box-shadow: var(--rider-shadow);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.rider-duty-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rider-duty-indicator {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  position: relative;
+}
+
+.rider-duty-indicator.online {
+  background: #16a34a;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.2);
+}
+
+.rider-duty-indicator.offline {
+  background: #94a3b8;
+}
+
+.rider-duty-indicator.busy {
+  background: #ea580c;
+  box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.2);
+}
+
+.rider-duty-toggle {
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rider-duty-toggle.go-offline {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+}
+
+.rider-duty-toggle.go-offline:hover {
+  background: #fecaca;
+}
+
+.rider-duty-toggle.go-online {
+  background: var(--rider-forest);
+  color: #ffffff;
+}
+
+.rider-duty-toggle.go-online:hover {
+  background: var(--rider-forest-dark);
+}
+
+/* Pending Verification Portal Card */
+.rider-verify-card {
+  background: #ffffff;
+  border: 1px solid #fed7aa;
+  border-radius: 16px;
+  padding: 32px 24px;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(217, 119, 6, 0.08);
+  margin-top: 20px;
+}
+
+.rider-verify-icon-wrap {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #fff7ed;
+  border: 2px solid #fdba74;
+  margin: 0 auto 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rider-verify-card h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #9a3412;
+  margin-bottom: 10px;
+}
+
+.rider-verify-card p {
+  color: #475569;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  max-width: 580px;
+  margin: 0 auto 20px;
+}
+
+.rider-details-summary {
+  background: #f8fafc;
+  border: 1px solid var(--rider-border);
+  border-radius: 10px;
+  padding: 16px;
+  max-width: 480px;
+  margin: 0 auto 24px;
+  text-align: left;
+}
+
+.rider-details-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 0.88rem;
+  border-bottom: 1px dashed var(--rider-border);
+}
+
+.rider-details-row:last-child {
+  border-bottom: none;
+}
+
+.rider-details-label {
+  color: var(--rider-muted);
+  font-weight: 500;
+}
+
+.rider-details-val {
+  font-weight: 600;
+  color: var(--rider-text);
+}
+
+.rider-refresh-btn {
+  background: var(--rider-forest);
+  color: #ffffff;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.rider-refresh-btn:hover {
+  background: var(--rider-forest-dark);
+}
+
+/* Active Shipment Card */
+.rider-shipment-card {
+  background: #ffffff;
+  border: 2px solid var(--rider-forest);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgba(27, 107, 52, 0.12);
+  margin-bottom: 24px;
+}
+
+.rider-shipment-header {
+  background: linear-gradient(135deg, #1b6b34 0%, #2e7d32 100%);
+  color: #ffffff;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.rider-shipment-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.rider-shipment-body {
+  padding: 20px;
+}
+
+.rider-stop-box {
+  background: #f8fafc;
+  border: 1px solid var(--rider-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.rider-stop-title {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--rider-forest);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rider-stop-addr {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--rider-text);
+  margin-bottom: 8px;
+}
+
+.rider-map-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.rider-map-link:hover {
+  text-decoration: underline;
+}
+
+/* Action button inside shipment */
+.rider-action-btn-large {
+  width: 100%;
+  padding: 14px 20px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  border-radius: 10px;
+  border: none;
+  background: var(--rider-forest);
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  transition: all 0.15s ease;
+}
+
+.rider-action-btn-large:hover:not(:disabled) {
+  background: var(--rider-forest-dark);
+}
+
+.rider-action-btn-large:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* OTP Form */
+.rider-otp-box {
+  background: #f0fdf4;
+  border: 2px dashed #86efac;
+  border-radius: 12px;
+  padding: 18px;
+  margin-top: 16px;
+  text-align: center;
+}
+
+.rider-otp-input {
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: 12px;
+  text-align: center;
+  padding: 10px;
+  border: 2px solid #86efac;
+  border-radius: 10px;
+  width: 220px;
+  background: #ffffff;
+  color: var(--rider-forest-dark);
+  margin: 12px auto;
+  display: block;
+}
+
+/* Offers Grid */
+.rider-offers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.rider-offer-card {
+  background: #ffffff;
+  border: 1px solid var(--rider-border);
+  border-left: 4px solid var(--rider-forest);
+  border-radius: var(--rider-radius);
+  padding: 18px;
+  box-shadow: var(--rider-shadow);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.rider-offer-hub {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--rider-forest);
+  margin-bottom: 8px;
+}
+
+.rider-offer-details {
+  font-size: 0.85rem;
+  color: var(--rider-muted);
+  margin-bottom: 14px;
+}
+
+.rider-offer-timer {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--rider-amber);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rider-offer-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.rider-offer-btn {
+  flex: 1;
+  padding: 9px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.rider-offer-btn.accept {
+  background: var(--rider-forest);
+  color: #ffffff;
+}
+
+.rider-offer-btn.accept:hover:not(:disabled) {
+  background: var(--rider-forest-dark);
+}
+
+.rider-offer-btn.decline {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.rider-offer-btn.decline:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+/* Mobile Bottom Navigation Bar */
+.rider-mobile-bar {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-top: 1px solid var(--rider-border);
+  padding: 8px 12px;
+  z-index: 100;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.rider-mobile-bar-inner {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+}
+
+.rider-mobile-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-decoration: none;
+  color: var(--rider-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  gap: 2px;
+}
+
+.rider-mobile-item.active {
+  color: var(--rider-forest);
+}
+
+@media (max-width: 640px) {
+  .rider-nav-links {
+    display: none;
+  }
+  .rider-mobile-bar {
+    display: block;
+  }
+  .rider-content-container {
+    padding-bottom: 100px;
+  }
+}
+
+
+
+/* Rider Heading Polish */
+.rider-shell h1,
+.rider-main h1 {
+  font-family: var(--font-display, 'Fraunces', Georgia, serif);
+  font-size: clamp(1.65rem, 2.8vw, 2.15rem);
+  font-weight: 800;
+  color: var(--heading-color-main, #0c3324);
+  letter-spacing: -0.025em;
+}
+
+.rider-shell h2,
+.rider-main h2 {
+  font-family: var(--font-display, 'Fraunces', Georgia, serif);
+  font-size: clamp(1.25rem, 2vw, 1.55rem);
+  font-weight: 700; /* BOLD */
+  color: var(--heading-color-section, #104230);
+  letter-spacing: -0.02em;
+}
+
+.rider-shell h3,
+.rider-main h3 {
+  font-family: var(--font-display, 'Fraunces', Georgia, serif);
+  font-size: clamp(1.1rem, 1.5vw, 1.3rem);
+  font-weight: 700; /* BOLD */
+  color: var(--heading-color-sub, #174d39);
+  letter-spacing: -0.015em;
+}

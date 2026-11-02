@@ -17,7 +17,7 @@ class QualityRepository:
             .join(CropImage.listing)
             .join(CropListing.farmer)
             .where(CropImage.id == image_id, Farmer.user_id == user_id)
-            .options(selectinload(CropImage.listing))
+            .options(selectinload(CropImage.listing).selectinload(CropListing.crop))
         )
         return result.scalar_one_or_none()
 

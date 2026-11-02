@@ -1,6 +1,47 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;0,9..144,800;0,9..144,900;1,9..144,700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
 
 :root {
+  /* Brand Typography & Display Fonts */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-heading: 'Plus Jakarta Sans', 'DM Sans', -apple-system, sans-serif;
+  --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Premium Heading Colors */
+  --heading-color-main: #0c3324;
+  --heading-color-section: #104230;
+  --heading-color-sub: #174d39;
+  --heading-color-muted: #52675d;
+
+  /* Heading Font Sizes & Weights */
+  --h1-font-size: clamp(1.85rem, 3.2vw, 2.35rem);
+  --h1-font-weight: 800;
+  --h1-line-height: 1.18;
+  --h1-letter-spacing: -0.025em;
+
+  --h2-font-size: clamp(1.35rem, 2.2vw, 1.65rem);
+  --h2-font-weight: 700;
+  --h2-line-height: 1.25;
+  --h2-letter-spacing: -0.02em;
+
+  --h3-font-size: clamp(1.15rem, 1.8vw, 1.35rem);
+  --h3-font-weight: 700;
+  --h3-line-height: 1.3;
+  --h3-letter-spacing: -0.015em;
+
+  --h4-font-size: clamp(1rem, 1.4vw, 1.15rem);
+  --h4-font-weight: 700;
+  --h4-line-height: 1.35;
+  --h4-letter-spacing: -0.01em;
+
+  --h5-font-size: 0.95rem;
+  --h5-font-weight: 700;
+  --h5-line-height: 1.4;
+
+  --h6-font-size: 0.85rem;
+  --h6-font-weight: 700;
+  --h6-letter-spacing: 0.04em;
+
   --ink: #183229;
   --text-primary: #183229;
   --text-secondary: #52675d;
@@ -42,6 +83,15 @@
   --radius-lg: 18px;
   --radius-full: 9999px;
   --touch-target-min: 44px;
+
+  /* Modern Glass & Card Tokens */
+  --surface-card: #ffffff;
+  --surface-subtle: #f8faf7;
+  --card-border: rgba(16, 185, 129, 0.15);
+  --card-border-hover: rgba(16, 185, 129, 0.35);
+  --glass-bg: rgba(255, 255, 255, 0.9);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --focus-ring: 0 0 0 3px rgba(22, 143, 85, 0.2);
 }
 
 html,
@@ -64,7 +114,7 @@ html {
 
 body {
   margin: 0;
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-body);
   background: var(--panel);
   background-attachment: fixed;
   color: var(--ink);
@@ -116,14 +166,16 @@ textarea {
 button {
   border: 0;
   cursor: pointer;
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1), background 0.18s ease;
 }
 
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid var(--lime);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-color: var(--leaf);
 }
 
 input,
@@ -132,31 +184,117 @@ textarea {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  border: 1px solid #c8d0c2;
-  background: #fff;
+  border: 1.5px solid #d4dcd2;
+  background: #ffffff;
   color: var(--ink);
   padding: 12px 14px;
-  border-radius: 10px;
+  border-radius: 12px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--leaf);
+  box-shadow: 0 0 0 3px rgba(22, 143, 85, 0.16);
+  background: #ffffff;
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: #7a8678;
+  color: #8c988a;
 }
 
 textarea {
   resize: vertical;
 }
 
+/* ==========================================================================
+   Advanced Platform Typography & Heading System
+   Enforces consistent font family, font size, bold font style, and colors
+   ========================================================================== */
+
 h1,
+.page-title,
+.main-heading {
+  font-family: var(--font-display);
+  font-size: var(--h1-font-size);
+  font-weight: var(--h1-font-weight);
+  color: var(--heading-color-main);
+  line-height: var(--h1-line-height);
+  letter-spacing: var(--h1-letter-spacing);
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
 h2,
+.section-title,
+.section-heading,
+.section-heading-row h2,
+.panel-heading h2,
+.card-header h2 {
+  font-family: var(--font-display);
+  font-size: var(--h2-font-size);
+  font-weight: var(--h2-font-weight);
+  color: var(--heading-color-section);
+  line-height: var(--h2-line-height);
+  letter-spacing: var(--h2-letter-spacing);
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
 h3,
-h4,
+.card-header-title,
+.sub-section-title {
+  font-family: var(--font-display);
+  font-size: var(--h3-font-size);
+  font-weight: var(--h3-font-weight);
+  color: var(--heading-color-sub);
+  line-height: var(--h3-line-height);
+  letter-spacing: var(--h3-letter-spacing);
+  margin-top: 0;
+  margin-bottom: 0.4rem;
+}
+
+h4 {
+  font-family: var(--font-heading);
+  font-size: var(--h4-font-size);
+  font-weight: var(--h4-font-weight);
+  color: var(--heading-color-sub);
+  line-height: var(--h4-line-height);
+  letter-spacing: var(--h4-letter-spacing);
+  margin-top: 0;
+  margin-bottom: 0.35rem;
+}
+
+h5 {
+  font-family: var(--font-heading);
+  font-size: var(--h5-font-size);
+  font-weight: var(--h5-font-weight);
+  color: var(--ink);
+  line-height: var(--h5-line-height);
+  margin-top: 0;
+  margin-bottom: 0.25rem;
+}
+
+h6 {
+  font-family: var(--font-heading);
+  font-size: var(--h6-font-size);
+  font-weight: var(--h6-font-weight);
+  letter-spacing: var(--h6-letter-spacing);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-top: 0;
+  margin-bottom: 0.25rem;
+}
+
 .brand b,
 .profile-initial,
 .hero-note b {
-  font-family: 'Space Grotesk', 'DM Sans', sans-serif;
+  font-family: var(--font-heading);
 }
+
 
 .topbar {
   position: sticky;
@@ -1573,6 +1711,15 @@ h4,
   flex-direction: column;
   gap: 8px;
   font-weight: 600;
+}
+
+.section-heading-row h2 {
+  font-family: var(--font-display, 'Fraunces', Georgia, serif);
+  font-size: var(--h2-font-size, clamp(1.35rem, 2.2vw, 1.65rem));
+  font-weight: 700;
+  color: var(--heading-color-section, #104230);
+  letter-spacing: -0.02em;
+  margin: 0;
 }
 
 .section-heading-row {

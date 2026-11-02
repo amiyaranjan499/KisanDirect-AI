@@ -1,11 +1,26 @@
-import { useEffect, useMemo, useState } from "react";
-import { getAdminAnalytics, listAdminCategories, listAdminNotifications } from "../../services/adminApi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import AdminFilterTabs from "../components/AdminFilterTabs";
+import {
+  getAdminAnalytics,
+  listAdminCategories,
+  listAdminNotifications,
+} from "../../services/adminApi";
 
 const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-const RANGE_OPTIONS = [
-  { value: "7d", label: "Last 7 Days" },
-  { value: "30d", label: "30 Days" },
-  { value: "90d", label: "3 Months" },
+const formatDate = (value) =>
+  value
+    ? new Date(value).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "—";
+
+const RANGE_TABS = [
+  { key: "7d", label: "Past 7 Days" },
+  { key: "30d", label: "Past 30 Days" },
+  { key: "90d", label: "Past 90 Days" },
 ];
 
 export default function AdminAnalyticsPage() {
@@ -13,94 +28,257 @@ export default function AdminAnalyticsPage() {
   const [analytics, setAnalytics] = useState(null);
   const [categories, setCategories] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    Promise.all([getAdminAnalytics(range), listAdminCategories(), listAdminNotifications()])
-      .then(([analyticsData, categoryRows, notificationRows]) => {
-        setAnalytics(analyticsData);
-        setCategories(Array.isArray(categoryRows) ? categoryRows : []);
-        setNotifications(Array.isArray(notificationRows) ? notificationRows : []);
-        setError("");
-      })
-      .catch((requestError) => setError(requestError.message || "Unable to load analytics."));
+  const loadAnalytics = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [analyticsData, categoryRows, notificationRows] = await Promise.all([
+        getAdminAnalytics(range),
+        listAdminCategories(),
+        listAdminNotifications(),
+      ]);
+      setAnalytics(analyticsData);
+      setCategories(Array.isArray(categoryRows) ? categoryRows : []);
+      setNotifications(Array.isArray(notificationRows) ? notificationRows : []);
+    } catch (err) {
+      setError(err.message || "Failed to load platform analytics.");
+    } finally {
+      setLoading(false);
+    }
   }, [range]);
 
-  const categoryOverview = useMemo(() => categories.slice(0, 6), [categories]);
+  useEffect(() => {
+    loadAnalytics();
+  }, [loadAnalytics]);
 
-  if (error) return <section className="detail-view"><div className="error">{error}</div></section>;
-  if (!analytics) return <section className="detail-view"><div className="loading">Loading analytics...</div></section>;
+  const maxRevenue = useMemo(() => {
+    if (!analytics?.revenue_by_day?.length) return 1;
+    return Math.max(...analytics.revenue_by_day.map((p) => Number(p.total_sales || 0)), 1);
+  }, [analytics]);
 
   return (
-    <section className="detail-view admin-page-explicit">
-      <div className="consumer-screen-header admin-header-block">
+    <div className="admin-page-container">
+      <div className="admin-page-header">
         <div>
-          <span className="eyebrow">Analytics</span>
-          <h1>Performance analytics</h1>
+          <span className="eyebrow">Executive Intelligence</span>
+          <h1>Platform Analytics</h1>
+          <p>Examine revenue trajectories, fulfillment velocity, category supply distribution, and real-time events.</p>
         </div>
-        <div className="toggle-group" aria-label="Analytics date range filters">
-          {RANGE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={option.value === range ? "active" : ""}
-              onClick={() => setRange(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
+        <div className="admin-header-actions">
+          <AdminFilterTabs tabs={RANGE_TABS} activeTab={range} onChange={setRange} />
+          <button
+            type="button"
+            className="admin-btn-secondary"
+            onClick={loadAnalytics}
+            disabled={loading}
+          >
+            <i className={`bi bi-arrow-clockwise ${loading ? "spin" : ""}`} /> Refresh
+          </button>
         </div>
       </div>
 
+      {error && (
+        <div className="admin-table-error mb-4" role="alert">
+          <i className="bi bi-exclamation-triangle-fill" />
+          <span>{error}</span>
+          <button type="button" className="admin-retry-btn" onClick={loadAnalytics}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* KPI Cards */}
       <div className="admin-stat-grid">
-        <div className="admin-stat-card"><span>Active users</span><strong>{analytics.active_users}</strong></div>
-        <div className="admin-stat-card"><span>Orders</span><strong>{analytics.total_orders}</strong></div>
-        <div className="admin-stat-card"><span>Pending orders</span><strong>{analytics.pending_orders}</strong></div>
-        <div className="admin-stat-card"><span>Revenue</span><strong>{money(analytics.total_sales || 0)}</strong></div>
-        <div className="admin-stat-card"><span>Active shipments in range</span><strong>{analytics.active_shipments}</strong></div>
-        <div className="admin-stat-card"><span>Average placed to delivered</span><strong>{analytics.average_placed_to_delivered_minutes == null ? "No completed deliveries" : `${Math.round(analytics.average_placed_to_delivered_minutes)} min`}</strong></div>
-        <div className="admin-stat-card"><span>Failed deliveries</span><strong>{analytics.failed_deliveries}</strong></div>
+        <div className="admin-kpi-card">
+          <div className="admin-kpi-header">
+            <span className="admin-kpi-title">Gross Sales Volume</span>
+            <div className="admin-kpi-icon"><i className="bi bi-cash-stack" /></div>
+          </div>
+          <div className="admin-kpi-value">{loading ? "—" : money(analytics?.total_sales || 0)}</div>
+          <span className="admin-kpi-subtext">Across {analytics?.total_orders ?? 0} total orders</span>
+        </div>
+
+        <div className="admin-kpi-card">
+          <div className="admin-kpi-header">
+            <span className="admin-kpi-title">Active Platform Users</span>
+            <div className="admin-kpi-icon"><i className="bi bi-people" /></div>
+          </div>
+          <div className="admin-kpi-value">{loading ? "—" : analytics?.active_users ?? 0}</div>
+          <span className="admin-kpi-subtext">Out of {analytics?.total_users ?? 0} registered</span>
+        </div>
+
+        <div className="admin-kpi-card">
+          <div className="admin-kpi-header">
+            <span className="admin-kpi-title">Completed Orders</span>
+            <div className="admin-kpi-icon"><i className="bi bi-bag-check" /></div>
+          </div>
+          <div className="admin-kpi-value">{loading ? "—" : analytics?.completed_orders ?? 0}</div>
+          <span className="admin-kpi-subtext">Pending: {analytics?.pending_orders ?? 0}</span>
+        </div>
+
+        <div className="admin-kpi-card">
+          <div className="admin-kpi-header">
+            <span className="admin-kpi-title">Fulfillment Velocity</span>
+            <div className="admin-kpi-icon"><i className="bi bi-speedometer2" /></div>
+          </div>
+          <div className="admin-kpi-value">
+            {loading
+              ? "—"
+              : analytics?.average_placed_to_delivered_minutes != null
+              ? `${Math.round(analytics.average_placed_to_delivered_minutes)}m`
+              : "N/A"}
+          </div>
+          <span className="admin-kpi-subtext">Avg placed to delivered</span>
+        </div>
+
+        <div className="admin-kpi-card">
+          <div className="admin-kpi-header">
+            <span className="admin-kpi-title">Active Shipments</span>
+            <div className="admin-kpi-icon"><i className="bi bi-truck" /></div>
+          </div>
+          <div className="admin-kpi-value">{loading ? "—" : analytics?.active_shipments ?? 0}</div>
+          <span className="admin-kpi-subtext">Failed in range: {analytics?.failed_deliveries ?? 0}</span>
+        </div>
       </div>
 
+      {/* Revenue Trend Visualization */}
+      <section className="admin-panel mb-4">
+        <div className="admin-panel-header">
+          <h2>Revenue Daily Breakdown ({range.toUpperCase()})</h2>
+          <span>{analytics?.revenue_by_day?.length ?? 0} day points recorded</span>
+        </div>
+
+        {analytics?.revenue_by_day?.length ? (
+          <div className="d-flex align-items-end gap-2 pt-3 pb-2 overflow-auto" style={{ minHeight: "180px" }}>
+            {analytics.revenue_by_day.map((point) => {
+              const heightPercent = Math.max(10, Math.round((Number(point.total_sales || 0) / maxRevenue) * 100));
+              return (
+                <div
+                  key={point.label}
+                  className="d-flex flex-column align-items-center flex-fill"
+                  style={{ minWidth: "48px" }}
+                  title={`${point.label}: ${money(point.total_sales || 0)} (${point.total_orders || 0} orders)`}
+                >
+                  <span className="text-muted small mb-1" style={{ fontSize: "0.7rem" }}>
+                    {money(point.total_sales || 0)}
+                  </span>
+                  <div
+                    style={{
+                      height: `${heightPercent}px`,
+                      width: "100%",
+                      maxWidth: "36px",
+                      background: "linear-gradient(180deg, #167a52 0%, #073a26 100%)",
+                      borderRadius: "4px 4px 0 0",
+                    }}
+                  />
+                  <span className="text-muted mt-2 small" style={{ fontSize: "0.68rem" }}>
+                    {point.label.slice(5)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-4 text-muted">
+            <i className="bi bi-graph-up me-2" />
+            No transaction trend points recorded for this interval.
+          </div>
+        )}
+      </section>
+
+      {/* Grid: Category Mix & Operational Activity */}
       <div className="admin-section-grid">
+        {/* Category Breakdown Panel */}
         <section className="admin-panel">
           <div className="admin-panel-header">
-            <h2>Category mix</h2>
-            <span>{categories.length} categories</span>
+            <h2>Crop Category Mix</h2>
+            <span>{categories.length} Categories</span>
           </div>
           <div className="admin-table-wrap">
-            <table>
+            <table className="admin-table">
               <thead>
-                <tr><th>Category</th><th>Listings</th><th>Average price</th></tr>
+                <tr>
+                  <th>Category</th>
+                  <th>Listings</th>
+                  <th>Average Price</th>
+                </tr>
               </thead>
               <tbody>
-                {categoryOverview.map((row) => (
-                  <tr key={row.category || "unknown"}>
-                    <td>{row.category || "Uncategorized"}</td>
-                    <td>{row.listing_count || 0}</td>
-                    <td>{money(row.average_price || 0)}</td>
+                {categories.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="text-center py-4 text-muted">
+                      No categories registered.
+                    </td>
                   </tr>
-                ))}
+                ) : (
+                  categories.map((c) => (
+                    <tr key={c.category || "uncategorized"}>
+                      <td><strong>{c.category || "Uncategorized"}</strong></td>
+                      <td>
+                        <b>{c.active_listing_count}</b> / {c.listing_count} active
+                      </td>
+                      <td><strong>{money(c.average_price || 0)}</strong></td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </section>
 
+        {/* Recent Audit & System Activity Panel */}
         <section className="admin-panel">
           <div className="admin-panel-header">
-            <h2>Recent activity</h2>
-            <span>{analytics.total_orders} orders</span>
+            <h2>Live Operational Feed</h2>
+            <span>Recent Events</span>
           </div>
-          <div className="admin-list-stack">
-            {analytics.recent_activity.map((item) => (
-              <div key={item.id || `${item.title}-${item.created_at}`} className="admin-list-item">
-                <strong>{item.title}</strong>
-                <small>{item.message}</small>
-              </div>
-            ))}
+
+          <div className="d-flex flex-direction-column gap-3">
+            {analytics?.recent_activity?.length ? (
+              analytics.recent_activity.map((item, idx) => (
+                <div key={item.id || idx} className="d-flex align-items-start gap-3 pb-2 border-bottom">
+                  <div className="admin-avatar-mini" style={{ background: "#edf8df" }}>
+                    <i className="bi bi-bell-fill text-forest" />
+                  </div>
+                  <div className="flex-fill min-w-0">
+                    <div className="d-flex align-items-center justify-content-between">
+                      <strong className="text-dark small">{item.title}</strong>
+                      <small className="text-muted" style={{ fontSize: "0.72rem" }}>
+                        {formatDate(item.created_at)}
+                      </small>
+                    </div>
+                    <p className="text-muted small mb-0 text-truncate">{item.message}</p>
+                  </div>
+                </div>
+              ))
+            ) : notifications.length ? (
+              notifications.slice(0, 5).map((n) => (
+                <div key={n.id} className="d-flex align-items-start gap-3 pb-2 border-bottom">
+                  <div className="admin-avatar-mini">
+                    <i className="bi bi-app-indicator text-forest" />
+                  </div>
+                  <div className="flex-fill min-w-0">
+                    <div className="d-flex align-items-center justify-content-between">
+                      <strong className="text-dark small">{n.title}</strong>
+                      <small className="text-muted" style={{ fontSize: "0.72rem" }}>
+                        {formatDate(n.created_at)}
+                      </small>
+                    </div>
+                    <p className="text-muted small mb-0 text-truncate">{n.message}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-muted small py-3 mb-0 text-center">
+                No recent system activity events recorded in this time range.
+              </p>
+            )}
           </div>
         </section>
       </div>
-    </section>
+    </div>
   );
 }
