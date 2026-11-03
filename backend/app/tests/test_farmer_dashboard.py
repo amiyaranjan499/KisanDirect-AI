@@ -60,6 +60,7 @@ def seed_dashboard_data() -> tuple[User, User, User, Consumer, Farmer, Farmer, C
             session.add(crop)
             await session.flush()
 
+            base_time = datetime.now(timezone.utc)
             listing_one = CropListing(
                 crop_id=crop.id,
                 farmer_id=farmer_profile.id,
@@ -68,6 +69,7 @@ def seed_dashboard_data() -> tuple[User, User, User, Consumer, Farmer, Farmer, C
                 unit="kg",
                 asking_price=Decimal("14"),
                 availability_status=AvailabilityStatus.AVAILABLE,
+                created_at=base_time + timedelta(minutes=1),
             )
             listing_two = CropListing(
                 crop_id=crop.id,
@@ -77,11 +79,11 @@ def seed_dashboard_data() -> tuple[User, User, User, Consumer, Farmer, Farmer, C
                 unit="kg",
                 asking_price=Decimal("16"),
                 availability_status=AvailabilityStatus.SOLD_OUT,
+                created_at=base_time,
             )
             session.add_all([listing_one, listing_two])
             await session.flush()
 
-            base_time = datetime.now(timezone.utc)
             order_one = Order(
                 consumer_id=consumer_profile.id,
                 status=OrderStatus.PENDING,

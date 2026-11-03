@@ -271,7 +271,7 @@ class OrderLifecycleService:
 
             order = Order(
                 consumer_id=consumer_id,
-                hub_id=hub.id,
+                hub_id=None,
                 delivery_slot_id=slot.id if slot else None,
                 status=OrderStatus.PENDING,
                 subtotal=subtotal,
@@ -457,6 +457,149 @@ class OrderLifecycleService:
             )
             await self.session.refresh(delivery)
         return delivery
+
+    async def deliver_farmer_order(
+        self,
+        order_id: UUID,
+        actor: LifecycleActor,
+        *,
+        otp: str | None = None,
+        reason: str | None = None,
+    ) -> Order:
+        if actor.role is not UserRole.FARMER or actor.user_id is None:
+            raise LifecyclePermissionError("Only the order's farmer may complete self-delivery")
+        await self._validate_actor(actor)
+
+        async with self._transaction():
+            order = await self._lock_order(order_id)
+            if not await self._farmer_owns_order(order.id, actor.user_id):
+                raise LifecyclePermissionError("Farmer does not own items in this order")
+
+            if order.status in {OrderStatus.DELIVERED, OrderStatus.COMPLETED}:
+                raise LifecycleConflict("Order has already been delivered")
+            if order.status is OrderStatus.CANCELLED:
+                raise LifecycleConflict("Cannot deliver a cancelled order")
+
+            # Advance from PENDING / CONFIRMED to PROCESSING
+            if order.status is OrderStatus.PENDING:
+                await self._transition_order_locked(
+                    order, actor, OrderStatus.CONFIRMED, reason="Farmer accepted order for self-delivery"
+                )
+            if order.status is OrderStatus.CONFIRMED:
+                await self._transition_order_locked(
+                    order, actor, OrderStatus.PROCESSING, reason="Farmer packing order for self-delivery"
+                )
+
+            # Ensure shipment exists
+            shipment = await self.session.scalar(
+                select(Shipment).where(Shipment.order_id == order.id).with_for_update()
+            )
+            if shipment is None:
+                hub_id = order.hub_id
+                if hub_id is None:
+                    farmer_id = await self.session.scalar(
+                        select(Farmer.id).where(Farmer.user_id == actor.user_id)
+                    )
+                    if farmer_id:
+                        hub_id = await self.session.scalar(
+                            select(Hub.id).where(Hub.farmer_id == farmer_id).order_by(Hub.created_at)
+                        )
+                if hub_id is None:
+                    hub_id = await self.session.scalar(
+                        select(Hub.id).where(Hub.status == HubStatus.ACTIVE).order_by(Hub.created_at)
+                    )
+                if hub_id is None:
+                    raise LifecycleConflict("No active hub found for delivery")
+
+                if not order.delivery_address:
+                    order.delivery_address = (
+                        order.consumer.address
+                        or f"{order.consumer.city or 'Local Delivery Address'}, PIN {order.consumer.pin_code or '751001'}"
+                    )
+                if order.promised_window_start is None:
+                    order.promised_window_start = datetime.now(timezone.utc)
+                if order.promised_window_end is None:
+                    order.promised_window_end = datetime.now(timezone.utc) + timedelta(minutes=60)
+
+                shipment = await self.create_shipment(
+                    order.id,
+                    actor,
+                    hub_id=hub_id,
+                    reason="Shipment created for farmer self-delivery",
+                )
+
+            # OTP verification rule if active
+            if shipment.delivery_otp_hash is not None and shipment.otp_consumed_at is None:
+                if not otp:
+                    raise LifecycleConflict("Delivery verification OTP is required")
+                if not self._matches_otp(otp, shipment.delivery_otp_hash):
+                    shipment.otp_attempts += 1
+                    await self.session.flush()
+                    raise LifecycleConflict("Invalid delivery OTP")
+                shipment.otp_consumed_at = datetime.now(timezone.utc)
+
+            # Supersede pending rider offers
+            offers_result = await self.session.execute(
+                select(RiderOffer)
+                .where(
+                    RiderOffer.shipment_id == shipment.id,
+                    RiderOffer.status.in_(("OFFERED", "ACCEPTED")),
+                )
+                .with_for_update()
+            )
+            for offer in offers_result.scalars():
+                offer.status = "SUPERSEDED"
+                offer.responded_at = datetime.now(timezone.utc)
+
+            # Release assigned rider if any
+            if shipment.rider_id is not None:
+                rider = await self.session.scalar(
+                    select(Rider).where(Rider.id == shipment.rider_id).with_for_update()
+                )
+                if rider is not None:
+                    rider.availability = RiderAvailability.AVAILABLE
+                shipment.rider_id = None
+
+            # Progress shipment to READY_FOR_PICKUP if it was PACKING
+            if shipment.status is ShipmentStatus.PACKING:
+                await self._transition_shipment_locked(
+                    order,
+                    shipment,
+                    actor,
+                    ShipmentStatus.READY_FOR_PICKUP,
+                    reason="Packed for self-delivery",
+                )
+
+            # Transition shipment to DELIVERED (which cascades to order.status = DELIVERED, records event, and notifies consumer)
+            await self._transition_shipment_locked(
+                order,
+                shipment,
+                actor,
+                ShipmentStatus.DELIVERED,
+                reason=reason or "Delivered directly by farmer without rider",
+                otp_verified=True,
+            )
+
+            # Update legacy delivery if present
+            delivery = await self.session.scalar(
+                select(Delivery).where(Delivery.order_id == order.id).with_for_update()
+            )
+            if delivery is not None and delivery.status != DeliveryStatus.DELIVERED:
+                delivery.status = (
+                    DeliveryStatus.PICKED_UP
+                    if delivery.fulfillment_method == FulfillmentMethod.FARMER_PICKUP
+                    else DeliveryStatus.DELIVERED
+                )
+
+            await self.notifications.stage(
+                user_id=actor.user_id,
+                notification_type=NotificationType.DELIVERY,
+                title="Self-Delivery Completed",
+                message=f"Order ORD-{str(order.id)[:8].upper()} marked as successfully delivered to consumer.",
+                related_entity_type="order",
+                related_entity_id=order.id,
+            )
+            return order
 
     async def create_shipment(
         self,
@@ -724,6 +867,105 @@ class OrderLifecycleService:
             )
         return shipment
 
+    async def deliver_shipment_by_rider(
+        self,
+        shipment_id: UUID,
+        actor: LifecycleActor,
+        *,
+        notes: str | None = None,
+    ) -> Shipment:
+        if actor.role is not UserRole.RIDER or actor.user_id is None:
+            raise LifecyclePermissionError("Only the assigned rider may mark shipment as delivered")
+        async with self._transaction():
+            await self._validate_actor(actor)
+            shipment_order_id = await self.session.scalar(
+                select(Shipment.order_id).where(Shipment.id == shipment_id)
+            )
+            if shipment_order_id is None:
+                raise LifecycleNotFound("Shipment not found")
+            order = await self._lock_order(shipment_order_id)
+            shipment_result = await self.session.execute(
+                select(Shipment).where(Shipment.id == shipment_id).with_for_update()
+            )
+            shipment = shipment_result.scalar_one_or_none()
+            if shipment is None:
+                raise LifecycleNotFound("Shipment not found")
+
+            if shipment.status is ShipmentStatus.DELIVERED:
+                raise LifecycleConflict("Shipment has already been delivered")
+
+            rider_id = await self.session.scalar(
+                select(Rider.id).where(Rider.user_id == actor.user_id)
+            )
+            if rider_id is None or shipment.rider_id != rider_id:
+                raise LifecyclePermissionError("Only the assigned rider may mark delivery")
+
+            if shipment.status not in {ShipmentStatus.ARRIVED, ShipmentStatus.OUT_FOR_DELIVERY}:
+                raise LifecycleConflict(f"Shipment cannot be delivered from status {shipment.status.value}")
+
+            # If order has COD payment, ensure cash is collected
+            payment = await self.session.scalar(
+                select(Payment).where(Payment.order_id == order.id).with_for_update()
+            )
+            if payment is not None and payment.payment_method == "COD" and payment.status not in {PaymentStatus.PAID, PaymentStatus.SUCCESSFUL}:
+                raise LifecycleConflict("Cash on delivery must be collected and confirmed before marking as delivered")
+
+            from_status = shipment.status
+            now = datetime.now(timezone.utc)
+            shipment.status = ShipmentStatus.DELIVERED
+            shipment.delivered_at = now
+
+            rider = await self.session.scalar(
+                select(Rider).where(Rider.id == rider_id).with_for_update()
+            )
+            if rider is not None:
+                other_active = await self.session.scalar(
+                    select(func.count(Shipment.id)).where(
+                        Shipment.rider_id == rider.id,
+                        Shipment.id != shipment.id,
+                        Shipment.status.not_in(
+                            (
+                                ShipmentStatus.DELIVERED,
+                                ShipmentStatus.CANCELLED,
+                                ShipmentStatus.RETURNED,
+                            )
+                        ),
+                    )
+                )
+                rider.availability = (
+                    RiderAvailability.BUSY if other_active else RiderAvailability.AVAILABLE
+                )
+
+            reason = notes or "Delivered by rider to customer"
+            await self._record_event(
+                order,
+                actor,
+                from_status.value,
+                ShipmentStatus.DELIVERED.value,
+                reason,
+                shipment_id=shipment.id,
+            )
+
+            await self._transition_order_locked(
+                order,
+                LifecycleActor(None, None),
+                OrderStatus.DELIVERED,
+                reason=reason,
+                cascade=True,
+                shipment_id=shipment.id,
+            )
+
+            await self._notify_order_parties(
+                order,
+                actor,
+                NotificationType.ORDER,
+                "Order delivered",
+                f"Order {str(order.id)[:8]} has been delivered by rider.",
+                shipment_id=shipment.id,
+            )
+            await self.session.flush()
+        return shipment
+
     async def verify_delivery_otp(
         self, shipment_id: UUID, actor: LifecycleActor, code: str
     ) -> bool:
@@ -980,16 +1222,13 @@ class OrderLifecycleService:
             if outcome == "success":
                 await self._commit_checkout_reservations(order)
             elif outcome in {"failed", "cancelled"}:
-                if order.hub_id is not None:
-                    await self._transition_order_locked(
-                        order,
-                        LifecycleActor(None, None),
-                        OrderStatus.CANCELLED,
-                        reason=f"Checkout payment {outcome}",
-                        cascade=True,
-                    )
-                else:
-                    await self._restore_checkout_stock(order)
+                await self._transition_order_locked(
+                    order,
+                    LifecycleActor(None, None),
+                    OrderStatus.CANCELLED,
+                    reason=f"Checkout payment {outcome}",
+                    cascade=True,
+                )
         return payment.id
 
     async def record_cod_cash_collected(
@@ -1539,8 +1778,10 @@ class OrderLifecycleService:
                 raise LifecyclePermissionError("Only the assigned rider may update this shipment")
             return
         if target is ShipmentStatus.DELIVERED:
+            if role is UserRole.FARMER and await self._farmer_owns_order(order.id, actor.user_id):
+                return
             if role is not UserRole.RIDER or not await self._is_assigned_rider(shipment, actor.user_id):
-                raise LifecyclePermissionError("Only the assigned rider may complete delivery")
+                raise LifecyclePermissionError("Only the assigned rider or order farmer may complete delivery")
             return
         if target is ShipmentStatus.RETURNED:
             if role is UserRole.ADMIN:
@@ -1603,7 +1844,12 @@ class OrderLifecycleService:
     async def _restore_checkout_stock(self, order: Order) -> None:
         if order.stock_restored:
             return
-        if order.hub_id is not None:
+        reservations_result = await self.session.execute(
+            select(StockReservation)
+            .where(StockReservation.order_id == order.id)
+            .with_for_update()
+        )
+        if list(reservations_result.scalars()):
             await self._release_checkout_reservations(order, restore_committed=True)
             order.stock_restored = True
             return
@@ -1632,7 +1878,7 @@ class OrderLifecycleService:
             .with_for_update()
         )
         reservations = list(reservations_result.scalars())
-        if order.hub_id is None or not reservations:
+        if not reservations:
             return
         now = datetime.now(timezone.utc)
         stocks_result = await self.session.execute(
@@ -1894,6 +2140,9 @@ class OrderLifecycleService:
                 .where(
                     HubStaff.user_id == user_id,
                     or_(
+                        HubStaff.hub_id.in_(
+                            select(Order.hub_id).where(Order.id == order_id)
+                        ),
                         HubStaff.hub_id.in_(
                             select(Shipment.hub_id).where(Shipment.order_id == order_id)
                         ),

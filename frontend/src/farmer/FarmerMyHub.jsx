@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   listFarmerFacilities,
   createFarmerFacility,
@@ -156,13 +157,17 @@ export default function FarmerMyHub() {
   };
 
   return (
-    <div style={{ maxWidth: "900px", margin: "0 auto", padding: "16px 12px 60px" }}>
-      {/* Standard Farmer Page Header */}
+    <div className="farmer-my-hub-page">
+      {/* 1. Header */}
       <div className="farmer-page-header">
         <div>
-          <div className="eyebrow"><i className="bi bi-building me-1" /> HUB INFRASTRUCTURE & DISPATCH</div>
+          <span className="eyebrow">
+            <i className="bi bi-building me-1" /> HUB INFRASTRUCTURE & DISPATCH
+          </span>
           <h1 className="farmer-page-title">My Kisan Hubs</h1>
-          <p className="farmer-page-sub">Manage your local storage facilities, packaging centers, and quick-commerce delivery coverage radiuses.</p>
+          <p className="farmer-page-sub">
+            Manage your local storage facilities, packaging centers, and quick-commerce delivery coverage radiuses.
+          </p>
         </div>
         <div className="farmer-header-actions">
           <button
@@ -178,7 +183,7 @@ export default function FarmerMyHub() {
         </div>
       </div>
 
-      {/* KPI Summary Cards */}
+      {/* 2. KPI Summary Cards Grid */}
       <div className="farmer-kpis-grid mb-4">
         <div className="farmer-kpi-card">
           <div className="farmer-kpi-info">
@@ -220,7 +225,7 @@ export default function FarmerMyHub() {
         </div>
       </div>
 
-      {/* Notifications / Alerts */}
+      {/* 3. Alerts */}
       {error && (
         <div className="kisan-card kisan-card-pad mb-3" style={{ borderColor: "#F28B82", background: "#FDF2F0" }}>
           <div className="d-flex align-items-center justify-content-between">
@@ -244,6 +249,7 @@ export default function FarmerMyHub() {
         </div>
       )}
 
+      {/* 4. Facilities Content */}
       {loading ? (
         <div className="kisan-card kisan-card-pad text-center py-5">
           <div className="spinner-border text-success" role="status" style={{ width: "2rem", height: "2rem" }} />
@@ -254,21 +260,29 @@ export default function FarmerMyHub() {
         <div className="kisan-card kisan-card-pad text-center py-5" style={{ background: "#FFFFFF" }}>
           <div
             style={{
-              width: "52px",
-              height: "52px",
+              width: "60px",
+              height: "60px",
               borderRadius: "50%",
               background: "#EDF8DF",
               color: "#1B6B34",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "22px",
-              margin: "0 auto 12px",
+              fontSize: "24px",
+              margin: "0 auto 14px",
             }}
           >
             <i className="bi bi-building" />
           </div>
-          <h2 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: "18px", fontWeight: 700, margin: "0 0 6px", color: "#1B6B34" }}>
+          <h2
+            style={{
+              fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
+              fontSize: "19px",
+              fontWeight: 700,
+              margin: "0 0 6px",
+              color: "var(--farmer-forest, #073a26)",
+            }}
+          >
             No Storage Hub Added Yet
           </h2>
           <p style={{ color: "#79705F", fontSize: "13.5px", margin: "0 auto 18px", maxWidth: "420px" }}>
@@ -286,163 +300,215 @@ export default function FarmerMyHub() {
           </button>
         </div>
       ) : (
-        /* Hub Cards List: Compact / Small Backgrounds */
-        <div>
+        /* Hub Cards List */
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
           {facilities.map((hub) => (
             <div
               key={hub.id}
+              className="kisan-card"
               style={{
-                position: "relative",
-                borderRadius: "14px",
+                borderRadius: "16px",
                 overflow: "hidden",
-                boxShadow: "0 4px 14px rgba(7, 45, 29, 0.08)",
-                border: "1px solid rgba(228, 223, 209, 0.9)",
-                background: "#0c4d33",
-                marginBottom: "16px",
+                border: "1px solid #E4DFD1",
+                boxShadow: "0 2px 10px rgba(7, 45, 29, 0.05)",
+                background: "#FFFFFF",
               }}
             >
-              {/* Subtle background image */}
-              <img
-                src="/assets/images/sunlight.png"
-                alt=""
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  objectPosition: "center",
-                  opacity: 0.22,
-                }}
-              />
-
-              {/* Dark Forest Gradient Overlay */}
+              {/* Hub Card Top Header */}
               <div
                 style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  background:
-                    "linear-gradient(135deg, rgba(7, 45, 29, 0.95) 0%, rgba(12, 65, 42, 0.90) 100%)",
+                  background: "linear-gradient(135deg, rgba(7, 58, 38, 0.04) 0%, rgba(200, 245, 175, 0.16) 100%)",
+                  borderBottom: "1px solid #E4DFD1",
+                  padding: "16px 22px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: "12px",
                 }}
-              />
-
-              {/* Snug, compact content inside */}
-              <div style={{ position: "relative", zIndex: 2, padding: "16px 20px", color: "#FFFFFF" }}>
-                {/* Top Line: Hub Name + Status + Edit Action */}
-                <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-                  <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <span
-                      style={{
-                        background: "rgba(255, 255, 255, 0.16)",
-                        backdropFilter: "blur(4px)",
-                        color: "#FFFFFF",
-                        fontSize: "11px",
-                        fontWeight: 700,
-                        padding: "2px 8px",
-                        borderRadius: "6px",
-                        letterSpacing: "0.04em",
-                        textTransform: "uppercase",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                      }}
-                    >
-                      <i className="bi bi-building" /> Hub
-                    </span>
-                    <h2
-                      style={{
-                        fontFamily: "'Fraunces', Georgia, serif",
-                        fontSize: "19px",
-                        fontWeight: 700,
-                        margin: 0,
-                        color: "#FFFFFF",
-                        letterSpacing: "-0.01em",
-                      }}
-                    >
-                      {hub.name}
-                    </h2>
-                    <span
-                      style={{
-                        background: "#c9eca5",
-                        color: "#073a26",
-                        fontSize: "11px",
-                        fontWeight: 800,
-                        padding: "2px 8px",
-                        borderRadius: "99px",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "3px",
-                      }}
-                    >
-                      <i className="bi bi-check-circle-fill" /> Active
-                    </span>
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      width: "42px",
+                      height: "42px",
+                      borderRadius: "10px",
+                      background: "var(--farmer-forest, #073a26)",
+                      color: "#FFFFFF",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "1.25rem",
+                    }}
+                  >
+                    <i className="bi bi-building-check" />
                   </div>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <h2
+                        style={{
+                          fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
+                          fontSize: "1.25rem",
+                          fontWeight: 700,
+                          color: "var(--farmer-forest, #073a26)",
+                          margin: 0,
+                        }}
+                      >
+                        {hub.name}
+                      </h2>
+                      <span
+                        style={{
+                          background: "#dcfce7",
+                          color: "#166534",
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          padding: "3px 9px",
+                          borderRadius: "99px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        <i className="bi bi-check-circle-fill" /> Active
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--farmer-muted, #65766e)", marginTop: "2px" }}>
+                      Storage Facility & Quick-Commerce Dispatch Hub
+                    </div>
+                  </div>
+                </div>
 
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <button
                     type="button"
                     onClick={() => handleOpenEditModal(hub)}
-                    style={{
-                      background: "rgba(255, 255, 255, 0.95)",
-                      color: "#073a26",
-                      border: "none",
-                      borderRadius: "6px",
-                      padding: "4px 10px",
-                      fontSize: "12px",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "5px",
-                      boxShadow: "0 1px 4px rgba(0,0,0,0.12)",
-                    }}
+                    className="btn btn-sm btn-outline-secondary"
+                    style={{ fontSize: "12.5px", fontWeight: 600, padding: "5px 12px", borderRadius: "8px" }}
                   >
-                    <i className="bi bi-pencil-fill" /> Edit Hub
+                    <i className="bi bi-pencil me-1" /> Edit Hub
                   </button>
                 </div>
+              </div>
 
-                {/* Details Line: Location & KM Delivery Radius */}
-                <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 pt-1">
-                  {/* Location Address & PIN */}
-                  <div
-                    className="d-flex align-items-center gap-2 flex-wrap"
-                    style={{ fontSize: "13.5px", color: "rgba(255, 255, 255, 0.92)" }}
-                  >
-                    <i className="bi bi-geo-alt-fill" style={{ color: "#c9eca5", fontSize: "16px" }} />
-                    <span>
-                      <strong>{hub.address}</strong>
-                      {hub.village_or_locality && <span> · {hub.village_or_locality}</span>}
-                      {hub.district && <span>, {hub.district}</span>}
-                      {hub.state && <span>, {hub.state}</span>}
-                      <span style={{ color: "rgba(255, 255, 255, 0.75)", marginLeft: "8px" }}>
-                        (PIN: {hub.pincode})
+              {/* Hub Card Details Grid */}
+              <div style={{ padding: "20px 22px" }}>
+                <div className="row g-3">
+                  {/* Address & PIN */}
+                  <div className="col-md-5">
+                    <div
+                      style={{
+                        fontSize: "0.74rem",
+                        fontWeight: 700,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        color: "var(--farmer-muted, #65766e)",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      <i className="bi bi-geo-alt-fill text-success me-1" /> Physical Address
+                    </div>
+                    <div style={{ fontSize: "0.92rem", fontWeight: 600, color: "var(--farmer-ink, #183229)" }}>
+                      {hub.address}
+                    </div>
+                    <div style={{ fontSize: "0.84rem", color: "var(--farmer-muted, #65766e)", marginTop: "2px" }}>
+                      {[hub.village_or_locality, hub.district, hub.state].filter(Boolean).join(", ")}
+                    </div>
+                    <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--farmer-forest, #073a26)", marginTop: "4px" }}>
+                      Postal PIN: {hub.pincode}
+                    </div>
+                  </div>
+
+                  {/* Delivery Radius & SLA */}
+                  <div className="col-md-4">
+                    <div
+                      style={{
+                        fontSize: "0.74rem",
+                        fontWeight: 700,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        color: "var(--farmer-muted, #65766e)",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      <i className="bi bi-scooter text-primary me-1" /> Delivery Radius & SLA
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span
+                        style={{
+                          background: "#fef3c7",
+                          color: "#92400e",
+                          fontSize: "1rem",
+                          fontWeight: 700,
+                          padding: "3px 10px",
+                          borderRadius: "8px",
+                          fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
+                        }}
+                      >
+                        {Number(hub.service_radius_km || 8).toFixed(1)} km
                       </span>
-                    </span>
+                      <span style={{ fontSize: "0.82rem", color: "var(--farmer-muted, #65766e)" }}>
+                        Service Radius
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--farmer-muted, #65766e)", marginTop: "6px" }}>
+                      ⚡ 45–90 min quick-commerce doorstep dispatch
+                    </div>
                   </div>
 
-                  {/* KM Delivery Radius Pill */}
-                  <div
-                    style={{
-                      background: "rgba(201, 236, 165, 0.2)",
-                      border: "1px solid rgba(201, 236, 165, 0.4)",
-                      padding: "4px 12px",
-                      borderRadius: "8px",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                    }}
-                  >
-                    <i className="bi bi-scooter" style={{ color: "#c9eca5", fontSize: "14px" }} />
-                    <span style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.85)" }}>
-                      Radius:
-                    </span>
-                    <strong style={{ fontSize: "13px", color: "#c9eca5" }}>
-                      {Number(hub.service_radius_km || 8).toFixed(1)} km
-                    </strong>
+                  {/* Operational Status */}
+                  <div className="col-md-3">
+                    <div
+                      style={{
+                        fontSize: "0.74rem",
+                        fontWeight: 700,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        color: "var(--farmer-muted, #65766e)",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      <i className="bi bi-shield-check text-success me-1" /> Operational Status
+                    </div>
+                    <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "#166534" }}>
+                      🟢 Online & Serving
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--farmer-muted, #65766e)", marginTop: "4px" }}>
+                      GPS verified rider handover
+                    </div>
                   </div>
+                </div>
+              </div>
+
+              {/* Hub Card Quick Operational Actions Footer */}
+              <div
+                style={{
+                  background: "#FAF7EF",
+                  borderTop: "1px solid #E4DFD1",
+                  padding: "12px 22px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: "10px",
+                }}
+              >
+                <div style={{ fontSize: "0.82rem", color: "var(--farmer-muted, #65766e)" }}>
+                  <i className="bi bi-info-circle me-1" /> Consumers browse and order stock supplied directly to this hub.
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <Link to="/farmer/hub-supply" className="kisan-btn-accent kisan-btn-sm">
+                    <i className="bi bi-box-arrow-in-down me-1" /> Supply Produce
+                  </Link>
+                  <Link to="/farmer/staff" className="kisan-btn-outline kisan-btn-sm">
+                    <i className="bi bi-people me-1" /> Manage Staff
+                  </Link>
+                  <Link
+                    to="/farmer/dispatch"
+                    className="btn btn-sm btn-outline-success"
+                    style={{ fontSize: "12.5px", fontWeight: 600, borderRadius: "6px", padding: "6px 12px" }}
+                  >
+                    <i className="bi bi-truck me-1" /> Dispatch Tracking
+                  </Link>
                 </div>
               </div>
             </div>
@@ -455,19 +521,19 @@ export default function FarmerMyHub() {
               setCreateForm(emptyHubForm);
               setShowCreateModal(true);
             }}
-            className="w-100 py-2 d-flex align-items-center justify-content-center gap-2"
+            className="w-100 py-3 d-flex align-items-center justify-content-center gap-2"
             style={{
               background: "#FAF8F3",
-              border: "1px dashed #C0B7A5",
-              borderRadius: "10px",
-              color: "#1B6B34",
-              fontWeight: 600,
-              fontSize: "13.5px",
+              border: "1.5px dashed #C0B7A5",
+              borderRadius: "14px",
+              color: "var(--farmer-forest, #073a26)",
+              fontWeight: 700,
+              fontSize: "14px",
               cursor: "pointer",
-              marginTop: "8px",
+              transition: "all 0.15s ease",
             }}
           >
-            <i className="bi bi-plus-circle" /> Add Another Storage Hub
+            <i className="bi bi-plus-circle-fill text-success" /> Add Another Storage Hub
           </button>
         </div>
       )}
@@ -479,7 +545,7 @@ export default function FarmerMyHub() {
         <div className="farmer-modal-backdrop" onClick={() => setShowCreateModal(false)}>
           <div className="farmer-modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "520px" }}>
             <div className="farmer-modal-header" style={{ padding: "16px 20px" }}>
-              <h3 style={{ fontFamily: "'Fraunces', Georgia, serif", color: "#1B6B34", margin: 0, fontSize: "18px" }}>
+              <h3 style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", color: "#1B6B34", margin: 0, fontSize: "18px" }}>
                 Add Storage Hub
               </h3>
               <button
@@ -630,7 +696,7 @@ export default function FarmerMyHub() {
         <div className="farmer-modal-backdrop" onClick={() => setShowEditModal(false)}>
           <div className="farmer-modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "520px" }}>
             <div className="farmer-modal-header" style={{ padding: "16px 20px" }}>
-              <h3 style={{ fontFamily: "'Fraunces', Georgia, serif", color: "#1B6B34", margin: 0, fontSize: "18px" }}>
+              <h3 style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", color: "#1B6B34", margin: 0, fontSize: "18px" }}>
                 Edit Hub Details
               </h3>
               <button

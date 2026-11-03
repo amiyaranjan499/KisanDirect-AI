@@ -8,7 +8,6 @@ import {
   postRiderLocation,
   recordRiderCodCashCollected,
   updateRiderShipmentStatus,
-  verifyRiderDeliveryOtp,
 } from "../services/api";
 import { RiderBikeIcon } from "./RiderShell";
 
@@ -24,7 +23,7 @@ export default function RiderDashboardPage() {
 
   const [offers, setOffers] = useState([]);
   const [shipment, setShipment] = useState(null);
-  const [otp, setOtp] = useState("");
+  const [showDeliverConfirmModal, setShowDeliverConfirmModal] = useState(false);
   const [offersLoading, setOffersLoading] = useState(false);
   const [shipmentLoading, setShipmentLoading] = useState(false);
   const [busyId, setBusyId] = useState("");
@@ -187,27 +186,30 @@ export default function RiderDashboardPage() {
     }
   };
 
-  const handleSubmitOtp = async (event) => {
-    event.preventDefault();
+  const handleMarkAsDeliveredClick = () => {
     if (!shipment) return;
-    const cleanOtp = otp.trim().replace(/\D/g, "");
-    if (cleanOtp.length !== 6) {
-      setError("Please enter the complete 6-digit delivery OTP from the customer.");
+    if (shipment.payment_method === "COD" && shipment.payment_status !== "PAID") {
+      setError("Please collect cash and confirm cash collection before completing delivery.");
       return;
     }
+    setError("");
+    setShowDeliverConfirmModal(true);
+  };
 
+  const handleConfirmDelivery = async () => {
+    if (!shipment) return;
     setBusyId(shipment.id);
     setError("");
     setSuccess("");
     try {
-      await verifyRiderDeliveryOtp(shipment.id, cleanOtp);
+      await updateRiderShipmentStatus(shipment.id, "DELIVERED");
+      setShowDeliverConfirmModal(false);
       setShipment(null);
-      setOtp("");
       if (refreshRider) await refreshRider();
-      setSuccess("Order delivered successfully! Great job.");
+      setSuccess("Order marked as Delivered successfully! Great job.");
       await refreshOffers();
     } catch (requestError) {
-      setError(requestError.message || "Invalid OTP code. Please check with customer.");
+      setError(requestError.message || "Could not mark order as delivered.");
     } finally {
       setBusyId("");
     }
@@ -613,31 +615,24 @@ export default function RiderDashboardPage() {
                   </div>
                 )}
 
-                {/* OTP Verification Form */}
-                <form className="rider-otp-box" onSubmit={handleSubmitOtp}>
-                  <h4 className="fw-bold text-success mb-1">Customer Delivery OTP</h4>
-                  <p className="text-muted small mb-2">
-                    Ask the customer for their 6-digit delivery confirmation code:
+                {/* Handover & Delivery Confirmation */}
+                <div className="card border-success p-3 text-center bg-light-subtle rounded-3 shadow-sm">
+                  <div className="d-flex align-items-center justify-content-center gap-2 mb-2 text-success">
+                    <i className="bi bi-box2-heart-fill fs-4" />
+                    <h5 className="fw-bold mb-0">Product Handover</h5>
+                  </div>
+                  <p className="text-muted small mb-3">
+                    Hand over the fresh package directly to the customer at doorstep. Once delivered, confirm delivery below.
                   </p>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    maxLength={6}
-                    placeholder="------"
-                    className="rider-otp-input"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                    required
-                  />
                   <button
-                    type="submit"
-                    className="btn btn-success fw-bold px-4 py-2"
-                    disabled={busyId === shipment.id || otp.length !== 6}
+                    type="button"
+                    className="btn btn-success fw-bold px-4 py-2 w-100 fs-6 shadow-sm"
+                    disabled={busyId === shipment.id || (shipment.payment_method === "COD" && shipment.payment_status !== "PAID")}
+                    onClick={handleMarkAsDeliveredClick}
                   >
-                    {busyId === shipment.id ? "Verifying..." : "Verify OTP & Complete Delivery"}
+                    <i className="bi bi-check2-circle me-1" /> Mark as Delivered
                   </button>
-                </form>
+                </div>
               </div>
             )}
           </div>
@@ -739,6 +734,73 @@ export default function RiderDashboardPage() {
             </div>
           )}
         </section>
+      )}
+
+      {/* CONFIRM DELIVERY MODAL */}
+      {showDeliverConfirmModal && shipment && (
+        <div
+          className="modal fade show d-block"
+          style={{ background: "rgba(0, 0, 0, 0.55)", zIndex: 1060 }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 shadow-lg rounded-3">
+              <div className="modal-header border-0 pb-0">
+                <h5 className="modal-title fw-bold text-success d-flex align-items-center gap-2">
+                  <i className="bi bi-check2-circle fs-4" /> Confirm Order Delivery
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  aria-label="Close"
+                  disabled={busyId === shipment.id}
+                  onClick={() => setShowDeliverConfirmModal(false)}
+                />
+              </div>
+              <div className="modal-body py-3">
+                <p className="mb-2">
+                  Are you sure you want to mark this order as <strong>Delivered</strong>?
+                </p>
+                <div className="alert alert-light border small text-muted mb-0">
+                  <div><strong>Order:</strong> #{shipment.order_id?.slice(0, 8).toUpperCase()}</div>
+                  <div><strong>Customer Destination:</strong> {shipment.dropoff_address}</div>
+                  <div className="text-success mt-1">
+                    <i className="bi bi-info-circle me-1" />
+                    Please ensure the customer has received the package.
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer border-0 pt-0 d-flex justify-content-end gap-2">
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary px-3"
+                  disabled={busyId === shipment.id}
+                  onClick={() => setShowDeliverConfirmModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-success fw-bold px-4"
+                  disabled={busyId === shipment.id}
+                  onClick={handleConfirmDelivery}
+                >
+                  {busyId === shipment.id ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />
+                      Marking as Delivered...
+                    </>
+                  ) : (
+                    <>
+                      <i className="bi bi-check2-circle me-1" /> Yes, Mark as Delivered
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* History quick link */}

@@ -134,6 +134,15 @@ class CropQualityInference:
                 for i in range(len(probs))
             }
 
+            grade_map = {"Good": "Grade A", "Average": "Grade B", "Poor": "Grade C"}
+            desc_map = {
+                "Good": "Produce displays vibrant color, optimal firmness, and uniform shape with negligible blemishes. Meets Grade A premium market specifications.",
+                "Average": "Produce shows moderate visual appeal with minor cosmetic variations or slight surface imperfections. Meets Grade B standard market specifications.",
+                "Poor": "Produce exhibits noticeable surface blemishes, discoloration, or bruising. Commercial grade suitable for processing or discount sorting.",
+            }
+            grade = grade_map.get(quality_label, "Grade A")
+            desc = desc_map.get(quality_label, "")
+
             return QualityPrediction(
                 quality_label=quality_label,
                 confidence=confidence,
@@ -145,6 +154,9 @@ class CropQualityInference:
                     "supported_crops": list(SUPPORTED_CROPS),
                     "crop_name": crop_name,
                     "class_probabilities": class_probs,
+                    "grade": grade,
+                    "quality_description": desc,
+                    "reason": f"Classified as {grade} ({quality_label}) with {round(confidence * 100, 1)}% model confidence. {desc}",
                     "architecture": "mobilenet_v2",
                 },
             )

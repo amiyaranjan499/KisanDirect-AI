@@ -489,3 +489,58 @@ def test_rider_self_status_and_update_profile():
         asyncio.run(exercise())
     finally:
         cleanup(data)
+
+
+def test_rider_direct_delivery_confirmation_without_otp():
+    data = seed()
+    prepared = prepare_ready_shipment(data)
+    shipment_id = prepared["shipment_id"]
+    rider_user_id = data["rider_user_id"]
+    settings = Settings()
+
+    async def exercise():
+        engine = build_engine(settings)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            service = RiderService(
+                session,
+                RiderRepository(session),
+                OrderLifecycleService(session),
+                settings,
+            )
+            actor = LifecycleActor(rider_user_id, UserRole.RIDER)
+            offers = await service.poll_offers(actor)
+            assert len(offers) == 1
+            await service.accept_offer(actor, offers[0].id)
+
+            await service.update_shipment_status(actor, shipment_id, ShipmentStatus.PICKED_UP)
+            await service.update_shipment_status(actor, shipment_id, ShipmentStatus.OUT_FOR_DELIVERY)
+            await service.update_shipment_status(actor, shipment_id, ShipmentStatus.ARRIVED)
+
+            # Mark as Delivered without OTP
+            delivered_resp = await service.update_shipment_status(actor, shipment_id, ShipmentStatus.DELIVERED)
+            assert delivered_resp.status == "DELIVERED"
+
+            # Check DB state
+            shipment = await session.get(Shipment, shipment_id)
+            assert shipment.status is ShipmentStatus.DELIVERED
+            assert shipment.delivered_at is not None
+            assert shipment.rider_id is not None
+
+            order = await session.get(Order, data["order_id"])
+            assert order.status is OrderStatus.DELIVERED
+
+            rider = await session.scalar(select(Rider).where(Rider.user_id == rider_user_id))
+            assert rider.availability is RiderAvailability.AVAILABLE
+
+            # Duplicate delivery prevention
+            with pytest.raises(LifecycleConflict):
+                await service.update_shipment_status(actor, shipment_id, ShipmentStatus.DELIVERED)
+
+            await session.commit()
+        await engine.dispose()
+
+    try:
+        asyncio.run(exercise())
+    finally:
+        cleanup(data)

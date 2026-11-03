@@ -12,6 +12,7 @@ from backend.app.models import (
     CropImage,
     CropListing,
     Farmer,
+    FarmerHiddenOrder,
     FarmerWithdrawal,
     Hub,
     HubStaff,
@@ -73,7 +74,12 @@ class FarmerRepository:
         result = await self.session.execute(
             select(CropListing)
             .where(CropListing.id == listing_id, CropListing.farmer_id == farmer_id)
-            .options(selectinload(CropListing.crop), selectinload(CropListing.images))
+            .options(
+                selectinload(CropListing.crop),
+                selectinload(CropListing.images),
+                selectinload(CropListing.quality_predictions),
+                selectinload(CropListing.price_predictions),
+            )
         )
         return result.scalar_one_or_none()
 
@@ -82,7 +88,12 @@ class FarmerRepository:
             select(CropListing)
             .where(CropListing.farmer_id == farmer_id)
             .order_by(CropListing.created_at.desc())
-            .options(selectinload(CropListing.crop), selectinload(CropListing.images))
+            .options(
+                selectinload(CropListing.crop),
+                selectinload(CropListing.images),
+                selectinload(CropListing.quality_predictions),
+                selectinload(CropListing.price_predictions),
+            )
         )
         return list(result.scalars().unique().all())
 
@@ -101,6 +112,11 @@ class FarmerRepository:
         return list(result.scalars().unique().all())
 
     async def list_orders_for_dashboard(self, farmer_user_id: UUID) -> list[Order]:
+        hidden_subquery = (
+            select(FarmerHiddenOrder.order_id)
+            .join(Farmer, Farmer.id == FarmerHiddenOrder.farmer_id)
+            .where(Farmer.user_id == farmer_user_id)
+        )
         result = await self.session.execute(
             select(Order)
             .join(Order.items)
@@ -108,6 +124,7 @@ class FarmerRepository:
             .join(CropListing.farmer)
             .where(
                 Farmer.user_id == farmer_user_id,
+                ~Order.id.in_(hidden_subquery),
                 or_(
                     Order.hub_id.is_(None),
                     select(Hub.id)
@@ -133,6 +150,20 @@ class FarmerRepository:
             )
         )
         return list(result.unique().scalars().all())
+
+    async def hide_order(self, farmer_id: UUID, order_id: UUID) -> FarmerHiddenOrder:
+        existing = await self.session.scalar(
+            select(FarmerHiddenOrder).where(
+                FarmerHiddenOrder.farmer_id == farmer_id,
+                FarmerHiddenOrder.order_id == order_id,
+            )
+        )
+        if existing is not None:
+            return existing
+        record = FarmerHiddenOrder(farmer_id=farmer_id, order_id=order_id)
+        self.session.add(record)
+        await self.session.flush()
+        return record
 
     async def count_unread_notifications(self, user_id: UUID) -> int:
         result = await self.session.execute(

@@ -105,6 +105,11 @@ class CropListingResponse(BaseModel):
     availability_status: str
     location: LocationInput | None
     images: list[CropImageResponse] = Field(default_factory=list)
+    ai_quality_label: str | None = None
+    ai_quality_status: str | None = None
+    ai_quality_confidence: float | None = None
+    quality_grade: str | None = None
+    quality_information: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -305,12 +310,17 @@ class FarmerStaffResponse(BaseModel):
 
 
 class FarmerOrderAssignStaffRequest(BaseModel):
-    facility_id: UUID
+    facility_id: UUID | None = None
     staff_user_id: UUID | None = None
     notes: str | None = None
 
 
 class FarmerOrderPreparePersonallyRequest(BaseModel):
+    notes: str | None = None
+
+
+class FarmerOrderDeliverRequest(BaseModel):
+    otp: str | None = None
     notes: str | None = None
 
 

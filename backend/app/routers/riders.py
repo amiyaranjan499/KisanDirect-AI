@@ -194,6 +194,25 @@ async def update_shipment_status(
 
 
 @router.post(
+    "/shipments/{shipment_id}/deliver",
+    response_model=RiderShipmentResponse,
+)
+async def mark_shipment_delivered(
+    shipment_id: UUID,
+    current_user: Annotated[User, Depends(rider_user)],
+    service: Annotated[RiderService, Depends(get_rider_service)],
+) -> RiderShipmentResponse:
+    try:
+        return await service.update_shipment_status(
+            _actor(current_user),
+            shipment_id,
+            ShipmentStatus.DELIVERED,
+        )
+    except (LifecycleNotFound, LifecyclePermissionError, LifecycleConflict) as exc:
+        _raise_http_error(exc)
+
+
+@router.post(
     "/shipments/{shipment_id}/cod-cash-collected",
     status_code=status.HTTP_204_NO_CONTENT,
 )

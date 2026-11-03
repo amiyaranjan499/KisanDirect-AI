@@ -138,6 +138,13 @@ class FarmerService:
     ) -> CropListingResponse:
         if coordinates is None:
             coordinates = await self.repository.get_coordinates("crop_listings", listing.id)
+        latest_quality = None
+        if "quality_predictions" in listing.__dict__ and listing.quality_predictions:
+            latest_quality = max(listing.quality_predictions, key=lambda item: item.created_at, default=None)
+        quality_grade = None
+        if latest_quality is not None and latest_quality.quality_label:
+            mapping = {"Good": "Grade A", "Average": "Grade B", "Poor": "Grade C"}
+            quality_grade = mapping.get(latest_quality.quality_label, latest_quality.quality_label)
         return CropListingResponse.model_validate(
             {
                 **listing.__dict__,
@@ -146,6 +153,11 @@ class FarmerService:
                 "crop_category": listing.crop.category,
                 "availability_status": listing.availability_status.value,
                 "location": self._location(coordinates),
+                "ai_quality_label": latest_quality.quality_label if latest_quality is not None else None,
+                "ai_quality_status": latest_quality.prediction_status if latest_quality is not None else None,
+                "ai_quality_confidence": float(latest_quality.confidence) if latest_quality and latest_quality.confidence is not None else None,
+                "quality_grade": quality_grade,
+                "quality_information": listing.quality_information,
             }
         )
 
@@ -190,6 +202,15 @@ class FarmerService:
             await self._listing_response(item, coordinates=coords_map.get(item.id))
             for item in listings
         ]
+
+    async def get_listing(self, farmer_id: UUID, listing_id: UUID) -> CropListingResponse:
+        farmer = await self.repository.get_profile(farmer_id)
+        if farmer is None:
+            raise LookupError("Farmer profile not found")
+        listing = await self.repository.get_listing(listing_id, farmer.id)
+        if listing is None:
+            raise LookupError("Crop listing not found")
+        return await self._listing_response(listing)
 
     async def update_listing(self, farmer_id: UUID, listing_id: UUID, payload: CropListingUpdate) -> CropListingResponse:
         farmer = await self.repository.get_profile(farmer_id)
@@ -724,7 +745,24 @@ class FarmerService:
         self,
         user_id: UUID,
         order_id: UUID,
-        facility_id: UUID,
+        facility_id: UUID | None = None,
+        staff_user_id: UUID | None = None,
+        notes: str | None = None,
+    ) -> DashboardOrderResponse:
+        return await self.send_order_to_hub(
+            user_id,
+            order_id,
+            facility_id=facility_id,
+            staff_user_id=staff_user_id,
+            notes=notes,
+        )
+
+    async def send_order_to_hub(
+        self,
+        user_id: UUID,
+        order_id: UUID,
+        *,
+        facility_id: UUID | None = None,
         staff_user_id: UUID | None = None,
         notes: str | None = None,
     ) -> DashboardOrderResponse:
@@ -735,10 +773,7 @@ class FarmerService:
         lifecycle, _ = self._lifecycle_services()
 
         async with self.repository.session.begin_nested():
-            facility = await self.repository.get_facility_for_update(farmer.id, facility_id)
-            if facility is None:
-                raise LookupError("Storage facility not found or not owned by farmer")
-
+            # 1. Lock and validate order
             result = await self.repository.session.execute(
                 select(Order)
                 .where(Order.id == order_id)
@@ -752,6 +787,7 @@ class FarmerService:
                     ),
                     selectinload(Order.consumer),
                     selectinload(Order.shipment),
+                    selectinload(Order.hub),
                 )
                 .with_for_update()
             )
@@ -772,7 +808,25 @@ class FarmerService:
             if order.hub_id is not None:
                 raise ValueError("Order has already been sent to a hub")
 
-            # Query staff assigned strictly to this facility
+            # 2. Automatically identify the farmer's existing hub
+            if facility_id is not None:
+                facility = await self.repository.get_facility_for_update(farmer.id, facility_id)
+                if facility is None:
+                    raise LookupError("Storage facility not found or not owned by farmer")
+            else:
+                facilities = await self.repository.list_facilities(farmer.id)
+                active_facilities = [f for f in facilities if f[0].status == HubStatus.ACTIVE]
+                if not active_facilities:
+                    raise ValueError(
+                        "No active Kisan Hub found for your farm. Please create a Hub first in 'My Hub' before transferring orders."
+                    )
+                hub_with_staff = next((f for f in active_facilities if f[1] > 0), None)
+                chosen_hub_entry = hub_with_staff or active_facilities[0]
+                facility = await self.repository.get_facility_for_update(farmer.id, chosen_hub_entry[0].id)
+                if facility is None:
+                    raise ValueError("Failed to access farmer's active hub.")
+
+            # 3. Identify Hub Staff already assigned to that hub
             staff_rows = await self.repository.list_staff_for_facility(farmer.id, facility.id)
             target_staff = [u for u, h in staff_rows if u.is_active]
             if not target_staff:
@@ -786,20 +840,32 @@ class FarmerService:
                 target_staff = [u for u in target_staff if u.id == staff_user_id]
 
             if not target_staff:
-                raise ValueError("The selected hub has no eligible active staff assigned to prepare orders.")
+                raise ValueError(
+                    f"The hub '{facility.name}' has no eligible active staff assigned to prepare orders. Please assign staff in 'Hub Staff' before transferring orders."
+                )
 
             actor = LifecycleActor(user_id, UserRole.FARMER)
 
-            # Associate order with facility
+            # 4. Automatically transfer incoming order to that hub
             order.hub_id = facility.id
+
+            if not order.delivery_address and order.consumer:
+                order.delivery_address = (
+                    order.consumer.address
+                    or f"{order.consumer.city or 'Local Delivery Address'}, PIN {order.consumer.pin_code or '751001'}"
+                )
+            if order.promised_window_start is None:
+                order.promised_window_start = datetime.now(timezone.utc)
+            if order.promised_window_end is None:
+                order.promised_window_end = datetime.now(timezone.utc) + timedelta(minutes=60)
 
             if order.status == OrderStatus.PENDING:
                 await lifecycle.transition_order(
-                    order.id, actor, OrderStatus.CONFIRMED, reason="Order accepted for facility preparation"
+                    order.id, actor, OrderStatus.CONFIRMED, reason="Order accepted for hub transfer"
                 )
             if order.status == OrderStatus.CONFIRMED:
                 await lifecycle.transition_order(
-                    order.id, actor, OrderStatus.PROCESSING, reason=f"Assigned to staff at {facility.name}"
+                    order.id, actor, OrderStatus.PROCESSING, reason=f"Transferred to staff at {facility.name}"
                 )
 
             crop_names = ", ".join(item.listing.crop.name for item in order.items if item.listing and item.listing.crop) or "Produce"
@@ -810,7 +876,7 @@ class FarmerService:
                     title="New Order Task Assigned",
                     message=(
                         f"Order ORD-{str(order.id)[:8].upper()} ({crop_names}) "
-                        f"has been assigned to {facility.name} for preparation."
+                        f"has been transferred to {facility.name} for preparation."
                     ),
                     related_entity_type="order",
                     related_entity_id=order.id,
@@ -819,11 +885,21 @@ class FarmerService:
             await lifecycle.notifications.stage(
                 user_id=user_id,
                 notification_type=NotificationType.ORDER,
-                title="Order Assigned to Staff",
-                message=f"Order ORD-{str(order.id)[:8].upper()} assigned to staff at {facility.name}.",
+                title="Order Transferred to Hub",
+                message=f"Order ORD-{str(order.id)[:8].upper()} transferred to {facility.name}. Assigned staff have been notified.",
                 related_entity_type="order",
                 related_entity_id=order.id,
             )
+
+            if order.consumer and order.consumer.user_id:
+                await lifecycle.notifications.stage(
+                    user_id=order.consumer.user_id,
+                    notification_type=NotificationType.ORDER,
+                    title="Order Routing Update",
+                    message=f"Your order ORD-{str(order.id)[:8].upper()} has been routed to Kisan Hub ({facility.name}) for fulfillment.",
+                    related_entity_type="order",
+                    related_entity_id=order.id,
+                )
 
             await self.repository.session.flush()
 
@@ -993,6 +1069,55 @@ class FarmerService:
             await self.repository.session.flush()
 
         return await self._get_dashboard_order_response(order.id, user_id)
+
+    async def deliver_order(
+        self,
+        user_id: UUID,
+        order_id: UUID,
+        *,
+        otp: str | None = None,
+        notes: str | None = None,
+    ) -> DashboardOrderResponse:
+        farmer = await self.repository.get_profile(user_id)
+        if farmer is None:
+            raise LookupError("Farmer profile not found")
+
+        lifecycle, _ = self._lifecycle_services()
+        actor = LifecycleActor(user_id, UserRole.FARMER)
+
+        await lifecycle.deliver_farmer_order(
+            order_id,
+            actor,
+            otp=otp,
+            reason=notes or "Delivered directly by farmer without rider",
+        )
+
+        return await self._get_dashboard_order_response(order_id, user_id)
+
+    async def hide_order_from_history(self, user_id: UUID, order_id: UUID) -> None:
+        farmer = await self.repository.get_profile(user_id)
+        if farmer is None:
+            raise LookupError("Farmer profile not found")
+
+        order = await self.repository.session.scalar(
+            select(Order)
+            .where(Order.id == order_id)
+            .options(
+                selectinload(Order.items).selectinload(OrderItem.listing).selectinload(CropListing.farmer)
+            )
+        )
+        if order is None:
+            raise LookupError("Order not found")
+
+        farmer_owns_item = any(item.listing.farmer.user_id == user_id for item in order.items)
+        if not farmer_owns_item:
+            raise PermissionError("You do not have permission to modify this order")
+
+        if order.status not in {OrderStatus.DELIVERED, OrderStatus.COMPLETED, OrderStatus.CANCELLED}:
+            raise ValueError("Cannot remove active, pending, or ongoing orders from history.")
+
+        await self.repository.hide_order(farmer.id, order.id)
+        await self.repository.session.commit()
 
     async def _get_dashboard_order_response(self, order_id: UUID, user_id: UUID) -> DashboardOrderResponse:
         orders = await self.dashboard_orders(user_id)

@@ -182,6 +182,7 @@ class Farmer(TimestampMixin, Base):
     listings: Mapped[list["CropListing"]] = relationship(back_populates="farmer")
     hubs: Mapped[list["Hub"]] = relationship(back_populates="farmer")
     withdrawals: Mapped[list["FarmerWithdrawal"]] = relationship(back_populates="farmer", cascade="all, delete-orphan")
+    hidden_orders: Mapped[list["FarmerHiddenOrder"]] = relationship(back_populates="farmer", cascade="all, delete-orphan")
 
 
 class Consumer(TimestampMixin, Base):
@@ -344,6 +345,7 @@ class Order(TimestampMixin, Base):
     shipment: Mapped["Shipment | None"] = relationship(back_populates="order", uselist=False)
     delivery_slot: Mapped["DeliverySlot | None"] = relationship()
     reviews: Mapped[list["Review"]] = relationship(back_populates="order")
+    farmer_hidden_records: Mapped[list["FarmerHiddenOrder"]] = relationship(back_populates="order", cascade="all, delete-orphan")
 
 
 class OrderItem(TimestampMixin, Base):
@@ -787,4 +789,22 @@ class FarmerWithdrawal(TimestampMixin, Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     farmer: Mapped[Farmer] = relationship(back_populates="withdrawals")
+
+
+class FarmerHiddenOrder(Base):
+    __tablename__ = "farmer_hidden_orders"
+    __table_args__ = (
+        UniqueConstraint("farmer_id", "order_id", name="uq_farmer_hidden_orders_farmer_order"),
+        Index("ix_farmer_hidden_orders_farmer_id", "farmer_id"),
+        Index("ix_farmer_hidden_orders_order_id", "order_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    farmer_id: Mapped[UUID] = mapped_column(ForeignKey("farmers.id", ondelete="CASCADE"), nullable=False)
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    hidden_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    farmer: Mapped[Farmer] = relationship(back_populates="hidden_orders")
+    order: Mapped[Order] = relationship(back_populates="farmer_hidden_records")
+
 

@@ -1227,7 +1227,7 @@ export default function FarmerAddCrop({ onBack }) {
                 <div>
                   <div style={{ fontSize: "11.5px", color: "var(--clay, #79705F)", fontWeight: 600 }}>QUALITY CLASS</div>
                   <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: "22px", fontWeight: 600, color: "var(--forest, #1B6B34)" }}>
-                    {quality.quality_label || "Pending"}
+                    {quality.result_metadata?.grade ? `${quality.result_metadata.grade} (${quality.quality_label})` : quality.quality_label || "Pending"}
                   </div>
                 </div>
                 <div>
@@ -1247,7 +1247,7 @@ export default function FarmerAddCrop({ onBack }) {
               </div>
               <div style={{ height: "1px", background: "var(--line, #E4DFD1)", margin: "14px 0" }} />
               <div style={{ fontSize: "12.5px", color: "var(--forest-2, #164024)", lineHeight: 1.6 }}>
-                <b>Explanation:</b> {quality.result_metadata?.reason || "Real-time visual quality inference completed."}
+                <b>Explanation:</b> {quality.result_metadata?.quality_description || quality.result_metadata?.reason || "Real-time visual quality inference completed."}
               </div>
             </>
           ) : (
@@ -1451,7 +1451,7 @@ export default function FarmerAddCrop({ onBack }) {
             </div>
             {quality?.quality_label && quality.prediction_status !== "UNAVAILABLE" && (
               <div style={{ marginTop: "6px" }}>
-                <span className="badge badge-sage">AI {quality.quality_label}</span>
+                <span className="badge badge-sage">AI {quality.result_metadata?.grade || (quality.quality_label === "Good" ? "Grade A" : quality.quality_label === "Average" ? "Grade B" : quality.quality_label === "Poor" ? "Grade C" : quality.quality_label)}</span>
               </div>
             )}
           </div>

@@ -3,9 +3,12 @@ import { Link } from "react-router-dom";
 import {
   listFarmerDashboardOrders,
   listFarmerFacilities,
+  sendFarmerOrderToHub,
   assignFarmerOrderStaff,
   prepareFarmerOrderPersonally,
   markFarmerOrderReadyForPickup,
+  deliverFarmerOrderDirectly,
+  deleteFarmerOrderHistory,
   getOrderTracking,
 } from "../services/api";
 import "./farmer-operations.css";
@@ -38,11 +41,19 @@ export default function FarmerOrderDetails() {
   const [success, setSuccess] = useState("");
   const [busyOrderId, setBusyOrderId] = useState(null);
 
-  // Modal: Send Order to Hub
-  const [assignModalOrder, setAssignModalOrder] = useState(null);
-  const [selectedFacilityId, setSelectedFacilityId] = useState("");
-  const [assignNotes, setAssignNotes] = useState("");
-  const [assigning, setAssigning] = useState(false);
+  // Automatic Send to My Hub in progress
+  const [sendingHubOrderId, setSendingHubOrderId] = useState(null);
+
+  // Modal: Deliver Order (Self-Delivery)
+  const [deliverModalOrder, setDeliverModalOrder] = useState(null);
+  const [deliverOtp, setDeliverOtp] = useState("");
+  const [deliverNotes, setDeliverNotes] = useState("");
+  const [delivering, setDelivering] = useState(false);
+  const [deliverError, setDeliverError] = useState("");
+
+  // Modal: Delete Old Order from History
+  const [deleteConfirmOrder, setDeleteConfirmOrder] = useState(null);
+  const [deletingOrder, setDeletingOrder] = useState(false);
 
   // Drawer / Modal: Order Details & Tracking
   const [inspectOrder, setInspectOrder] = useState(null);
@@ -61,9 +72,7 @@ export default function FarmerOrderDetails() {
       const nextFacs = Array.isArray(facs) ? facs : [];
       setOrders(nextOrders);
       setFacilities(nextFacs);
-      if (nextFacs[0]?.id) {
-        setSelectedFacilityId(nextFacs[0].id);
-      }
+
     } catch (err) {
       setError(err.message || "Unable to load customer orders.");
     } finally {
@@ -103,59 +112,115 @@ export default function FarmerOrderDetails() {
     });
   }, [filter, orders]);
 
-  // Open "Send to Hub" dialog
-  const openAssignModal = (order) => {
-    setAssignModalOrder(order);
-    setSelectedFacilityId(facilities[0]?.id || "");
-    setAssignNotes("");
-    setError("");
-  };
-
-  // Confirm sending order to selected hub
-  const handleConfirmAssignStaff = async (e) => {
-    e.preventDefault();
-    if (!assignModalOrder || !selectedFacilityId) return;
-
-    const selectedFac = facilities.find((f) => f.id === selectedFacilityId);
-    if (!selectedFac || (selectedFac.staff_count || 0) === 0) {
-      setError("The selected hub has no eligible active staff assigned to prepare orders. Please assign staff to this hub first.");
-      return;
-    }
-
-    setAssigning(true);
-    setError("");
-    setSuccess("");
-    try {
-      await assignFarmerOrderStaff(assignModalOrder.id, {
-        facility_id: selectedFacilityId,
-        notes: assignNotes.trim() || undefined,
-      });
-      const hubName = selectedFac?.name || "Kisan Hub";
-      setSuccess(
-        `Order ORD-${String(assignModalOrder.id).slice(0, 8).toUpperCase()} sent to ${hubName}! Staff assigned to this hub have been notified.`
-      );
-      setAssignModalOrder(null);
-      await loadAll();
-    } catch (err) {
-      setError(err.message || "Failed to send order to hub.");
-    } finally {
-      setAssigning(false);
-    }
-  };
-
-  // Existing workflow: Direct Preparation on Farm
-  const handlePreparePersonally = async (order) => {
+  // Workflow A: Accept Customer Order
+  const handleAcceptOrder = async (order) => {
     setBusyOrderId(order.id);
     setError("");
     setSuccess("");
     try {
       await prepareFarmerOrderPersonally(order.id);
-      setSuccess(`Order ORD-${String(order.id).slice(0, 8).toUpperCase()} accepted for preparation on-farm.`);
+      const orderRef = `ORD-${String(order.id).slice(0, 8).toUpperCase()}`;
+      setSuccess(`Order ${orderRef} accepted! You can now prepare and pack the produce.`);
       await loadAll();
     } catch (err) {
-      setError(err.message || "Failed to update order status.");
+      setError(err.message || "Failed to accept order.");
     } finally {
       setBusyOrderId(null);
+    }
+  };
+
+  // Workflow B: Send to My Hub automatically
+  const handleSendToMyHub = async (order) => {
+    if (!farmerHasHubs) {
+      setError("You do not have a Kisan Hub registered yet. Please create your hub in 'My Hub' before sending orders to a hub.");
+      return;
+    }
+
+    const hubWithStaff = facilities.find((f) => (f.staff_count || 0) > 0);
+    const targetFacility = hubWithStaff || facilities[0];
+    if (!targetFacility || (targetFacility.staff_count || 0) === 0) {
+      setError(
+        `Your Kisan Hub (${targetFacility?.name || "Hub"}) has no active Hub Staff assigned. Please assign staff in 'Hub Staff' first.`
+      );
+      return;
+    }
+
+    setSendingHubOrderId(order.id);
+    setError("");
+    setSuccess("");
+    try {
+      await sendFarmerOrderToHub(order.id);
+      const hubName = targetFacility.name || "your Kisan Hub";
+      const orderRef = `ORD-${String(order.id).slice(0, 8).toUpperCase()}`;
+      setSuccess(`Order ${orderRef} transferred to ${hubName}! Assigned Hub Staff have been notified to review and pack.`);
+      await loadAll();
+    } catch (err) {
+      setError(err.message || "Failed to transfer order to your hub.");
+    } finally {
+      setSendingHubOrderId(null);
+    }
+  };
+
+  // Farmer Self-Delivery: Direct delivery without a rider
+  const handleConfirmDeliverOrder = async () => {
+    if (!deliverModalOrder) return;
+    setDelivering(true);
+    setDeliverError("");
+    try {
+      await deliverFarmerOrderDirectly(deliverModalOrder.id, {
+        otp: deliverOtp.trim() || undefined,
+        notes: deliverNotes.trim() || undefined,
+      });
+      const orderRef = `ORD-${String(deliverModalOrder.id).slice(0, 8).toUpperCase()}`;
+      setSuccess(`Order ${orderRef} has been successfully delivered to the customer!`);
+      const deliveredId = deliverModalOrder.id;
+      setDeliverModalOrder(null);
+      setDeliverOtp("");
+      setDeliverNotes("");
+      await loadAll();
+      if (inspectOrder && inspectOrder.id === deliveredId) {
+        setInspectOrder((prev) => (prev ? { ...prev, status: "DELIVERED" } : null));
+        try {
+          const updatedTracking = await getOrderTracking(deliveredId);
+          setTrackingData(updatedTracking);
+        } catch {
+          // ignore tracking fetch error
+        }
+      }
+    } catch (err) {
+      setDeliverError(err.message || "Failed to confirm delivery.");
+    } finally {
+      setDelivering(false);
+    }
+  };
+
+  // Delete Old Order from Farmer History (Soft deletion / Hide from history)
+  const handleRequestDeleteOrder = (ord) => {
+    const s = (ord.status || "").toUpperCase();
+    const isDeletable = ["DELIVERED", "COMPLETED", "CANCELLED"].includes(s);
+    if (!isDeletable) {
+      setError("Cannot remove active, pending, or ongoing orders from history.");
+      return;
+    }
+    setError("");
+    setDeleteConfirmOrder(ord);
+  };
+
+  const handleConfirmDeleteOrder = async () => {
+    if (!deleteConfirmOrder) return;
+    setDeletingOrder(true);
+    setError("");
+    setSuccess("");
+    try {
+      await deleteFarmerOrderHistory(deleteConfirmOrder.id);
+      const orderRef = `ORD-${String(deleteConfirmOrder.id).slice(0, 8).toUpperCase()}`;
+      setDeleteConfirmOrder(null);
+      setSuccess(`Order ${orderRef} removed from your history.`);
+      await loadAll();
+    } catch (err) {
+      setError(err.message || "Failed to remove order from history.");
+    } finally {
+      setDeletingOrder(false);
     }
   };
 
@@ -242,9 +307,6 @@ export default function FarmerOrderDetails() {
           </p>
         </div>
         <div className="farmer-header-actions">
-          <Link to="/farmer/dispatch" className="farmer-action-pill">
-            <i className="bi bi-truck" /> Dispatch Tracking
-          </Link>
           <button
             type="button"
             className="farmer-action-pill primary"
@@ -416,10 +478,11 @@ export default function FarmerOrderDetails() {
               ) : (
                 filteredOrders.map((ord) => {
                   const s = (ord.status || "").toUpperCase();
-                  const isNew = s === "PENDING" || s === "NEW";
-                  const isAccepted = s === "CONFIRMED" || s === "ACCEPTED";
-                  const isPreparing = s === "PROCESSING" || s === "PREPARING";
-                  const isReady = s === "SHIPPED" || s === "READY" || s === "READY_FOR_PICKUP";
+                  const hasHub = Boolean(ord.hub_name || ord.hub_id);
+                  const isNew = (s === "PENDING" || s === "NEW") && !hasHub;
+                  const isAccepted = (s === "CONFIRMED" || s === "ACCEPTED") && !hasHub;
+                  const isPreparing = (s === "PROCESSING" || s === "PREPARING") && !hasHub;
+                  const isReady = (s === "SHIPPED" || s === "READY" || s === "READY_FOR_PICKUP") && !hasHub;
                   const isBusy = busyOrderId === ord.id;
                   const eligibleForHub = isOrderEligibleForHub(ord);
 
@@ -453,7 +516,7 @@ export default function FarmerOrderDetails() {
                       <td style={{ textAlign: "right" }}>
                         {isNew ? (
                           <div className="d-flex align-items-center justify-content-end gap-2 flex-wrap">
-                            {/* Existing workflow: Accept order directly */}
+                            {/* Exactly Two Buttons for incoming Farmer order request */}
                             <button
                               type="button"
                               className="btn btn-sm"
@@ -467,33 +530,34 @@ export default function FarmerOrderDetails() {
                                 border: "none",
                                 cursor: "pointer",
                               }}
-                              onClick={() => handlePreparePersonally(ord)}
-                              disabled={isBusy}
-                              title="Accept and prepare on-farm"
+                              onClick={() => handleAcceptOrder(ord)}
+                              disabled={isBusy || sendingHubOrderId === ord.id}
+                              title="Accept and prepare order on-farm"
                             >
-                              {isBusy ? "..." : "Accept"}
+                              {isBusy ? "Accepting..." : "Accept Order"}
                             </button>
-                            {/* Optional button: Send to Hub (only when farmer has hubs & order is eligible) */}
-                            {eligibleForHub && (
-                              <button
-                                type="button"
-                                className="kisan-btn-outline kisan-btn-sm"
-                                style={{
-                                  borderRadius: "8px",
-                                  padding: "5px 12px",
-                                  fontWeight: 500,
-                                  fontSize: "12px",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "5px",
-                                }}
-                                onClick={() => openAssignModal(ord)}
-                                disabled={isBusy}
-                                title="Send order to your Kisan Hub for packing & delivery"
-                              >
-                                <i className="bi bi-building" /> Send to Hub
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              className="kisan-btn-outline kisan-btn-sm"
+                              style={{
+                                borderRadius: "8px",
+                                padding: "6px 14px",
+                                fontWeight: 600,
+                                fontSize: "13px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                borderColor: "var(--forest, #1B6B34)",
+                                color: "var(--forest, #1B6B34)",
+                                background: "#FFFFFF",
+                                cursor: "pointer",
+                              }}
+                              onClick={() => handleSendToMyHub(ord)}
+                              disabled={isBusy || sendingHubOrderId === ord.id}
+                              title="Automatically transfer order to your existing Kisan Hub"
+                            >
+                              <i className="bi bi-building" /> {sendingHubOrderId === ord.id ? "Transferring..." : "Send to My Hub"}
+                            </button>
                           </div>
                         ) : ord.hub_name ? (
                           <div className="d-flex align-items-center justify-content-end gap-2">
@@ -507,7 +571,7 @@ export default function FarmerOrderDetails() {
                                 padding: "4px 8px",
                                 fontWeight: 600,
                               }}
-                              title={`Assigned to ${ord.hub_name}`}
+                              title={`Transferred to ${ord.hub_name}`}
                             >
                               <i className="bi bi-building me-1" /> {ord.hub_name}
                             </span>
@@ -519,10 +583,23 @@ export default function FarmerOrderDetails() {
                             >
                               Details
                             </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger ms-1"
+                              style={{
+                                padding: "4px 8px",
+                                fontSize: "12px",
+                                borderRadius: "6px",
+                                lineHeight: 1,
+                              }}
+                              title="Remove order from history"
+                              onClick={() => handleRequestDeleteOrder(ord)}
+                            >
+                              <i className="bi bi-x-lg" />
+                            </button>
                           </div>
                         ) : isAccepted || isPreparing ? (
                           <div className="d-flex align-items-center justify-content-end gap-2 flex-wrap">
-                            {/* Existing workflow: Mark ready for rider pickup */}
                             <button
                               type="button"
                               className="btn btn-sm"
@@ -538,31 +615,56 @@ export default function FarmerOrderDetails() {
                               }}
                               onClick={() => handleReadyForPickup(ord)}
                               disabled={isBusy}
-                              title="Mark ready and notify delivery riders"
+                              title="Send order to rider for delivery"
                             >
-                              {isBusy ? "..." : "Mark Ready"}
+                              {isBusy ? "..." : "Send to Rider"}
                             </button>
-                            {/* Optional button: Send to Hub (if not yet sent to hub) */}
-                            {eligibleForHub && (
-                              <button
-                                type="button"
-                                className="kisan-btn-outline kisan-btn-sm"
-                                style={{
-                                  borderRadius: "8px",
-                                  padding: "5px 12px",
-                                  fontWeight: 500,
-                                  fontSize: "12px",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "5px",
-                                }}
-                                onClick={() => openAssignModal(ord)}
-                                disabled={isBusy}
-                                title="Send order to your Kisan Hub for packing & delivery"
-                              >
-                                <i className="bi bi-building" /> Send to Hub
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{
+                                background: "#C68A3D",
+                                color: "#2A1B05",
+                                borderRadius: "8px",
+                                padding: "6px 14px",
+                                fontWeight: 600,
+                                fontSize: "13px",
+                                border: "none",
+                                cursor: "pointer",
+                              }}
+                              onClick={() => {
+                                setDeliverModalOrder(ord);
+                                setDeliverOtp("");
+                                setDeliverNotes("");
+                                setDeliverError("");
+                              }}
+                              disabled={isBusy}
+                              title="Deliver personally to customer doorstep without a rider"
+                            >
+                              Personal Delivery
+                            </button>
+                            <button
+                              type="button"
+                              className="kisan-btn-outline kisan-btn-sm"
+                              style={{ padding: "5px 12px", fontSize: "12px", borderRadius: "8px" }}
+                              onClick={() => handleInspectOrder(ord)}
+                            >
+                              Details
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger ms-1"
+                              style={{
+                                padding: "4px 8px",
+                                fontSize: "12px",
+                                borderRadius: "6px",
+                                lineHeight: 1,
+                              }}
+                              title="Remove order from history"
+                              onClick={() => handleRequestDeleteOrder(ord)}
+                            >
+                              <i className="bi bi-x-lg" />
+                            </button>
                           </div>
                         ) : isReady ? (
                           <button
@@ -574,14 +676,30 @@ export default function FarmerOrderDetails() {
                             Track
                           </button>
                         ) : (
-                          <button
-                            type="button"
-                            className="kisan-btn-outline kisan-btn-sm"
-                            style={{ padding: "5px 14px", fontSize: "13px", borderRadius: "8px" }}
-                            onClick={() => handleInspectOrder(ord)}
-                          >
-                            Details
-                          </button>
+                          <div className="d-flex align-items-center justify-content-end gap-1">
+                            <button
+                              type="button"
+                              className="kisan-btn-outline kisan-btn-sm"
+                              style={{ padding: "5px 14px", fontSize: "13px", borderRadius: "8px" }}
+                              onClick={() => handleInspectOrder(ord)}
+                            >
+                              Details
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger ms-1"
+                              style={{
+                                padding: "5px 10px",
+                                fontSize: "13px",
+                                borderRadius: "8px",
+                                lineHeight: 1,
+                              }}
+                              title="Remove order from history"
+                              onClick={() => handleRequestDeleteOrder(ord)}
+                            >
+                              <i className="bi bi-x-lg" />
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -593,128 +711,7 @@ export default function FarmerOrderDetails() {
         </div>
       )}
 
-      {/* MODAL: SEND TO HUB */}
-      {assignModalOrder && (
-        <div className="farmer-modal-backdrop" onClick={() => setAssignModalOrder(null)}>
-          <div className="farmer-modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "480px" }}>
-            <div className="farmer-modal-header" style={{ borderBottom: "1px solid #E4DFD1", padding: "16px 20px" }}>
-              <h3
-                style={{
-                  fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
-                  fontSize: "19px",
-                  color: "var(--forest, #1B6B34)",
-                  margin: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                }}
-              >
-                <i className="bi bi-building" /> Send to Hub
-              </h3>
-              <button
-                type="button"
-                className="btn-close"
-                onClick={() => setAssignModalOrder(null)}
-                aria-label="Close"
-              />
-            </div>
-            <form onSubmit={handleConfirmAssignStaff}>
-              <div className="farmer-modal-body" style={{ padding: "20px" }}>
-                {/* Order Summary */}
-                <div className="kisan-card kisan-card-pad mb-3" style={{ padding: "12px 16px", background: "#FAF7EF" }}>
-                  <div className="d-flex justify-content-between align-items-center mb-1">
-                    <strong style={{ fontSize: "0.95rem", color: "var(--ink, #1C1C16)" }}>
-                      ORD-{String(assignModalOrder.id).replace(/-/g, "").slice(0, 4).toUpperCase()}
-                    </strong>
-                    <span className="kisan-badge kisan-badge-sage">{assignModalOrder.status || "New"}</span>
-                  </div>
-                  <div style={{ fontSize: "12.5px", color: "var(--clay, #79705F)" }}>
-                    Customer: {assignModalOrder.consumer_name || "Direct Customer"}
-                  </div>
-                  <div style={{ fontSize: "12.5px", color: "var(--ink, #1C1C16)", marginTop: "4px" }}>
-                    <b>Produce:</b>{" "}
-                    {assignModalOrder.items?.map((it) => `${it.quantity} ${it.unit || "kg"} ${it.crop_name}`).join(", ") ||
-                      "Fresh Produce"}
-                  </div>
-                </div>
 
-                {/* Hub Selection showing only hubs created by this authenticated farmer with staff count */}
-                <div className="farmer-form-group">
-                  <label htmlFor="assign-facility-select" style={{ color: "var(--ink, #1C1C16)", fontWeight: 600, marginBottom: "6px", display: "block" }}>
-                    Select Your Kisan Hub *
-                  </label>
-                  <select
-                    id="assign-facility-select"
-                    className="farmer-form-control"
-                    value={selectedFacilityId}
-                    onChange={(e) => setSelectedFacilityId(e.target.value)}
-                    required
-                  >
-                    {facilities.map((fac) => (
-                      <option key={fac.id} value={fac.id}>
-                        {fac.name} ({fac.staff_count ?? 0} staff assigned)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Warning if selected hub has 0 staff */}
-                {(() => {
-                  const currentFac = facilities.find((f) => f.id === selectedFacilityId);
-                  if (currentFac && (currentFac.staff_count || 0) === 0) {
-                    return (
-                      <div className="alert alert-warning py-2 px-3 small mt-2 d-flex align-items-center gap-2" role="alert">
-                        <i className="bi bi-exclamation-triangle-fill" />
-                        <span>This hub has 0 assigned staff. Please assign staff to this hub before sending orders.</span>
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-
-                {/* Optional Packing Notes */}
-                <div className="farmer-form-group mt-3">
-                  <label htmlFor="assign-notes" style={{ color: "var(--ink, #1C1C16)", fontWeight: 600, marginBottom: "4px", display: "block" }}>
-                    Packing Instructions (Optional)
-                  </label>
-                  <textarea
-                    id="assign-notes"
-                    rows="2"
-                    placeholder="e.g. Ensure produce is packed in organic crates"
-                    className="farmer-form-control"
-                    value={assignNotes}
-                    onChange={(e) => setAssignNotes(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="farmer-modal-footer" style={{ borderTop: "1px solid #E4DFD1", padding: "14px 20px", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-                <button
-                  type="button"
-                  className="kisan-btn-outline kisan-btn-sm"
-                  onClick={() => setAssignModalOrder(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-sm"
-                  style={{
-                    background: "var(--forest, #1B6B34)",
-                    color: "#FFFFFF",
-                    borderRadius: "8px",
-                    padding: "8px 18px",
-                    fontWeight: 600,
-                    border: "none",
-                  }}
-                  disabled={assigning}
-                >
-                  {assigning ? "Sending to Hub..." : "Confirm Send to Hub"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* MODAL: ORDER DETAILS & INSPECTION DRAWER */}
       {inspectOrder && (
@@ -796,36 +793,39 @@ export default function FarmerOrderDetails() {
                   Status Actions
                 </div>
                 <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                  {(inspectOrder.status === "PENDING" || inspectOrder.status === "NEW") && (
+                  {!inspectOrder.hub_name && !inspectOrder.hub_id && (inspectOrder.status === "PENDING" || inspectOrder.status === "NEW") && (
                     <>
                       <button
                         type="button"
                         className="btn btn-sm"
                         style={{ background: "#1B6B34", color: "#FFFFFF", borderRadius: "8px", padding: "8px 16px", fontWeight: 600, border: "none" }}
                         onClick={() => {
-                          handlePreparePersonally(inspectOrder);
+                          handleAcceptOrder(inspectOrder);
                           setInspectOrder(null);
                         }}
                       >
-                        Accept & Prepare On Farm
+                        Accept Order
                       </button>
-                      {isOrderEligibleForHub(inspectOrder) && (
-                        <button
-                          type="button"
-                          className="kisan-btn-outline kisan-btn-sm"
-                          style={{ borderRadius: "8px" }}
-                          onClick={() => {
-                            const o = inspectOrder;
-                            setInspectOrder(null);
-                            openAssignModal(o);
-                          }}
-                        >
-                          <i className="bi bi-building me-1" /> Send to Hub
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="kisan-btn-outline kisan-btn-sm"
+                        style={{ borderRadius: "8px", borderColor: "var(--forest, #1B6B34)", color: "var(--forest, #1B6B34)", background: "#FFFFFF", fontWeight: 600 }}
+                        onClick={() => {
+                          const o = inspectOrder;
+                          setInspectOrder(null);
+                          handleSendToMyHub(o);
+                        }}
+                      >
+                        <i className="bi bi-building me-1" /> Send to My Hub
+                      </button>
                     </>
                   )}
-                  {(inspectOrder.status === "CONFIRMED" || inspectOrder.status === "ACCEPTED" || inspectOrder.status === "PROCESSING") && (
+                  {(inspectOrder.hub_name || inspectOrder.hub_id) && (
+                    <span className="badge" style={{ background: "#e8f5e9", color: "#1b6b34", border: "1px solid #a5d6a7", padding: "8px 12px", fontSize: "13px" }}>
+                      <i className="bi bi-building me-1" /> Transferred to {inspectOrder.hub_name || "Kisan Hub"}
+                    </span>
+                  )}
+                  {!inspectOrder.hub_name && !inspectOrder.hub_id && (inspectOrder.status === "CONFIRMED" || inspectOrder.status === "ACCEPTED" || inspectOrder.status === "PROCESSING") && (
                     <>
                       <button
                         type="button"
@@ -836,24 +836,61 @@ export default function FarmerOrderDetails() {
                           setInspectOrder(null);
                         }}
                       >
-                        Mark Ready for Rider Pickup
+                        Send to Rider
                       </button>
-                      {isOrderEligibleForHub(inspectOrder) && (
-                        <button
-                          type="button"
-                          className="kisan-btn-outline kisan-btn-sm"
-                          style={{ borderRadius: "8px" }}
-                          onClick={() => {
-                            const o = inspectOrder;
-                            setInspectOrder(null);
-                            openAssignModal(o);
-                          }}
-                        >
-                          <i className="bi bi-building me-1" /> Send to Hub
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        style={{
+                          background: "#C68A3D",
+                          color: "#2A1B05",
+                          borderRadius: "8px",
+                          padding: "8px 16px",
+                          fontWeight: 700,
+                          border: "none",
+                        }}
+                        onClick={() => {
+                          setDeliverModalOrder(inspectOrder);
+                          setDeliverOtp("");
+                          setDeliverNotes("");
+                          setDeliverError("");
+                        }}
+                      >
+                        Personal Delivery
+                      </button>
                     </>
                   )}
+
+                  {/* Farmer Self-Delivery: Available when order is prepared/ready for delivery */}
+                  {!["DELIVERED", "COMPLETED", "CANCELLED"].includes((inspectOrder.status || "").toUpperCase()) &&
+                    ["CONFIRMED", "ACCEPTED", "PROCESSING", "SHIPPED", "READY", "READY_FOR_PICKUP"].includes(
+                      (inspectOrder.status || "").toUpperCase()
+                    ) && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        style={{
+                          background: "#C68A3D",
+                          color: "#2A1B05",
+                          borderRadius: "8px",
+                          padding: "8px 16px",
+                          fontWeight: 700,
+                          border: "none",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                        onClick={() => {
+                          setDeliverModalOrder(inspectOrder);
+                          setDeliverOtp("");
+                          setDeliverNotes("");
+                          setDeliverError("");
+                        }}
+                        title="Deliver this order directly to customer without a rider"
+                      >
+                        <i className="bi bi-truck-flatbed" /> Deliver Order
+                      </button>
+                    )}
                 </div>
               </div>
 
@@ -883,6 +920,246 @@ export default function FarmerOrderDetails() {
                 onClick={() => setInspectOrder(null)}
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL: CONFIRM FARMER SELF-DELIVERY */}
+      {deliverModalOrder && (
+        <div className="farmer-modal-backdrop" onClick={() => !delivering && setDeliverModalOrder(null)}>
+          <div className="farmer-modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "480px" }}>
+            <div className="farmer-modal-header" style={{ borderBottom: "1px solid #E4DFD1", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "8px",
+                    background: "var(--farmer-lime-soft, #edf8df)",
+                    color: "var(--farmer-forest, #073a26)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "1.1rem",
+                  }}
+                >
+                  <i className="bi bi-truck-flatbed" />
+                </div>
+                <div>
+                  <h3 style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", color: "var(--farmer-forest, #073a26)", margin: 0, fontSize: "17px", fontWeight: 700 }}>
+                    Confirm Farmer Self-Delivery
+                  </h3>
+                  <div style={{ fontSize: "12px", color: "var(--clay, #79705F)" }}>
+                    Order ORD-{String(deliverModalOrder.id).slice(0, 8).toUpperCase()}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-close"
+                onClick={() => !delivering && setDeliverModalOrder(null)}
+                aria-label="Close"
+                disabled={delivering}
+              />
+            </div>
+
+            <div className="farmer-modal-body" style={{ padding: "18px 20px" }}>
+              {deliverError && (
+                <div className="alert alert-danger py-2 px-3 mb-3" style={{ fontSize: "13px" }}>
+                  <i className="bi bi-exclamation-triangle-fill me-2" />
+                  {deliverError}
+                </div>
+              )}
+
+              <p style={{ fontSize: "13.5px", color: "var(--ink, #1C1C16)", margin: "0 0 14px", lineHeight: 1.5 }}>
+                Are you delivering this order directly to the customer without a rider? Once confirmed, this order will be marked as <strong>Delivered</strong> in the platform.
+              </p>
+
+              <div style={{ background: "#FAF7EF", border: "1px solid #E4DFD1", borderRadius: "10px", padding: "12px 14px", marginBottom: "16px" }}>
+                <div style={{ fontSize: "12px", color: "var(--clay, #79705F)", marginBottom: "4px" }}>
+                  Destination Address:
+                </div>
+                <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--ink, #1C1C16)" }}>
+                  {deliverModalOrder.delivery_address || (deliverModalOrder.consumer ? `${deliverModalOrder.consumer.city || 'Direct Handover'}, PIN ${deliverModalOrder.consumer.pin_code || '—'}` : "Direct Farm Handover")}
+                </div>
+                {deliverModalOrder.consumer?.name && (
+                  <div style={{ fontSize: "12px", color: "var(--farmer-forest, #073a26)", marginTop: "4px" }}>
+                    Customer: {deliverModalOrder.consumer.name} {deliverModalOrder.consumer.phone ? `(${deliverModalOrder.consumer.phone})` : ""}
+                  </div>
+                )}
+              </div>
+
+              {/* Optional OTP input */}
+              <div className="mb-3">
+                <label htmlFor="delivery-otp" style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--ink, #1C1C16)", marginBottom: "4px", display: "block" }}>
+                  Consumer Delivery OTP <span style={{ fontWeight: 400, color: "var(--clay, #79705F)" }}>(if provided by customer)</span>
+                </label>
+                <input
+                  id="delivery-otp"
+                  type="text"
+                  maxLength={6}
+                  className="form-control"
+                  placeholder="e.g. 123456"
+                  value={deliverOtp}
+                  onChange={(e) => setDeliverOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  style={{ borderColor: "#E4DFD1", fontSize: "13.5px", letterSpacing: "2px", fontWeight: 600 }}
+                  disabled={delivering}
+                />
+              </div>
+
+              {/* Optional Notes */}
+              <div>
+                <label htmlFor="delivery-notes" style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--ink, #1C1C16)", marginBottom: "4px", display: "block" }}>
+                  Delivery Notes <span style={{ fontWeight: 400, color: "var(--clay, #79705F)" }}>(optional)</span>
+                </label>
+                <input
+                  id="delivery-notes"
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. Delivered directly to customer at doorstep"
+                  value={deliverNotes}
+                  onChange={(e) => setDeliverNotes(e.target.value)}
+                  style={{ borderColor: "#E4DFD1", fontSize: "13px" }}
+                  disabled={delivering}
+                />
+              </div>
+            </div>
+
+            <div className="farmer-modal-footer" style={{ borderTop: "1px solid #E4DFD1", padding: "14px 20px", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              <button
+                type="button"
+                className="kisan-btn-outline kisan-btn-sm"
+                onClick={() => setDeliverModalOrder(null)}
+                disabled={delivering}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="kisan-btn-accent kisan-btn-sm"
+                onClick={handleConfirmDeliverOrder}
+                disabled={delivering}
+              >
+                {delivering ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />
+                    Confirming Delivery...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-check2-circle me-1" /> Confirm Delivery
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRM REMOVE OLD ORDER FROM HISTORY */}
+      {deleteConfirmOrder && (
+        <div className="farmer-modal-backdrop" onClick={() => !deletingOrder && setDeleteConfirmOrder(null)}>
+          <div className="farmer-modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "460px" }}>
+            <div className="farmer-modal-header" style={{ borderBottom: "1px solid #E4DFD1", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "8px",
+                    background: "#FEE2E2",
+                    color: "#DC2626",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "1.1rem",
+                  }}
+                >
+                  <i className="bi bi-trash3-fill" />
+                </div>
+                <div>
+                  <h3 style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", color: "#1C1C16", margin: 0, fontSize: "17px", fontWeight: 700 }}>
+                    Remove Order from History
+                  </h3>
+                  <div style={{ fontSize: "12px", color: "var(--clay, #79705F)" }}>
+                    Order ORD-{String(deleteConfirmOrder.id).slice(0, 8).toUpperCase()}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-close"
+                onClick={() => setDeleteConfirmOrder(null)}
+                disabled={deletingOrder}
+                aria-label="Close"
+              />
+            </div>
+
+            <div className="farmer-modal-body" style={{ padding: "20px" }}>
+              <p style={{ fontSize: "15px", color: "#1F2937", margin: "0 0 16px 0", lineHeight: "1.5", fontWeight: 500 }}>
+                Are you sure you want to remove this order from your history?
+              </p>
+
+              <div
+                style={{
+                  background: "#F9FAFB",
+                  border: "1px solid #E5E7EB",
+                  borderRadius: "10px",
+                  padding: "12px 16px",
+                  fontSize: "13px",
+                  display: "grid",
+                  gap: "6px",
+                  color: "#4B5563",
+                }}
+              >
+                <div className="d-flex justify-content-between">
+                  <span>Status:</span>
+                  <span className="fw-semibold text-dark">{deleteConfirmOrder.status}</span>
+                </div>
+                <div className="d-flex justify-content-between">
+                  <span>Total Amount:</span>
+                  <span className="fw-semibold text-dark">{formatMoney(deleteConfirmOrder.total_amount)}</span>
+                </div>
+                <div className="d-flex justify-content-between">
+                  <span>Items:</span>
+                  <span className="fw-semibold text-dark">
+                    {deleteConfirmOrder.items_count || (deleteConfirmOrder.items && deleteConfirmOrder.items.length) || 1} item(s)
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ fontSize: "12px", color: "var(--clay, #79705F)", marginTop: "12px" }}>
+                <i className="bi bi-info-circle me-1" /> This hides the order from your farmer order history while preserving the original platform records, consumer tracking, and payments.
+              </div>
+            </div>
+
+            <div className="farmer-modal-footer" style={{ borderTop: "1px solid #E4DFD1", padding: "14px 20px", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              <button
+                type="button"
+                className="kisan-btn-outline kisan-btn-sm"
+                onClick={() => setDeleteConfirmOrder(null)}
+                disabled={deletingOrder}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-danger"
+                onClick={handleConfirmDeleteOrder}
+                disabled={deletingOrder}
+                style={{ borderRadius: "8px", padding: "6px 18px", fontWeight: 600 }}
+              >
+                {deletingOrder ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />
+                    Removing...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-trash3 me-1" /> Remove
+                  </>
+                )}
               </button>
             </div>
           </div>

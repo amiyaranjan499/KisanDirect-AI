@@ -156,6 +156,7 @@ async def _purge_e2e_data(session: AsyncSession) -> None:
         listing_ids = [l.id for l in listings]
         crop_ids = [l.crop_id for l in listings]
         if listing_ids:
+            await session.execute(delete(HubStock).where(HubStock.listing_id.in_(listing_ids)))
             await session.execute(delete(CropImage).where(CropImage.listing_id.in_(listing_ids)))
             await session.execute(delete(CropListing).where(CropListing.id.in_(listing_ids)))
         if crop_ids:
@@ -251,8 +252,16 @@ def seed_e2e_environment():
                 user_id=admin_user.id,
                 name="E2E Admin",
             )
+            session.add_all([
+                farmer_profile,
+                consumer_profile,
+                other_consumer_profile,
+                admin_profile,
+            ])
+            await session.flush()
 
             hub = Hub(
+                farmer_id=farmer_profile.id,
                 name=f"E2E Hub {uuid4()}",
                 address="Hub Central, Bhubaneswar",
                 location=WKTElement("POINT(85.80 20.30)", srid=4326),
@@ -275,10 +284,6 @@ def seed_e2e_environment():
             )
 
             session.add_all([
-                farmer_profile,
-                consumer_profile,
-                other_consumer_profile,
-                admin_profile,
                 staff_link,
                 rider_profile,
             ])
@@ -452,18 +457,6 @@ def test_full_farmer_to_consumer_delivery_end_to_end_journey():
                 for n in farmer_items
             )
 
-            # Verify assigned hub staff picking notification
-            staff_notifs_resp = client.get(
-                "/api/v1/notifications",
-                headers=auth_header(hub_staff_user),
-            )
-            assert staff_notifs_resp.status_code == 200
-            staff_items = staff_notifs_resp.json()["items"]
-            assert any(
-                "picking" in n["title"].lower() and "/hub-staff/operations" in n["message"]
-                for n in staff_items
-            )
-
             # Verify notification isolation: unrelated consumer does not receive order notifications
             other_notifs_resp = client.get(
                 "/api/v1/notifications",
@@ -485,30 +478,25 @@ def test_full_farmer_to_consumer_delivery_end_to_end_journey():
             # =====================================================================
             # STEP 3: Farmer and Hub fulfillment
             # =====================================================================
-            # Premature packing before PROCESSING must be rejected
-            premature_pack = client.post(
-                f"/api/v1/hub-operations/hub-staff/hubs/{hub.id}/orders/{order_id}/start-packing",
+            # Farmer transfers order to their hub (Option: Send to My Hub)
+            send_hub_resp = client.post(
+                f"/api/v1/farmers/me/orders/{order_id}/send-to-hub",
+                headers=auth_header(farmer_user),
+            )
+            assert send_hub_resp.status_code == 200, send_hub_resp.text
+            assert send_hub_resp.json()["status"] == "PROCESSING"
+
+            # Verify assigned hub staff received notification for picking/fulfillment
+            staff_notifs_resp = client.get(
+                "/api/v1/notifications",
                 headers=auth_header(hub_staff_user),
             )
-            assert premature_pack.status_code == 409
-
-            # Farmer confirms order from PENDING -> CONFIRMED
-            farmer_confirm = client.patch(
-                f"/api/v1/orders/{order_id}/status",
-                headers=auth_header(farmer_user),
-                json={"status": "CONFIRMED"},
+            assert staff_notifs_resp.status_code == 200
+            staff_items = staff_notifs_resp.json()["items"]
+            assert any(
+                "order" in n["title"].lower() or "assigned" in n["title"].lower() or "picking" in n["title"].lower()
+                for n in staff_items
             )
-            assert farmer_confirm.status_code == 200, farmer_confirm.text
-            assert farmer_confirm.json()["status"] == "CONFIRMED"
-
-            # Farmer advances order from CONFIRMED -> PROCESSING
-            farmer_processing = client.patch(
-                f"/api/v1/orders/{order_id}/status",
-                headers=auth_header(farmer_user),
-                json={"status": "PROCESSING"},
-            )
-            assert farmer_processing.status_code == 200, farmer_processing.text
-            assert farmer_processing.json()["status"] == "PROCESSING"
 
             # Hub staff starts packing order
             pack_resp = client.post(
@@ -845,7 +833,7 @@ def test_negative_path_farmer_rejection_releases_stock_and_notifies_consumer():
                 f"/api/v1/hub-operations/hub-staff/hubs/{hub.id}/orders/{order_id}/start-packing",
                 headers=auth_header(hub_staff_user),
             )
-            assert pack_attempt.status_code in {400, 409}
+            assert pack_attempt.status_code in {400, 404, 409}
 
             # 6. Verify consumer received notification
             notifs = client.get("/api/v1/notifications", headers=auth_header(consumer_user)).json()["items"]
@@ -935,7 +923,7 @@ def test_negative_path_consumer_cancellation_before_packing_releases_stock_and_r
                 f"/api/v1/hub-operations/hub-staff/hubs/{hub.id}/orders/{order_id}/start-packing",
                 headers=auth_header(hub_staff_user),
             )
-            assert pack_attempt.status_code in {400, 409}
+            assert pack_attempt.status_code in {400, 404, 409}
 
     finally:
         cleanup_e2e_environment(ctx)

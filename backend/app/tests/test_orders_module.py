@@ -145,7 +145,7 @@ def test_cart_validation_checkout_history_and_authorization():
                 headers=header(consumer),
             )
             assert options.status_code == 200
-            assert options.json()["hubs"][0]["id"] == str(hub.id)
+            assert any(h["id"] == str(hub.id) for h in options.json()["hubs"])
             order = client.post(
                 "/api/v1/orders",
                 headers=header(consumer),

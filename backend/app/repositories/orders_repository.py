@@ -15,6 +15,7 @@ from backend.app.models import (
     CropListing,
     DeliverySlot,
     Farmer,
+    FarmerHiddenOrder,
     Hub,
     HubStaff,
     HubStatus,
@@ -266,7 +267,22 @@ class OrdersRepository:
         return list(result.unique().scalars().all()), total
 
     async def farmer_orders(self, farmer_user_id: UUID, page: int, page_size: int) -> tuple[list[Order], int]:
-        base = select(Order).join(Order.items).join(OrderItem.listing).join(CropListing.farmer).where(Farmer.user_id == farmer_user_id).distinct()
+        hidden_subquery = (
+            select(FarmerHiddenOrder.order_id)
+            .join(Farmer, Farmer.id == FarmerHiddenOrder.farmer_id)
+            .where(Farmer.user_id == farmer_user_id)
+        )
+        base = (
+            select(Order)
+            .join(Order.items)
+            .join(OrderItem.listing)
+            .join(CropListing.farmer)
+            .where(
+                Farmer.user_id == farmer_user_id,
+                ~Order.id.in_(hidden_subquery),
+            )
+            .distinct()
+        )
         total = int((await self.session.execute(select(func.count()).select_from(base.subquery()))).scalar_one())
         result = await self.session.execute(base.order_by(Order.created_at.desc()).offset((page - 1) * page_size).limit(page_size).options(selectinload(Order.payment), selectinload(Order.items).selectinload(OrderItem.listing).selectinload(CropListing.crop), selectinload(Order.items).selectinload(OrderItem.listing).selectinload(CropListing.farmer)))
         return list(result.unique().scalars().all()), total

@@ -1,6 +1,6 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -19,6 +19,7 @@ from backend.app.models import (
     NotificationType,
     Order,
     OrderItem,
+    OrderStatus,
     Shipment,
     User,
     UserRole,
@@ -244,6 +245,39 @@ class HubOperationsService:
                 raise LifecyclePermissionError("Hub staff are not assigned to this hub")
             if not await self.repository.order_is_assigned_to_hub(order_id, hub_id):
                 raise LifecycleNotFound("Hub order not found")
+
+            order_res = await self.session.execute(
+                select(Order)
+                .where(Order.id == order_id)
+                .execution_options(populate_existing=True)
+                .options(
+                    selectinload(Order.consumer),
+                    selectinload(Order.delivery),
+                )
+                .with_for_update()
+            )
+            order = order_res.scalar_one_or_none()
+            if order is not None:
+                if not order.delivery_address:
+                    c_city = order.consumer.city if order.consumer and order.consumer.city else "Local Delivery Address"
+                    c_pin = order.consumer.pin_code if order.consumer and order.consumer.pin_code else "751001"
+                    d_addr = order.delivery.address if order.delivery and order.delivery.address else None
+                    c_addr = order.consumer.address if order.consumer and order.consumer.address else None
+                    order.delivery_address = d_addr or c_addr or f"{c_city}, PIN {c_pin}"
+                if order.promised_window_start is None:
+                    order.promised_window_start = datetime.now(timezone.utc)
+                if order.promised_window_end is None:
+                    order.promised_window_end = datetime.now(timezone.utc) + timedelta(minutes=60)
+                if order.status == OrderStatus.PENDING:
+                    await self.lifecycle.transition_order(
+                        order.id, actor, OrderStatus.CONFIRMED, reason="Hub staff accepted order"
+                    )
+                if order.status == OrderStatus.CONFIRMED:
+                    await self.lifecycle.transition_order(
+                        order.id, actor, OrderStatus.PROCESSING, reason="Hub staff started packing"
+                    )
+                await self.session.flush()
+
             shipment = await self.lifecycle.create_shipment(
                 order_id,
                 actor,
@@ -311,11 +345,15 @@ class HubOperationsService:
             if item.listing and item.listing.farmer:
                 farmer_name = item.listing.farmer.name
                 break
-        address = None
-        city = None
-        if order.delivery:
-            address = order.delivery.dropoff_address
-            city = order.delivery.city
+        address = (
+            order.delivery_address
+            or (order.delivery.address if order.delivery else None)
+            or (order.consumer.address if order.consumer else None)
+        )
+        city = (
+            (order.delivery.city if order.delivery else None)
+            or (order.consumer.city if order.consumer else None)
+        )
 
         return HubOrderToPackResponse(
             id=order.id,

@@ -12,7 +12,7 @@ from backend.app.core.config import Settings
 from backend.app.core.security import create_access_token, hash_password
 from backend.app.database.session import build_engine
 from backend.app.main import create_app
-from backend.app.models import Crop, CropImage, CropListing, Farmer, User, UserRole
+from backend.app.models import Crop, CropImage, CropListing, Farmer, HubStock, User, UserRole
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -61,6 +61,7 @@ def cleanup_users(*user_ids, crop_name: str | None = None) -> None:
                 ).all()
             ] if farmer_ids else []
             if listing_ids:
+                await session.execute(delete(HubStock).where(HubStock.listing_id.in_(listing_ids)))
                 await session.execute(delete(CropImage).where(CropImage.listing_id.in_(listing_ids)))
                 await session.execute(delete(CropListing).where(CropListing.id.in_(listing_ids)))
             if farmer_ids:

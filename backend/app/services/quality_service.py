@@ -36,6 +36,10 @@ class QualityService:
             result = self.inference.predict(processed, crop_name=crop_name)
         except TypeError:
             result = self.inference.predict(processed)
+        if image.listing is not None and result.quality_label:
+            grade = result.metadata.get("grade", "Grade A") if result.metadata else "Grade A"
+            desc = result.metadata.get("quality_description", "") if result.metadata else ""
+            image.listing.quality_information = f"{grade}: {desc}" if desc else grade
         prediction = await self.repository.create_prediction(
             {
                 "listing_id": image.listing_id,

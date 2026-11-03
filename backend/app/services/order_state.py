@@ -34,15 +34,16 @@ DELIVERY_TRANSITIONS: Mapping[FulfillmentMethod, Mapping[DeliveryStatus, frozens
 
 SHIPMENT_TRANSITIONS: Mapping[ShipmentStatus, frozenset[ShipmentStatus]] = {
     ShipmentStatus.PACKING: frozenset(
-        {ShipmentStatus.READY_FOR_PICKUP, ShipmentStatus.CANCELLED}
+        {ShipmentStatus.READY_FOR_PICKUP, ShipmentStatus.DELIVERED, ShipmentStatus.CANCELLED}
     ),
     ShipmentStatus.READY_FOR_PICKUP: frozenset(
-        {ShipmentStatus.RIDER_ASSIGNED, ShipmentStatus.CANCELLED}
+        {ShipmentStatus.RIDER_ASSIGNED, ShipmentStatus.DELIVERED, ShipmentStatus.CANCELLED}
     ),
     ShipmentStatus.RIDER_ASSIGNED: frozenset(
         {
             ShipmentStatus.READY_FOR_PICKUP,
             ShipmentStatus.PICKED_UP,
+            ShipmentStatus.DELIVERED,
             ShipmentStatus.CANCELLED,
         }
     ),

@@ -9,6 +9,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.database.session import get_db_session
 from backend.app.dependencies import get_current_user
 from backend.app.models import User, UserRole
+from backend.app.services.order_lifecycle_service import LifecycleConflict
 from backend.app.repositories.farmer_repository import FarmerRepository
 from backend.app.schemas.farmer import (
     CropImageResponse,
@@ -30,6 +31,7 @@ from backend.app.schemas.farmer import (
     FarmerStaffResponse,
     FarmerOrderAssignStaffRequest,
     FarmerOrderPreparePersonallyRequest,
+    FarmerOrderDeliverRequest,
     FarmerWalletResponse,
     FarmerWalletWithdrawalRequest,
     FarmerWithdrawalResponse,
@@ -111,6 +113,18 @@ async def list_my_listings(
     service: Annotated[FarmerService, Depends(get_farmer_service)],
 ) -> list[CropListingResponse]:
     return await service.list_listings(current_user.id)
+
+
+@router.get("/me/listings/{listing_id}", response_model=CropListingResponse)
+async def get_my_listing(
+    listing_id: UUID,
+    current_user: Annotated[User, Depends(get_authenticated_farmer)],
+    service: Annotated[FarmerService, Depends(get_farmer_service)],
+) -> CropListingResponse:
+    try:
+        return await service.get_listing(current_user.id, listing_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/me/listings", response_model=CropListingResponse, status_code=status.HTTP_201_CREATED)
@@ -393,22 +407,45 @@ async def remove_facility_staff(
 )
 async def assign_staff_order(
     order_id: UUID,
-    payload: FarmerOrderAssignStaffRequest,
     current_user: Annotated[User, Depends(get_authenticated_farmer)],
     service: Annotated[FarmerService, Depends(get_farmer_service)],
+    payload: FarmerOrderAssignStaffRequest | None = None,
 ) -> DashboardOrderResponse:
     try:
         return await service.assign_staff_order(
             current_user.id,
             order_id,
-            payload.facility_id,
-            staff_user_id=payload.staff_user_id,
-            notes=payload.notes,
+            payload.facility_id if payload else None,
+            staff_user_id=payload.staff_user_id if payload else None,
+            notes=payload.notes if payload else None,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/me/orders/{order_id}/send-to-hub",
+    response_model=DashboardOrderResponse,
+)
+async def send_to_hub_order(
+    order_id: UUID,
+    current_user: Annotated[User, Depends(get_authenticated_farmer)],
+    service: Annotated[FarmerService, Depends(get_farmer_service)],
+) -> DashboardOrderResponse:
+    try:
+        return await service.send_order_to_hub(current_user.id, order_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -457,6 +494,53 @@ async def ready_for_pickup_order(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/me/orders/{order_id}/deliver",
+    response_model=DashboardOrderResponse,
+)
+async def deliver_farmer_order(
+    order_id: UUID,
+    current_user: Annotated[User, Depends(get_authenticated_farmer)],
+    service: Annotated[FarmerService, Depends(get_farmer_service)],
+    payload: FarmerOrderDeliverRequest | None = None,
+) -> DashboardOrderResponse:
+    try:
+        return await service.deliver_order(
+            current_user.id,
+            order_id,
+            otp=payload.otp if payload else None,
+            notes=payload.notes if payload else None,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/me/orders/{order_id}",
+    status_code=status.HTTP_200_OK,
+)
+async def delete_farmer_order_history(
+    order_id: UUID,
+    current_user: Annotated[User, Depends(get_authenticated_farmer)],
+    service: Annotated[FarmerService, Depends(get_farmer_service)],
+) -> dict[str, str]:
+    try:
+        await service.hide_order_from_history(current_user.id, order_id)
+        return {"status": "success", "message": "Order removed from history"}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get(

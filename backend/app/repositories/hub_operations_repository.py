@@ -149,7 +149,7 @@ class HubOperationsRepository:
             select(Order)
             .where(
                 Order.hub_id == hub_id,
-                Order.status == OrderStatus.PROCESSING,
+                Order.status.in_([OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING]),
                 ~select(Shipment.id)
                 .where(Shipment.order_id == Order.id)
                 .exists(),

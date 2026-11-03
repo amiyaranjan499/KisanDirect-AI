@@ -221,6 +221,10 @@ export function listMyFarmerListings() {
   return request("/api/v1/farmers/me/listings");
 }
 
+export function getFarmerListing(listingId) {
+  return request(`/api/v1/farmers/me/listings/${listingId}`);
+}
+
 export function createFarmerListing(payload) {
   return request("/api/v1/farmers/me/listings", { method: "POST", body: JSON.stringify(payload) });
 }
@@ -590,10 +594,16 @@ export function removeFarmerStaff(facilityId, staffUserId) {
   });
 }
 
-export function assignFarmerOrderStaff(orderId, payload) {
+export function assignFarmerOrderStaff(orderId, payload = {}) {
   return request(`/api/v1/farmers/me/orders/${orderId}/assign-staff`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export function sendFarmerOrderToHub(orderId) {
+  return request(`/api/v1/farmers/me/orders/${orderId}/send-to-hub`, {
+    method: "POST",
   });
 }
 
@@ -607,6 +617,19 @@ export function prepareFarmerOrderPersonally(orderId, payload = {}) {
 export function markFarmerOrderReadyForPickup(orderId) {
   return request(`/api/v1/farmers/me/orders/${orderId}/ready-for-pickup`, {
     method: "POST",
+  });
+}
+
+export function deliverFarmerOrderDirectly(orderId, payload = {}) {
+  return request(`/api/v1/farmers/me/orders/${orderId}/deliver`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteFarmerOrderHistory(orderId) {
+  return request(`/api/v1/farmers/me/orders/${orderId}`, {
+    method: "DELETE",
   });
 }
 

@@ -256,8 +256,8 @@ class RiderService:
                 return offer.status
             offer.status = "EXPIRED" if offer.expires_at <= now else "DECLINED"
             offer.responded_at = now
-            await self._offer_next(shipment)
             await self.session.flush()
+            await self._offer_next(shipment)
             return offer.status
 
     async def active_shipment(
@@ -277,11 +277,14 @@ class RiderService:
         async with self._transaction():
             rider = await self._rider_for_actor(actor, for_update=True)
             self._require_approved(rider)
-            await self.lifecycle.transition_shipment(
-                shipment_id,
-                actor,
-                target,
-            )
+            if target is ShipmentStatus.DELIVERED:
+                await self.lifecycle.deliver_shipment_by_rider(shipment_id, actor)
+            else:
+                await self.lifecycle.transition_shipment(
+                    shipment_id,
+                    actor,
+                    target,
+                )
             shipment = await self.repository.shipment_for_actor(
                 shipment_id, rider.id
             )
@@ -402,6 +405,7 @@ class RiderService:
                     else "SUPERSEDED"
                 )
                 offer.responded_at = now
+                await self.session.flush()
                 if shipment.status is ShipmentStatus.READY_FOR_PICKUP:
                     await self._offer_next(shipment)
 

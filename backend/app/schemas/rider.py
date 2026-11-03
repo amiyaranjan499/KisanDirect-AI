@@ -64,7 +64,7 @@ class RiderShipmentResponse(BaseModel):
 
 
 class RiderShipmentStatusUpdate(BaseModel):
-    status: Literal["PICKED_UP", "OUT_FOR_DELIVERY", "ARRIVED"]
+    status: Literal["PICKED_UP", "OUT_FOR_DELIVERY", "ARRIVED", "DELIVERED"]
 
 
 class RiderCompletedShipmentResponse(BaseModel):

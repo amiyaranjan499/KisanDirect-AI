@@ -463,20 +463,4 @@ class OrdersService:
                 related_entity_id=order.id,
             )
 
-        # 2. Notify assigned hub staff for picking
-        if order.hub_id is not None:
-            staff_res = await self.repository.session.execute(
-                select(HubStaff.user_id).where(HubStaff.hub_id == order.hub_id)
-            )
-            for staff_uid in set(staff_res.scalars()):
-                await self.notification_service.create(
-                    user_id=staff_uid,
-                    notification_type=NotificationType.ORDER,
-                    title="New order assigned for picking",
-                    message=(
-                        f"Order {order_code} ({len(order.items)} items) assigned to your hub for picking. "
-                        f"Status: {order.status.value}. View at /hub-staff/operations"
-                    ),
-                    related_entity_type="order",
-                    related_entity_id=order.id,
-                )
+
