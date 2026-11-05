@@ -742,3 +742,163 @@
   margin-top: 0;
   margin-bottom: 0.35rem;
 }
+
+/* ==========================================================================
+   Customer Dashboard Visual Section Containers & Component Styling
+   Organizes the dashboard into clearly distinguishable, premium sections
+   ========================================================================== */
+
+.consumer-dashboard-card-section {
+  background: var(--consumer-surface, #FFFFFF);
+  border: 1px solid var(--consumer-border, #E4DFD1);
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(28, 28, 22, 0.03), 0 1px 2px rgba(28, 28, 22, 0.02);
+  padding: 22px 24px 24px;
+  margin-bottom: 24px;
+  position: relative;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.consumer-dashboard-card-section:hover {
+  box-shadow: 0 4px 14px rgba(28, 28, 22, 0.05), 0 1px 3px rgba(28, 28, 22, 0.03);
+}
+
+.consumer-section-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #F1ECE2;
+}
+
+.consumer-section-header-row.no-border {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 16px;
+}
+
+.consumer-section-heading {
+  font-family: var(--font-display, 'Fraunces', Georgia, serif) !important;
+  font-size: 20px !important;
+  font-weight: 700 !important;
+  color: var(--forest, #1B6B34) !important;
+  margin: 0 !important;
+  letter-spacing: -0.015em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.25;
+}
+
+.consumer-section-see-all {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ochre, #C68A3D);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.consumer-section-see-all:hover {
+  color: #A0641A;
+  background: rgba(198, 138, 61, 0.1);
+  transform: translateX(1px);
+}
+
+.consumer-section-see-all i {
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+
+.consumer-section-see-all:hover i {
+  transform: translateX(2px);
+}
+
+/* Categories Section Styling */
+.consumer-categories-wrapper {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 2px 2px 6px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.consumer-category-pill-card {
+  flex: 1 0 102px;
+  max-width: 130px;
+  height: 90px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #FAF7EF;
+  border: 1px solid #E8E3D7;
+  border-radius: 12px;
+  padding: 10px 6px;
+  cursor: pointer;
+  text-align: center;
+  transition: transform 0.14s ease, border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+}
+
+.consumer-category-pill-card:hover {
+  transform: translateY(-2px);
+  background: #FFFFFF;
+  border-color: var(--forest, #1B6B34);
+  box-shadow: 0 4px 12px rgba(27, 107, 52, 0.08);
+}
+
+.consumer-category-pill-card .category-emoji {
+  font-size: 26px;
+  line-height: 1;
+  margin-bottom: 6px;
+  transition: transform 0.14s ease;
+}
+
+.consumer-category-pill-card:hover .category-emoji {
+  transform: scale(1.1);
+}
+
+.consumer-category-pill-card .category-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink, #1C1C16);
+  white-space: nowrap;
+}
+
+/* Farmer Card refinement inside section */
+.consumer-farmer-card {
+  border-radius: 14px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid var(--consumer-border, #E4DFD1);
+  background: #FAF7EF;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.consumer-farmer-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(27, 107, 52, 0.08);
+  border-color: var(--forest, #1B6B34);
+}
+
+@media (max-width: 768px) {
+  .consumer-dashboard-card-section {
+    padding: 16px 14px 20px;
+    border-radius: 14px;
+    margin-bottom: 18px;
+  }
+  .consumer-section-header-row {
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+  }
+  .consumer-section-heading {
+    font-size: 18px !important;
+  }
+}

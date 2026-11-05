@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker

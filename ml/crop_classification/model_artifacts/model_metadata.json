@@ -1,0 +1,53 @@
+{
+  "model_file": "crop_classifier_mobilenet_v2.keras",
+  "model_name": "crop-classifier-mobilenet-v2",
+  "model_version": "v2.0-10crops",
+  "classes": [
+    "apple",
+    "banana",
+    "brinjal",
+    "cabbage",
+    "carrot",
+    "mango",
+    "onion",
+    "orange",
+    "potato",
+    "tomato"
+  ],
+  "class_to_idx": {
+    "apple": 0,
+    "banana": 1,
+    "brinjal": 2,
+    "cabbage": 3,
+    "carrot": 4,
+    "mango": 5,
+    "onion": 6,
+    "orange": 7,
+    "potato": 8,
+    "tomato": 9
+  },
+  "idx_to_class": {
+    "0": "apple",
+    "1": "banana",
+    "2": "brinjal",
+    "3": "cabbage",
+    "4": "carrot",
+    "5": "mango",
+    "6": "onion",
+    "7": "orange",
+    "8": "potato",
+    "9": "tomato"
+  },
+  "input_size": [
+    224,
+    224,
+    3
+  ],
+  "preprocessing": "mobilenet_v2_preprocess_input_scaling_[-1,1]",
+  "training_dataset": "ml/datasets/ten_crops",
+  "confidence_threshold": 0.55,
+  "metrics": {
+    "test_accuracy": 0.8304,
+    "macro_f1": 0.815
+  }
+}

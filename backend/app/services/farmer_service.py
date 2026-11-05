@@ -11,8 +11,8 @@ from backend.app.core.config import Settings
 from backend.app.core.security import hash_password
 from backend.app.models import (
     AvailabilityStatus,
+    Crop,
     CropListing,
-    Farmer,
     FarmerWithdrawal,
     Hub,
     HubStaff,
@@ -22,23 +22,17 @@ from backend.app.models import (
     Order,
     OrderItem,
     OrderStatus,
-    Shipment,
     ShipmentStatus,
     User,
     UserRole,
 )
 from backend.app.repositories.farmer_repository import FarmerRepository
 from backend.app.repositories.rider_repository import RiderRepository
-from backend.app.services.order_lifecycle_service import (
-    LifecycleActor,
-    LifecycleConflict,
-    OrderLifecycleService,
-)
-from backend.app.services.rider_service import RiderService
 from backend.app.schemas.farmer import (
     CropImageResponse,
     CropListingCreate,
     CropListingResponse,
+    CropListingStatsResponse,
     CropListingUpdate,
     DashboardAIPredictionResponse,
     DashboardAIQualityAssessmentResponse,
@@ -63,7 +57,14 @@ from backend.app.schemas.farmer import (
     FarmerWalletWithdrawalRequest,
     FarmerWithdrawalResponse,
     LocationInput,
+    PaginatedCropListingResponse,
 )
+from backend.app.services.order_lifecycle_service import (
+    LifecycleActor,
+    LifecycleConflict,
+    OrderLifecycleService,
+)
+from backend.app.services.rider_service import RiderService
 
 
 class FarmerService:
@@ -165,6 +166,30 @@ class FarmerService:
         farmer = await self.repository.get_profile(farmer_id)
         if farmer is None:
             raise LookupError("Farmer profile not found")
+
+        # Double-click / rapid duplicate submission protection
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy import select
+        recent_cutoff = datetime.now(timezone.utc) - timedelta(seconds=5)
+        dup_stmt = (
+            select(CropListing)
+            .options(selectinload(CropListing.crop))
+            .join(Crop, CropListing.crop_id == Crop.id)
+            .where(
+                CropListing.farmer_id == farmer.id,
+                Crop.name == payload.crop_name,
+                CropListing.quantity == payload.quantity,
+                CropListing.asking_price == payload.asking_price,
+                CropListing.created_at >= recent_cutoff,
+            )
+            .order_by(CropListing.created_at.desc())
+            .limit(1)
+        )
+        dup_res = await self.repository.session.execute(dup_stmt)
+        recent_dup = dup_res.scalar_one_or_none()
+        if recent_dup is not None:
+            return await self._listing_response(recent_dup)
+
         values = payload.model_dump()
         values["location"] = self._point(payload.location)
         listing = await self.repository.create_listing(farmer.id, values)
@@ -190,18 +215,52 @@ class FarmerService:
             pass
         return await self._listing_response(listing)
 
-    async def list_listings(self, farmer_id: UUID) -> list[CropListingResponse]:
+    async def list_listings(
+        self,
+        farmer_id: UUID,
+        limit: int | None = None,
+        offset: int | None = None,
+        exclude_unavailable: bool = False,
+        search: str | None = None,
+        status: str | None = None,
+    ) -> list[CropListingResponse] | PaginatedCropListingResponse:
         farmer = await self.repository.get_profile(farmer_id)
         if farmer is None:
             raise LookupError("Farmer profile not found")
-        listings = await self.repository.list_listings(farmer.id)
+        listings = await self.repository.list_listings(
+            farmer.id,
+            limit=limit,
+            offset=offset,
+            exclude_unavailable=exclude_unavailable,
+            search=search,
+            status=status,
+        )
         if not listings:
-            return []
-        coords_map = await self.repository.get_coordinates_batch("crop_listings", [item.id for item in listings])
-        return [
-            await self._listing_response(item, coordinates=coords_map.get(item.id))
-            for item in listings
-        ]
+            items = []
+        else:
+            coords_map = await self.repository.get_coordinates_batch("crop_listings", [item.id for item in listings])
+            items = [
+                await self._listing_response(item, coordinates=coords_map.get(item.id))
+                for item in listings
+            ]
+
+        if limit is not None or offset is not None:
+            total = await self.repository.count_listings(
+                farmer.id,
+                exclude_unavailable=exclude_unavailable,
+                search=search,
+                status=status,
+            )
+            stats_dict = await self.repository.get_listing_stats(farmer.id)
+            return PaginatedCropListingResponse(
+                items=items,
+                total=total,
+                limit=limit or len(items),
+                offset=offset or 0,
+                stats=CropListingStatsResponse(**stats_dict),
+            )
+
+        return items
 
     async def get_listing(self, farmer_id: UUID, listing_id: UUID) -> CropListingResponse:
         farmer = await self.repository.get_profile(farmer_id)
@@ -517,6 +576,7 @@ class FarmerService:
             id=order.id,
             consumer_id=order.consumer_id,
             consumer_name=order.consumer.name if order.consumer else None,
+            hub_id=order.hub_id,
             hub_name=order.hub.name if order.hub else None,
             status=order.status.value,
             total_amount=self._farmer_order_total(order, farmer_user_id),
@@ -674,6 +734,37 @@ class FarmerService:
             updated_at=updated.updated_at,
         )
 
+    async def delete_facility(self, user_id: UUID, facility_id: UUID) -> None:
+        farmer = await self.repository.get_profile(user_id)
+        if farmer is None:
+            raise LookupError("Farmer profile not found")
+        async with self.repository.session.begin_nested():
+            facility = await self.repository.get_facility_for_update(farmer.id, facility_id)
+            if facility is None:
+                raise LookupError("Storage facility not found or not owned by farmer")
+            deps = await self.repository.get_facility_dependencies(facility.id)
+            if deps["staff_count"] > 0:
+                raise ValueError(
+                    f"Cannot delete hub: {deps['staff_count']} staff member(s) are currently assigned. "
+                    "Please remove or reassign all staff members before deleting this hub."
+                )
+            if deps["stock_count"] > 0:
+                raise ValueError(
+                    f"Cannot delete hub: hub currently holds active inventory stock ({deps['stock_count']} items). "
+                    "Please clear or transfer stock before deleting this hub."
+                )
+            if deps["active_orders_count"] > 0:
+                raise ValueError(
+                    f"Cannot delete hub: {deps['active_orders_count']} active order(s) are currently in progress. "
+                    "Please complete or reassign all pending orders before deleting this hub."
+                )
+            if deps["active_shipments_count"] > 0:
+                raise ValueError(
+                    f"Cannot delete hub: {deps['active_shipments_count']} active shipment(s) in transit."
+                )
+            await self.repository.delete_facility(facility)
+        await self.repository.session.commit()
+
     async def list_staff(
         self, user_id: UUID, facility_id: UUID | None = None
     ) -> list[FarmerStaffResponse]:
@@ -808,11 +899,13 @@ class FarmerService:
             if order.hub_id is not None:
                 raise ValueError("Order has already been sent to a hub")
 
-            # 2. Automatically identify the farmer's existing hub
+            # 2. Identify the farmer's hub
             if facility_id is not None:
                 facility = await self.repository.get_facility_for_update(farmer.id, facility_id)
                 if facility is None:
                     raise LookupError("Storage facility not found or not owned by farmer")
+                if facility.status != HubStatus.ACTIVE:
+                    raise ValueError(f"The hub '{facility.name}' is not currently active.")
             else:
                 facilities = await self.repository.list_facilities(farmer.id)
                 active_facilities = [f for f in facilities if f[0].status == HubStatus.ACTIVE]
@@ -820,9 +913,11 @@ class FarmerService:
                     raise ValueError(
                         "No active Kisan Hub found for your farm. Please create a Hub first in 'My Hub' before transferring orders."
                     )
-                hub_with_staff = next((f for f in active_facilities if f[1] > 0), None)
-                chosen_hub_entry = hub_with_staff or active_facilities[0]
-                facility = await self.repository.get_facility_for_update(farmer.id, chosen_hub_entry[0].id)
+                if len(active_facilities) > 1:
+                    raise ValueError(
+                        "Multiple active hubs found. Please select which Kisan Hub should fulfil this order."
+                    )
+                facility = await self.repository.get_facility_for_update(farmer.id, active_facilities[0][0].id)
                 if facility is None:
                     raise ValueError("Failed to access farmer's active hub.")
 

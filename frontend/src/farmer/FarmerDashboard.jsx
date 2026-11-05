@@ -197,6 +197,7 @@ export default function FarmerDashboard() {
         }
         return nextSummary;
       });
+      loadDashboardData();
     };
 
     const handleCropUpdated = (event) => {
@@ -210,13 +211,56 @@ export default function FarmerDashboard() {
         }
         return next;
       });
+      loadDashboardData();
+    };
+
+    const handleCropDeleted = (event) => {
+      const detail = event.detail;
+      const deletedId = typeof detail === "object" ? detail?.id : detail;
+      if (!deletedId) return;
+
+      setListings((prev) => {
+        const next = prev.filter((i) => String(i.id) !== String(deletedId));
+        const curCache = readDashboardCache();
+        if (curCache) {
+          writeDashboardCache({ ...curCache, listings: next });
+        }
+        return next;
+      });
+
+      setSummary((prev) => {
+        if (!prev) return prev;
+        const deletedListing = detail?.listing;
+        const wasActive =
+          !deletedListing ||
+          String(deletedListing.availability_status || "AVAILABLE").toUpperCase() === "AVAILABLE";
+        const nextSummary = {
+          ...prev,
+          total_listings: Math.max(0, (prev.total_listings || 1) - 1),
+          active_listings: wasActive
+            ? Math.max(0, (prev.active_listings || 1) - 1)
+            : prev.active_listings || 0,
+          inactive_listings: !wasActive
+            ? Math.max(0, (prev.inactive_listings || 1) - 1)
+            : prev.inactive_listings || 0,
+        };
+        const curCache = readDashboardCache();
+        if (curCache) {
+          writeDashboardCache({ ...curCache, summary: nextSummary });
+        }
+        return nextSummary;
+      });
+
+      loadDashboardData();
     };
 
     window.addEventListener("farmer-crop-added", handleCropAdded);
     window.addEventListener("farmer-crop-updated", handleCropUpdated);
+    window.addEventListener("farmer-crop-deleted", handleCropDeleted);
     return () => {
       window.removeEventListener("farmer-crop-added", handleCropAdded);
       window.removeEventListener("farmer-crop-updated", handleCropUpdated);
+      window.removeEventListener("farmer-crop-deleted", handleCropDeleted);
     };
   }, []);
 
@@ -236,10 +280,19 @@ export default function FarmerDashboard() {
     return `${farmName} · ${locString}`;
   }, [profile]);
 
+  // Filter out any deactivated/removed crops defensively so dashboard mirrors My Crops
+  const visibleDashboardListings = useMemo(() => {
+    const base = Array.isArray(listings) ? listings : [];
+    return base.filter((item) => {
+      const st = String(item.availability_status || "AVAILABLE").toUpperCase();
+      return st !== "UNAVAILABLE" && st !== "REMOVED";
+    });
+  }, [listings]);
+
   // Compute metrics from REAL API data
   const metrics = useMemo(() => {
-    const totalListings = summary?.total_listings ?? listings.length;
-    const activeListings = listings.filter(
+    const totalListings = summary?.total_listings ?? visibleDashboardListings.length;
+    const activeListings = visibleDashboardListings.filter(
       (l) => (l.availability_status || "").toUpperCase() === "AVAILABLE"
     );
     const activeCount = summary?.active_listings ?? activeListings.length;
@@ -264,7 +317,7 @@ export default function FarmerDashboard() {
       totalSales,
       pendingOrdersCount,
     };
-  }, [summary, listings, orders]);
+  }, [summary, visibleDashboardListings, orders]);
 
   // Weekly sales chart computed from REAL orders telemetry
   const weeklySalesBars = useMemo(() => {
@@ -296,25 +349,28 @@ export default function FarmerDashboard() {
   const aiCropInsightText = useMemo(() => {
     if (aiData?.quality_assessments && aiData.quality_assessments.length > 0) {
       const scan = aiData.quality_assessments[0];
-      const cropName = scan.crop_name || listings[0]?.crop_name || "produce";
-      const quality = scan.quality_label || "Grade A";
-      const conf = Math.round((scan.confidence || 0.9) * 100);
-      return `Your ${cropName} listing quality verified as ${quality} (${conf}% AI confidence). Verified batches display quality assurance badges to consumers.`;
+      const cropName = scan.crop_name || visibleDashboardListings[0]?.crop_name || "produce";
+      const quality = scan.quality_label;
+      const conf = scan.confidence != null ? Math.round(Number(scan.confidence) * 100) : null;
+      if (quality) {
+        return `Your ${cropName} listing quality verified as ${quality}${conf != null ? ` (${conf}% AI confidence)` : ""}. Verified batches display quality assurance badges to consumers.`;
+      }
+      return `Quality assessment for ${cropName} listing is ${scan.prediction_status || "in progress"}.`;
     }
-    if (listings.length > 0) {
-      return `Your ${listings[0].crop_name} listing is live. Upload harvest photos in Crop Quality AI to verify freshness and get an instant Grade A quality badge.`;
+    if (visibleDashboardListings.length > 0) {
+      return `Your ${visibleDashboardListings[0].crop_name} listing is live. Quality assessment is performed via harvest photos in Crop Quality AI.`;
     }
-    return "No crop quality scans performed yet. Upload harvest photos in Crop Quality AI to verify freshness and get an instant AI cosmetic grade.";
-  }, [aiData, listings]);
+    return "No crop quality scans performed yet. Upload harvest photos in Crop Quality AI to verify freshness.";
+  }, [aiData, visibleDashboardListings]);
 
   // Real Market Price Insights text
   const marketPriceInsightText = useMemo(() => {
-    if (listings.length > 0) {
-      const crop = listings[0];
+    if (visibleDashboardListings.length > 0) {
+      const crop = visibleDashboardListings[0];
       return `${crop.crop_name} is listed at ₹${crop.asking_price}/${crop.unit || "kg"}. Compare your asking rate with live APMC Mandi prices to remain competitive.`;
     }
     return "Add your harvest crop listings to compare asking prices against daily APMC Mandi modal benchmark rates.";
-  }, [listings]);
+  }, [visibleDashboardListings]);
 
   const [activeSlide, setActiveSlide] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -354,15 +410,15 @@ export default function FarmerDashboard() {
         title: "Quality Verification & Mandi Prices",
         subtitle: "Instant MobileNetV2 computer vision grading & daily APMC benchmark modal rates",
         highlight:
-          listings.length > 0
-            ? `Primary Crop: ${listings[0].crop_name} listed at ₹${listings[0].asking_price}/${listings[0].unit || "kg"}`
+          visibleDashboardListings.length > 0
+            ? `Primary Crop: ${visibleDashboardListings[0].crop_name} listed at ₹${visibleDashboardListings[0].asking_price}/${visibleDashboardListings[0].unit || "kg"}`
             : "Upload harvest photos for instant Grade A quality badges and consumer trust",
         ctaText: "Crop Quality AI",
         ctaLink: "/farmer/ai-insights",
         ctaIcon: SvgIcon.ai,
       },
     ],
-    [farmerFirstName, farmSubtitle, metrics, listings]
+    [farmerFirstName, farmSubtitle, metrics, visibleDashboardListings]
   );
 
   useEffect(() => {

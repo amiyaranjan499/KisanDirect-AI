@@ -13,6 +13,7 @@ class AdminDashboardSummaryResponse(BaseModel):
     total_farmers: int
     total_consumers: int
     total_admins: int
+    total_genuine_users: int = 0
     total_listings: int
     active_listings: int
     sold_out_listings: int

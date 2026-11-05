@@ -1629,6 +1629,89 @@
   gap: 10px;
 }
 
+/* Live Operational Feed styles */
+.admin-feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-feed-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--admin-surface, #ffffff);
+  border: 1px solid var(--admin-border, #e5e9e2);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.admin-feed-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #edf8df;
+  color: var(--forest, #1B6B34);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
+.admin-feed-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-feed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.admin-feed-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--admin-text, #1a251d);
+  margin: 0;
+}
+
+.admin-feed-time {
+  font-size: 0.75rem;
+  color: var(--admin-text-muted, #6c757d);
+  white-space: nowrap;
+}
+
+.admin-feed-message {
+  font-size: 0.82rem;
+  color: var(--admin-text-secondary, #495057);
+  margin: 0;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.admin-feed-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--admin-text-muted, #6c757d);
+  background: var(--admin-surface, #ffffff);
+  border: 1px dashed var(--admin-border, #e5e9e2);
+  border-radius: 8px;
+}
+
+.admin-feed-empty i {
+  font-size: 2rem;
+  margin-bottom: 8px;
+  display: block;
+  opacity: 0.6;
+}
+
 .admin-avatar-mini {
   width: 30px;
   height: 30px;

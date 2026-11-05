@@ -217,8 +217,15 @@ export function uploadFarmerCoverImage(image) {
   return request("/api/v1/farmers/me/cover-image", { method: "POST", body, headers: {} });
 }
 
-export function listMyFarmerListings() {
-  return request("/api/v1/farmers/me/listings");
+export function listMyFarmerListings(params = {}) {
+  const query = new URLSearchParams();
+  if (params.limit != null) query.append("limit", params.limit);
+  if (params.offset != null) query.append("offset", params.offset);
+  if (params.exclude_unavailable != null) query.append("exclude_unavailable", params.exclude_unavailable);
+  if (params.search) query.append("search", params.search);
+  if (params.status) query.append("status", params.status);
+  const qs = query.toString();
+  return request(`/api/v1/farmers/me/listings${qs ? `?${qs}` : ""}`);
 }
 
 export function getFarmerListing(listingId) {
@@ -336,8 +343,43 @@ export function createQualityPrediction(listingId, image) {
   });
 }
 
+export function analyzeCropQuality(image) {
+  const body = new FormData();
+  body.append("image", image);
+  return request("/api/v1/ai/quality/analyze", {
+    method: "POST",
+    body,
+    headers: {},
+  });
+}
+
 export function createPricePrediction(listingId, payload) {
   return request(`/api/v1/ai/price/predict?listing_id=${encodeURIComponent(listingId)}`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function classifyCropImage(image) {
+  const body = new FormData();
+  body.append("image", image);
+  return request("/api/v1/ai/crop/classify", {
+    method: "POST",
+    body,
+    headers: {},
+  });
+}
+
+export function getLatestMarketPrice(crop, state, district) {
+  const params = new URLSearchParams();
+  if (crop) params.append("crop", crop);
+  if (state) params.append("state", state);
+  if (district) params.append("district", district);
+  return request(`/api/v1/market-prices/latest?${params.toString()}`);
+}
+
+export function estimateFairPrice(payload) {
+  return request("/api/v1/ai/price/estimate", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -576,6 +618,12 @@ export function updateFarmerFacility(facilityId, payload) {
   });
 }
 
+export function deleteFarmerFacility(facilityId) {
+  return request(`/api/v1/farmers/me/facilities/${facilityId}`, {
+    method: "DELETE",
+  });
+}
+
 export function listFarmerStaff(facilityId) {
   const query = facilityId ? `?facility_id=${encodeURIComponent(facilityId)}` : "";
   return request(`/api/v1/farmers/me/staff${query}`);
@@ -601,9 +649,10 @@ export function assignFarmerOrderStaff(orderId, payload = {}) {
   });
 }
 
-export function sendFarmerOrderToHub(orderId) {
+export function sendFarmerOrderToHub(orderId, payload = {}) {
   return request(`/api/v1/farmers/me/orders/${orderId}/send-to-hub`, {
     method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 

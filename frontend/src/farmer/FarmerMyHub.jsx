@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   listFarmerFacilities,
   createFarmerFacility,
   updateFarmerFacility,
+  deleteFarmerFacility,
 } from "../services/api";
 import { detectRealLocation } from "../services/locationService";
 import "./farmer-operations.css";
@@ -32,6 +32,8 @@ export default function FarmerMyHub() {
   const [editForm, setEditForm] = useState(emptyHubForm);
   const [savingHub, setSavingHub] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [deleteConfirmHub, setDeleteConfirmHub] = useState(null);
+  const [deletingHub, setDeletingHub] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -153,6 +155,26 @@ export default function FarmerMyHub() {
       setError(err.message || "Failed to update hub.");
     } finally {
       setSavingHub(false);
+    }
+  };
+
+  const handleDeleteHub = async () => {
+    if (!deleteConfirmHub) return;
+    setDeletingHub(true);
+    setError("");
+    setSuccess("");
+    try {
+      await deleteFarmerFacility(deleteConfirmHub.id);
+      const hubName = deleteConfirmHub.name;
+      setDeleteConfirmHub(null);
+      setFacilities((prev) => prev.filter((f) => f.id !== deleteConfirmHub.id));
+      setSuccess(`Hub "${hubName}" deleted successfully.`);
+      await loadData();
+    } catch (err) {
+      setError(err.message || "Failed to delete hub. Please check for active dependencies.");
+      setDeleteConfirmHub(null);
+    } finally {
+      setDeletingHub(false);
     }
   };
 
@@ -387,6 +409,16 @@ export default function FarmerMyHub() {
                   >
                     <i className="bi bi-pencil me-1" /> Edit Hub
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirmHub(hub)}
+                    className="btn btn-sm btn-outline-danger"
+                    title="Delete Hub"
+                    aria-label={`Delete ${hub.name}`}
+                    style={{ fontSize: "12.5px", fontWeight: 600, padding: "5px 10px", borderRadius: "8px" }}
+                  >
+                    <i className="bi bi-trash3" />
+                  </button>
                 </div>
               </div>
 
@@ -479,7 +511,7 @@ export default function FarmerMyHub() {
                 </div>
               </div>
 
-              {/* Hub Card Quick Operational Actions Footer */}
+              {/* Hub Card Information Footer */}
               <div
                 style={{
                   background: "#FAF7EF",
@@ -495,46 +527,9 @@ export default function FarmerMyHub() {
                 <div style={{ fontSize: "0.82rem", color: "var(--farmer-muted, #65766e)" }}>
                   <i className="bi bi-info-circle me-1" /> Consumers browse and order stock supplied directly to this hub.
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                  <Link to="/farmer/hub-supply" className="kisan-btn-accent kisan-btn-sm">
-                    <i className="bi bi-box-arrow-in-down me-1" /> Supply Produce
-                  </Link>
-                  <Link to="/farmer/staff" className="kisan-btn-outline kisan-btn-sm">
-                    <i className="bi bi-people me-1" /> Manage Staff
-                  </Link>
-                  <Link
-                    to="/farmer/dispatch"
-                    className="btn btn-sm btn-outline-success"
-                    style={{ fontSize: "12.5px", fontWeight: 600, borderRadius: "6px", padding: "6px 12px" }}
-                  >
-                    <i className="bi bi-truck me-1" /> Dispatch Tracking
-                  </Link>
-                </div>
               </div>
             </div>
           ))}
-
-          {/* Add Another Hub Button */}
-          <button
-            type="button"
-            onClick={() => {
-              setCreateForm(emptyHubForm);
-              setShowCreateModal(true);
-            }}
-            className="w-100 py-3 d-flex align-items-center justify-content-center gap-2"
-            style={{
-              background: "#FAF8F3",
-              border: "1.5px dashed #C0B7A5",
-              borderRadius: "14px",
-              color: "var(--farmer-forest, #073a26)",
-              fontWeight: 700,
-              fontSize: "14px",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-            }}
-          >
-            <i className="bi bi-plus-circle-fill text-success" /> Add Another Storage Hub
-          </button>
         </div>
       )}
 
@@ -835,6 +830,72 @@ export default function FarmerMyHub() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* ==========================================================================
+         DELETE HUB CONFIRMATION MODAL
+         ========================================================================== */}
+      {deleteConfirmHub && (
+        <div className="farmer-modal-backdrop" onClick={() => !deletingHub && setDeleteConfirmHub(null)}>
+          <div className="farmer-modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "460px" }}>
+            <div className="farmer-modal-header" style={{ padding: "16px 20px" }}>
+              <h3 style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", color: "var(--farmer-danger, #c53929)", margin: 0, fontSize: "18px" }}>
+                <i className="bi bi-exclamation-triangle-fill me-2 text-danger" />
+                Delete Hub Facility
+              </h3>
+              <button
+                type="button"
+                className="btn-close"
+                disabled={deletingHub}
+                onClick={() => setDeleteConfirmHub(null)}
+                aria-label="Close"
+              />
+            </div>
+            <div className="farmer-modal-body" style={{ padding: "18px 20px" }}>
+              <p style={{ fontSize: "14px", color: "var(--farmer-ink, #183229)", marginBottom: "12px" }}>
+                Are you sure you want to permanently delete <strong>{deleteConfirmHub.name}</strong>?
+              </p>
+              <div
+                style={{
+                  background: "#FDF2F0",
+                  border: "1px solid #F28B82",
+                  borderRadius: "8px",
+                  padding: "10px 14px",
+                  fontSize: "12.5px",
+                  color: "#C53929",
+                }}
+              >
+                <i className="bi bi-info-circle me-1" />
+                This action cannot be undone. Hubs with assigned staff, active inventory, or pending orders cannot be deleted until dependencies are cleared.
+              </div>
+            </div>
+            <div className="farmer-modal-footer" style={{ padding: "14px 20px", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                disabled={deletingHub}
+                onClick={() => setDeleteConfirmHub(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-danger d-inline-flex align-items-center gap-1"
+                disabled={deletingHub}
+                onClick={handleDeleteHub}
+              >
+                {deletingHub ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm" role="status" /> Deleting...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-trash3 me-1" /> Delete Hub
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -164,13 +164,6 @@ export default function AdminHubsPage() {
       render: (h) => `${h.service_radius_km} km`,
     },
     {
-      key: "stock",
-      label: "Active Stock",
-      render: (h) => (
-        <span>{Array.isArray(h.stock) ? `${h.stock.length} crop types` : "0 items"}</span>
-      ),
-    },
-    {
       key: "status",
       label: "Operational State",
       sortable: true,

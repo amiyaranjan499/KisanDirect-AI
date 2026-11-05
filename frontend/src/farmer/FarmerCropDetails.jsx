@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
+  analyzeCropQuality,
+  createQualityPrediction,
   deleteFarmerListing,
   getFarmerListing,
   listMyFarmerListings,
@@ -43,99 +45,74 @@ const resolveCropHeroImage = (item) => {
 };
 
 function resolveCropQuality(item) {
-  const rawLabel = item?.ai_quality_label || item?.quality_label || item?.quality || null;
-  const gradeFromItem = item?.quality_grade || null;
+  const rawLabel =
+    item?.ai_quality_label ||
+    item?.quality_label ||
+    item?.quality ||
+    item?.quality_information ||
+    item?.quality_grade ||
+    null;
 
-  let grade = null;
-  let label = rawLabel;
-  let description = item?.quality_information || "";
-  const confidence = item?.ai_quality_confidence != null ? item.ai_quality_confidence : null;
-
-  if (gradeFromItem) {
-    grade = gradeFromItem;
-  } else if (rawLabel) {
-    const l = String(rawLabel).toLowerCase();
+  let quality = "Unassessed";
+  if (rawLabel) {
+    const l = String(rawLabel).toLowerCase().trim();
     if (l === "good" || l.includes("grade a")) {
-      grade = "Grade A";
-      label = "Good";
+      quality = "Good";
     } else if (l === "average" || l.includes("grade b")) {
-      grade = "Grade B";
-      label = "Average";
+      quality = "Average";
     } else if (l === "poor" || l.includes("grade c")) {
-      grade = "Grade C";
-      label = "Poor";
-    } else {
-      grade = rawLabel;
-    }
-  }
-
-  if (!description) {
-    if (grade === "Grade A") {
-      description =
-        "Produce displays vibrant color, optimal firmness, and uniform shape with negligible blemishes. Meets Grade A premium market specifications.";
-    } else if (grade === "Grade B") {
-      description =
-        "Produce shows moderate visual appeal with minor cosmetic variations or slight surface imperfections. Meets Grade B standard market specifications.";
-    } else if (grade === "Grade C") {
-      description =
-        "Produce exhibits noticeable surface blemishes, discoloration, or bruising. Commercial grade suitable for processing or discount sorting.";
-    } else {
-      description = "Quality assessment pending harvest photo verification.";
+      quality = "Poor";
     }
   }
 
   return {
-    grade: grade || "Unassessed",
-    label: label || "Pending",
-    description,
-    confidence: confidence != null ? `${Math.round(Number(confidence) * 100)}%` : null,
-    isAssessed: Boolean(grade && grade !== "Unassessed"),
+    quality,
     badgeClass:
-      grade === "Grade A"
+      quality === "Good"
         ? "badge-sage"
-        : grade === "Grade B"
+        : quality === "Average"
         ? "badge-warning"
-        : grade === "Grade C"
+        : quality === "Poor"
         ? "badge-danger"
         : "badge-neutral",
   };
 }
 
-const CROP_CACHE_KEY = "kd_farmer_crops_cache";
-const PAGE_SIZE = 12;
-
-const readCropsCache = () => {
-  try {
-    const raw = sessionStorage.getItem(CROP_CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-};
-
-const writeCropsCache = (data) => {
-  try {
-    sessionStorage.setItem(CROP_CACHE_KEY, JSON.stringify(data));
-  } catch {
-    // storage disabled
-  }
-};
+const PAGE_SIZE = 5;
 
 export default function FarmerCropDetails({ onBack }) {
   const navigate = useNavigate();
   const { id: paramId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const CROP_CACHE_KEY = "kd_farmer_crops_cache";
+
   // All hook states declared unconditionally at top level
-  const [listings, setListings] = useState(() => readCropsCache());
-  const [loading, setLoading] = useState(!readCropsCache());
+  const [listings, setListings] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem(CROP_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const arr = Array.isArray(parsed) ? parsed : parsed?.items || [];
+        if (arr.length > 0) return arr;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [stats, setStats] = useState({ total: 0, active: 0, sold: 0 });
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
 
   const [selectedListingId, setSelectedListingId] = useState(null);
+  const [directCrop, setDirectCrop] = useState(null);
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
 
@@ -149,11 +126,47 @@ export default function FarmerCropDetails({ onBack }) {
     availability_status: "AVAILABLE",
   });
 
-  const loadListings = async () => {
+  const loadListings = async (
+    pageToLoad = currentPage,
+    currentFilter = filter,
+    currentSearch = debouncedSearch
+  ) => {
     try {
-      const data = await listMyFarmerListings();
-      setListings(data);
-      writeCropsCache(data);
+      setLoading(true);
+      setError("");
+      const params = {
+        limit: PAGE_SIZE,
+        offset: (pageToLoad - 1) * PAGE_SIZE,
+        exclude_unavailable: true,
+      };
+      if (currentFilter !== "all") {
+        params.status = currentFilter;
+      }
+      const trimmedSearch = (currentSearch || "").trim();
+      if (trimmedSearch) {
+        params.search = trimmedSearch;
+      }
+      const data = await listMyFarmerListings(params);
+      let items = [];
+      if (Array.isArray(data)) {
+        items = data;
+        setListings(data);
+        setTotalRecords(data.length);
+      } else {
+        items = data.items || [];
+        setListings(items);
+        setTotalRecords(data.total || 0);
+        if (data.stats) {
+          setStats(data.stats);
+        }
+      }
+      try {
+        if (items.length > 0 && currentFilter === "all" && !trimmedSearch) {
+          sessionStorage.setItem(CROP_CACHE_KEY, JSON.stringify(items));
+        }
+      } catch {
+        // storage disabled
+      }
     } catch (requestError) {
       setError(requestError.message || "Unable to load listings.");
     } finally {
@@ -161,73 +174,84 @@ export default function FarmerCropDetails({ onBack }) {
     }
   };
 
+  // Search input debounce (250ms)
   useEffect(() => {
-    loadListings();
-  }, []);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Reset page when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, debouncedSearch]);
+
+  // Load paginated listings on page, filter, or debounced search change
+  useEffect(() => {
+    loadListings(currentPage, filter, debouncedSearch);
+  }, [currentPage, filter, debouncedSearch]);
 
   // Real-time synchronization across pages and background updates
   useEffect(() => {
     const handleCropAdded = (event) => {
-      const newCrop = event.detail;
-      if (!newCrop) return;
-      setListings((prev) => {
-        const base = Array.isArray(prev) ? prev : prev?.items || [];
-        const next = [newCrop, ...base.filter((i) => i.id !== newCrop.id)];
-        writeCropsCache(next);
-        return next;
-      });
+      const newCrop = event?.detail;
+      if (newCrop) {
+        setListings((prev) => {
+          const list = Array.isArray(prev) ? prev : prev?.items || [];
+          const filtered = list.filter((c) => String(c.id) !== String(newCrop.id));
+          const updated = [newCrop, ...filtered];
+          try {
+            sessionStorage.setItem(CROP_CACHE_KEY, JSON.stringify(updated));
+          } catch {
+            // storage disabled
+          }
+          return updated;
+        });
+        setTotalRecords((t) => t + 1);
+      }
+      setCurrentPage(1);
+      loadListings(1, filter, debouncedSearch);
     };
 
-    const handleCropUpdated = (event) => {
-      const updated = event.detail;
-      if (!updated) return;
-      setListings((prev) => {
-        const base = Array.isArray(prev) ? prev : prev?.items || [];
-        const next = base.map((i) => (i.id === updated.id ? { ...i, ...updated } : i));
-        writeCropsCache(next);
-        return next;
-      });
+    const handleCropUpdated = () => {
+      loadListings(currentPage, filter, debouncedSearch);
+    };
+
+    const handleCropDeleted = () => {
+      setCurrentPage(1);
+      loadListings(1, filter, debouncedSearch);
     };
 
     window.addEventListener("farmer-crop-added", handleCropAdded);
     window.addEventListener("farmer-crop-updated", handleCropUpdated);
+    window.addEventListener("farmer-crop-deleted", handleCropDeleted);
     return () => {
       window.removeEventListener("farmer-crop-added", handleCropAdded);
       window.removeEventListener("farmer-crop-updated", handleCropUpdated);
+      window.removeEventListener("farmer-crop-deleted", handleCropDeleted);
     };
-  }, []);
-
-  // Reset page when search or filter changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, filter]);
+  }, [currentPage, filter, debouncedSearch]);
 
   // Determine active listing ID and mode
   const activeId = paramId || searchParams.get("view") || searchParams.get("edit") || selectedListingId;
   const isEditMode = Boolean(searchParams.get("edit") || searchParams.get("mode") === "edit");
   const isViewMode = Boolean(activeId && !isEditMode);
 
-  // Active listing resolution
+  // Active listing resolution: check directCrop first, then listings
   const activeListing = useMemo(() => {
-    if (!activeId || !listings) return null;
+    if (!activeId) return null;
+    if (directCrop && String(directCrop.id) === String(activeId)) return directCrop;
     const base = Array.isArray(listings) ? listings : listings?.items || [];
     return base.find((item) => String(item.id) === String(activeId)) || null;
-  }, [activeId, listings]);
+  }, [activeId, directCrop, listings]);
 
   // Fetch individual crop listing directly if navigating straight to /farmer/crops/:id
   useEffect(() => {
     if (activeId && !activeListing) {
       getFarmerListing(activeId)
         .then((data) => {
-          if (data) {
-            setListings((prev) => {
-              const base = Array.isArray(prev) ? prev : prev?.items || [];
-              if (base.some((i) => String(i.id) === String(data.id))) return prev;
-              const next = [data, ...base];
-              writeCropsCache(next);
-              return next;
-            });
-          }
+          if (data) setDirectCrop(data);
         })
         .catch(() => {});
     }
@@ -250,59 +274,84 @@ export default function FarmerCropDetails({ onBack }) {
     }
   }, [activeListing, isEditMode]);
 
-  // Visible listings for farmer: exclude deactivated/removed items (UNAVAILABLE)
-  const visibleListings = useMemo(() => {
-    const base = Array.isArray(listings) ? listings : listings?.items || [];
-    return base.filter((item) => {
-      const st = String(item.availability_status || "AVAILABLE").toUpperCase();
-      return st !== "UNAVAILABLE" && st !== "REMOVED";
-    });
-  }, [listings]);
+  const totalPages = Math.max(1, Math.ceil(totalRecords / PAGE_SIZE));
+  const startRecord = totalRecords === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const endRecord = Math.min(currentPage * PAGE_SIZE, totalRecords);
 
-  // Statistics derived directly from real database listings
-  const stats = useMemo(() => {
-    const total = visibleListings.length;
-    const active = visibleListings.filter(
-      (i) => String(i.availability_status || "AVAILABLE").toUpperCase() === "AVAILABLE"
-    ).length;
-    const sold = visibleListings.filter((i) => {
-      const st = String(i.availability_status || "").toUpperCase();
-      return st === "SOLD_OUT" || st === "SOLD";
-    }).length;
-    return { total, active, sold };
-  }, [visibleListings]);
-
-  // Filter & search logic for the listings grid
-  const filteredItems = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return visibleListings.filter((item) => {
-      const st = String(item.availability_status || "AVAILABLE").toUpperCase();
-      const isAvailable = st === "AVAILABLE";
-      const isSold = st === "SOLD_OUT" || st === "SOLD";
-
-      const matchesFilter =
-        filter === "all" ? true : filter === "active" ? isAvailable : isSold;
-
-      const haystack = `${item.crop_name || ""} ${item.crop_category || ""}`.toLowerCase();
-      return matchesFilter && (!query || haystack.includes(query));
-    });
-  }, [filter, visibleListings, search]);
-
-  const totalPages = Math.ceil(filteredItems.length / PAGE_SIZE) || 1;
-  const paginatedItems = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return filteredItems.slice(start, start + PAGE_SIZE);
-  }, [filteredItems, currentPage]);
+  const [isEvaluatingQuality, setIsEvaluatingQuality] = useState(false);
 
   // Navigation handlers
   const handleOpenView = (item) => {
+    setDirectCrop(item);
     setSelectedListingId(item.id);
     setError("");
     setSuccessMsg("");
-    setSearchParams({ view: item.id });
+    navigate(`/farmer/crops/${item.id}`);
+  };
+
+  const handleUpdateQuality = async () => {
+    if (!activeListing || isEvaluatingQuality) return;
+    const imgUrl = resolveCropHeroImage(activeListing);
+    if (!imgUrl) {
+      setError("No crop image found to assess quality.");
+      return;
+    }
+
+    try {
+      setIsEvaluatingQuality(true);
+      setError("");
+      setSuccessMsg("");
+      const res = await fetch(imgUrl);
+      const blob = await res.blob();
+      const file = new File([blob], `${activeListing.crop_name || "crop"}.jpg`, {
+        type: blob.type || "image/jpeg",
+      });
+
+      let updatedQuality = "Average";
+      try {
+        const pred = await createQualityPrediction(activeListing.id, file);
+        if (pred && pred.quality_label) {
+          const rawL = String(pred.quality_label).toLowerCase();
+          if (rawL === "good" || rawL.includes("grade a")) updatedQuality = "Good";
+          else if (rawL === "average" || rawL.includes("grade b")) updatedQuality = "Average";
+          else if (rawL === "poor" || rawL.includes("grade c")) updatedQuality = "Poor";
+        }
+      } catch (predErr) {
+        console.warn("createQualityPrediction fallback:", predErr);
+        const directPred = await analyzeCropQuality(file);
+        if (directPred && directPred.quality_label) {
+          const rawL = String(directPred.quality_label).toLowerCase();
+          if (rawL === "good" || rawL.includes("grade a")) updatedQuality = "Good";
+          else if (rawL === "average" || rawL.includes("grade b")) updatedQuality = "Average";
+          else if (rawL === "poor" || rawL.includes("grade c")) updatedQuality = "Poor";
+        }
+        await updateFarmerListing(activeListing.id, { quality_information: updatedQuality });
+      }
+
+      const updatedItem = {
+        ...activeListing,
+        quality: updatedQuality,
+        quality_label: updatedQuality,
+        ai_quality_label: updatedQuality,
+        quality_grade: updatedQuality,
+        quality_information: updatedQuality,
+      };
+      setDirectCrop(updatedItem);
+      setListings((prev) => {
+        const list = Array.isArray(prev) ? prev : prev?.items || [];
+        return list.map((item) => (String(item.id) === String(activeListing.id) ? updatedItem : item));
+      });
+      setSuccessMsg(`Quality updated: ${updatedQuality}`);
+      window.dispatchEvent(new CustomEvent("farmer-crop-updated", { detail: updatedItem }));
+    } catch (err) {
+      setError(err.message || "Failed to update crop quality.");
+    } finally {
+      setIsEvaluatingQuality(false);
+    }
   };
 
   const handleOpenEdit = (item) => {
+    setDirectCrop(item);
     setSelectedListingId(item.id);
     setError("");
     setSuccessMsg("");
@@ -322,12 +371,14 @@ export default function FarmerCropDetails({ onBack }) {
 
   const handleBackToListings = () => {
     setSelectedListingId(null);
+    setDirectCrop(null);
     setError("");
     setSuccessMsg("");
     setSearchParams({});
     if (paramId) {
       navigate("/farmer/crops");
     }
+    loadListings(currentPage, filter, debouncedSearch);
   };
 
   const handleSwitchToEdit = () => {
@@ -389,17 +440,17 @@ export default function FarmerCropDetails({ onBack }) {
       };
 
       const updated = await updateFarmerListing(activeListing.id, payload);
-
-      setListings((prev) => {
-        const list = Array.isArray(prev) ? prev : prev?.items || [];
-        const next = list.map((item) => (item.id === activeListing.id ? { ...item, ...updated } : item));
-        writeCropsCache(next);
-        return next;
-      });
+      setDirectCrop(updated);
+      try {
+        sessionStorage.removeItem("kd_farmer_dashboard_cache");
+      } catch {
+        // storage disabled
+      }
       window.dispatchEvent(new CustomEvent("farmer-crop-updated", { detail: updated }));
 
       setSuccessMsg(`Crop listing "${updated.crop_name || name}" updated successfully.`);
       setSearchParams({ view: activeListing.id });
+      loadListings(currentPage, filter, debouncedSearch);
     } catch (err) {
       setError(err.message || "Failed to update listing.");
     } finally {
@@ -417,15 +468,22 @@ export default function FarmerCropDetails({ onBack }) {
       setError("");
       await deleteFarmerListing(activeListing.id);
 
-      setListings((prev) => {
-        const list = Array.isArray(prev) ? prev : prev?.items || [];
-        const next = list.filter((item) => item.id !== activeListing.id);
-        writeCropsCache(next);
-        return next;
-      });
+      try {
+        sessionStorage.removeItem("kd_farmer_dashboard_cache");
+      } catch {
+        // storage disabled
+      }
+
+      window.dispatchEvent(
+        new CustomEvent("farmer-crop-deleted", {
+          detail: { id: activeListing.id, listing: activeListing },
+        })
+      );
 
       setSuccessMsg(`Crop "${activeListing.crop_name}" removed from your listings.`);
       handleBackToListings();
+      setCurrentPage(1);
+      loadListings(1, filter, debouncedSearch);
     } catch (err) {
       setError(err.message || "Failed to remove listing.");
     } finally {
@@ -505,8 +563,10 @@ export default function FarmerCropDetails({ onBack }) {
               borderBottom: "1px solid var(--farmer-border, #e0d8c8)",
             }}
           >
-            {/* Small Neatly Sized Image (150px x 130px, not oversized) */}
+            {/* Small Neatly Sized Image (150px x 130px, clickable to update quality) */}
             <div
+              onClick={handleUpdateQuality}
+              title="Click photo to assess or update crop quality"
               style={{
                 width: "150px",
                 height: "130px",
@@ -519,6 +579,7 @@ export default function FarmerCropDetails({ onBack }) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                cursor: "pointer",
               }}
             >
               {heroImage ? (
@@ -550,6 +611,23 @@ export default function FarmerCropDetails({ onBack }) {
                 <CropsIcon size={32} />
                 <span>No photo</span>
               </div>
+              {isEvaluatingQuality && (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background: "rgba(0,0,0,0.5)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#FFFFFF",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                  }}
+                >
+                  Assessing...
+                </div>
+              )}
             </div>
 
             {/* Header Titles and Status */}
@@ -572,8 +650,9 @@ export default function FarmerCropDetails({ onBack }) {
                       fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
                       fontSize: "24px",
                       fontWeight: 700,
-                      color: "var(--farmer-forest, #073a26)",
+                      color: "var(--forest, #1B6B34)",
                       margin: "2px 0 6px 0",
+                      letterSpacing: "-0.01em",
                     }}
                   >
                     {isEditMode ? `Edit ${activeListing.crop_name}` : activeListing.crop_name}
@@ -612,15 +691,25 @@ export default function FarmerCropDetails({ onBack }) {
                 </span>
               </div>
 
-              {/* AI Quality Badge */}
-              <div style={{ marginTop: "10px" }}>
+              {/* Quality Badge and Action */}
+              <div style={{ marginTop: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
                 <span
                   className={`badge ${qualityInfo.badgeClass}`}
-                  style={{ fontSize: "12px", padding: "4px 10px", fontWeight: 700 }}
+                  style={{ fontSize: "12px", padding: "4px 10px", fontWeight: 700, cursor: "pointer" }}
+                  onClick={handleUpdateQuality}
+                  title="Click to assess or update crop quality"
                 >
-                  AI {qualityInfo.grade}
-                  {qualityInfo.confidence ? ` (${qualityInfo.confidence})` : ""}
+                  {qualityInfo.quality}
                 </span>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-success"
+                  onClick={handleUpdateQuality}
+                  disabled={isEvaluatingQuality}
+                  style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "6px" }}
+                >
+                  {isEvaluatingQuality ? "Assessing..." : "Update Quality"}
+                </button>
               </div>
             </div>
           </div>
@@ -628,8 +717,22 @@ export default function FarmerCropDetails({ onBack }) {
           {/* --- VIEW MODE --- */}
           {!isEditMode ? (
             <div>
-              {/* Detailed Key-Values */}
+              {/* Detailed Key-Values: strictly Crop Name | Category | Price | Available Quantity | Asking Price | Quality | Listing Status | Harvest Date */}
               <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
+                <div className="kv" style={{ padding: "8px 0", borderBottom: "1px solid #f0ece1" }}>
+                  <span style={{ color: "var(--farmer-muted, #65766e)", fontSize: "13.5px" }}>Crop Name</span>
+                  <b style={{ color: "var(--ink, #1C1C16)", fontSize: "14px" }}>{activeListing.crop_name}</b>
+                </div>
+                <div className="kv" style={{ padding: "8px 0", borderBottom: "1px solid #f0ece1" }}>
+                  <span style={{ color: "var(--farmer-muted, #65766e)", fontSize: "13.5px" }}>Category</span>
+                  <b style={{ color: "var(--ink, #1C1C16)", fontSize: "14px" }}>{activeListing.crop_category || "Vegetables"}</b>
+                </div>
+                <div className="kv" style={{ padding: "8px 0", borderBottom: "1px solid #f0ece1" }}>
+                  <span style={{ color: "var(--farmer-muted, #65766e)", fontSize: "13.5px" }}>Price</span>
+                  <b style={{ color: "var(--farmer-forest, #073a26)", fontSize: "15px", fontWeight: 700 }}>
+                    ₹{Number(activeListing.asking_price).toFixed(0)} / {activeListing.unit || "kg"}
+                  </b>
+                </div>
                 <div className="kv" style={{ padding: "8px 0", borderBottom: "1px solid #f0ece1" }}>
                   <span style={{ color: "var(--farmer-muted, #65766e)", fontSize: "13.5px" }}>Available Quantity</span>
                   <b style={{ color: "var(--ink, #1C1C16)", fontSize: "14px" }}>
@@ -643,52 +746,32 @@ export default function FarmerCropDetails({ onBack }) {
                   </b>
                 </div>
                 <div className="kv" style={{ padding: "8px 0", borderBottom: "1px solid #f0ece1" }}>
+                  <span style={{ color: "var(--farmer-muted, #65766e)", fontSize: "13.5px" }}>Quality</span>
+                  <span
+                    className={`badge ${qualityInfo.badgeClass}`}
+                    style={{ fontSize: "12px", padding: "4px 10px", fontWeight: 700, cursor: "pointer" }}
+                    onClick={handleUpdateQuality}
+                    title="Click to assess or update crop quality"
+                  >
+                    {qualityInfo.quality}
+                  </span>
+                </div>
+                <div className="kv" style={{ padding: "8px 0", borderBottom: "1px solid #f0ece1" }}>
                   <span style={{ color: "var(--farmer-muted, #65766e)", fontSize: "13.5px" }}>Listing Status</span>
                   <b style={{ color: "var(--ink, #1C1C16)", fontSize: "14px" }}>{statusLabel}</b>
                 </div>
                 <div className="kv" style={{ padding: "8px 0", borderBottom: "1px solid #f0ece1" }}>
-                  <span style={{ color: "var(--farmer-muted, #65766e)", fontSize: "13.5px" }}>AI Quality Grade</span>
-                  <b style={{ color: "var(--farmer-forest, #073a26)", fontSize: "14px" }}>
-                    {qualityInfo.grade}
-                    {qualityInfo.confidence ? ` (Confidence: ${qualityInfo.confidence})` : ""}
+                  <span style={{ color: "var(--farmer-muted, #65766e)", fontSize: "13.5px" }}>Harvest Date</span>
+                  <b style={{ color: "var(--ink, #1C1C16)", fontSize: "14px" }}>
+                    {activeListing.harvest_date
+                      ? new Date(activeListing.harvest_date).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })
+                      : "Not specified"}
                   </b>
                 </div>
-                {activeListing.harvest_date ? (
-                  <div className="kv" style={{ padding: "8px 0", borderBottom: "1px solid #f0ece1" }}>
-                    <span style={{ color: "var(--farmer-muted, #65766e)", fontSize: "13.5px" }}>Harvest Date</span>
-                    <b style={{ color: "var(--ink, #1C1C16)", fontSize: "14px" }}>
-                      {new Date(activeListing.harvest_date).toLocaleDateString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </b>
-                  </div>
-                ) : null}
-              </div>
-
-              {/* AI Quality Assessment Information Card */}
-              <div
-                style={{
-                  background: "var(--farmer-cream, #f7f4ec)",
-                  border: "1px solid var(--farmer-border, #e0d8c8)",
-                  borderRadius: "10px",
-                  padding: "16px 18px",
-                  marginBottom: "24px",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                  <i className="bi bi-patch-check-fill text-success" style={{ fontSize: "16px" }} />
-                  <b style={{ color: "var(--farmer-forest, #073a26)", fontSize: "14px" }}>
-                    AI Quality Assessment
-                  </b>
-                  <span className="badge bg-success-subtle text-success-emphasis border px-2 py-0" style={{ fontSize: "11px", borderRadius: "4px" }}>
-                    MobileNetV2 Inference
-                  </span>
-                </div>
-                <p style={{ fontSize: "13px", color: "var(--ink, #1C1C16)", margin: 0, lineHeight: 1.55 }}>
-                  {qualityInfo.description}
-                </p>
               </div>
 
               {/* View Actions: Edit Listing and Remove */}
@@ -976,12 +1059,14 @@ export default function FarmerCropDetails({ onBack }) {
             HARVEST INVENTORY
           </span>
           <h1
+            className="farmer-page-title"
             style={{
               fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
-              fontSize: "28px",
+              fontSize: "26px",
               fontWeight: 700,
-              color: "var(--farmer-forest, #073a26)",
+              color: "var(--forest, #1B6B34)",
               margin: "2px 0 6px 0",
+              letterSpacing: "-0.01em",
             }}
           >
             My Crops
@@ -1167,9 +1252,9 @@ export default function FarmerCropDetails({ onBack }) {
       </div>
 
       {/* 5. Compact Crop Cards Grid: At least 4 cards per row on desktop */}
-      {loading && !listings ? (
+      {loading && !listings.length ? (
         <div className="farmer-crops-desktop-grid">
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((idx) => (
+          {[1, 2, 3, 4, 5].map((idx) => (
             <div className="card farmer-crop-card farmer-skeleton-card" key={idx} style={{ background: "#FFFFFF", borderRadius: "12px", border: "1px solid #e0d8c8", overflow: "hidden" }}>
               <div className="farmer-skeleton-shimmer" style={{ height: "110px", width: "100%" }} />
               <div className="card-pad" style={{ padding: "10px 12px" }}>
@@ -1184,10 +1269,10 @@ export default function FarmerCropDetails({ onBack }) {
             </div>
           ))}
         </div>
-      ) : filteredItems.length ? (
+      ) : listings.length ? (
         <>
           <div className="farmer-crops-desktop-grid">
-            {paginatedItems.map((item) => {
+            {listings.map((item) => {
               const isAvailable =
                 String(item.availability_status || "AVAILABLE").toUpperCase() === "AVAILABLE";
               const statusBadge = isAvailable
@@ -1264,7 +1349,7 @@ export default function FarmerCropDetails({ onBack }) {
                       <span>No photo</span>
                     </div>
 
-                    {/* AI Quality badge overlay */}
+                    {/* Quality badge overlay */}
                     <div
                       style={{
                         position: "absolute",
@@ -1281,7 +1366,7 @@ export default function FarmerCropDetails({ onBack }) {
                           boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
                         }}
                       >
-                        {qualityInfo.grade}
+                        {qualityInfo.quality}
                       </span>
                     </div>
                   </div>
@@ -1436,48 +1521,66 @@ export default function FarmerCropDetails({ onBack }) {
             })}
           </div>
 
-          {totalPages > 1 ? (
-            <div className="farmer-pagination" style={{ marginTop: "20px" }}>
-              <div className="farmer-pagination-info" style={{ color: "var(--farmer-muted, #65766e)", fontSize: "13px" }}>
-                Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredItems.length)} of {filteredItems.length} crops
-              </div>
-              <div className="farmer-pagination-controls">
-                <button
-                  type="button"
-                  className="farmer-pagination-btn"
-                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                  disabled={currentPage <= 1}
-                  aria-label="Previous page"
-                >
-                  <i className="bi bi-chevron-left" /> Prev
-                </button>
-                <span className="farmer-pagination-current" style={{ fontWeight: 600, color: "var(--farmer-forest, #073a26)" }}>
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button
-                  type="button"
-                  className="farmer-pagination-btn"
-                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-                  disabled={currentPage >= totalPages}
-                  aria-label="Next page"
-                >
-                  Next <i className="bi bi-chevron-right" />
-                </button>
-              </div>
+          {/* Pagination Footer matching Admin Listings design */}
+          <div
+            className="admin-pagination-bar"
+            style={{
+              marginTop: "20px",
+              background: "#FFFFFF",
+              border: "1px solid var(--farmer-border, #e0d8c8)",
+              borderRadius: "12px",
+              padding: "12px 18px",
+            }}
+          >
+            <div className="admin-pagination-info">
+              Showing <b>{startRecord}</b> to <b>{endRecord}</b> of <b>{totalRecords}</b> records
             </div>
-          ) : null}
+
+            <div className="admin-pagination-controls">
+              <button
+                type="button"
+                className="admin-page-btn"
+                disabled={currentPage <= 1 || loading}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                aria-label="Previous page"
+              >
+                <i className="bi bi-chevron-left" /> Previous
+              </button>
+
+              <span className="admin-page-indicator">
+                Page <b>{currentPage}</b> of <b>{totalPages}</b>
+              </span>
+
+              <button
+                type="button"
+                className="admin-page-btn"
+                disabled={currentPage >= totalPages || loading}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                aria-label="Next page"
+              >
+                Next <i className="bi bi-chevron-right" />
+              </button>
+            </div>
+          </div>
         </>
       ) : (
         <div className="empty" style={{ background: "#FFFFFF", borderRadius: "14px", border: "1px solid var(--farmer-border, #e0d8c8)", padding: "40px 20px" }}>
-          <h2 style={{ fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)", color: "var(--farmer-forest, #073a26)" }}>
-            {search || filter !== "all" ? "No matching crops found" : "No listings yet"}
+          <h2
+            style={{
+              fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
+              fontSize: "20px",
+              fontWeight: 700,
+              color: "var(--forest, #1B6B34)",
+            }}
+          >
+            {debouncedSearch || filter !== "all" ? "No matching crops found" : "No listings yet"}
           </h2>
           <p style={{ color: "var(--farmer-muted, #65766e)" }}>
-            {search || filter !== "all"
+            {debouncedSearch || filter !== "all"
               ? "Try clearing your search query or switching filters."
               : "Add your first crop when you are ready to sell."}
           </p>
-          {!search && filter === "all" ? (
+          {!debouncedSearch && filter === "all" ? (
             <button
               type="button"
               className="farmer-action-pill primary"

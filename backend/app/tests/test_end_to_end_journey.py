@@ -1,11 +1,10 @@
 import asyncio
 import io
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-import pytest
 from fastapi.testclient import TestClient
 from geoalchemy2.elements import WKTElement
 from PIL import Image
@@ -19,14 +18,12 @@ from backend.app.main import create_app
 from backend.app.models import (
     Admin,
     AdminAuditEvent,
-    AvailabilityStatus,
     Cart,
     CartItem,
     Consumer,
     Crop,
     CropImage,
     CropListing,
-    Delivery,
     Farmer,
     Hub,
     HubStaff,
@@ -36,9 +33,7 @@ from backend.app.models import (
     Order,
     OrderEvent,
     OrderItem,
-    OrderStatus,
     Payment,
-    PaymentStatus,
     Review,
     Rider,
     RiderApprovalStatus,
@@ -46,14 +41,9 @@ from backend.app.models import (
     RiderLocation,
     RiderOffer,
     Shipment,
-    ShipmentStatus,
     StockReservation,
     User,
     UserRole,
-)
-from backend.app.services.order_lifecycle_service import (
-    LifecycleActor,
-    OrderLifecycleService,
 )
 
 if sys.platform == "win32":
@@ -153,8 +143,8 @@ async def _purge_e2e_data(session: AsyncSession) -> None:
         listings = (
             await session.execute(select(CropListing).where(CropListing.farmer_id.in_(farmer_ids)))
         ).scalars().all()
-        listing_ids = [l.id for l in listings]
-        crop_ids = [l.crop_id for l in listings]
+        listing_ids = [listing.id for listing in listings]
+        crop_ids = [listing.crop_id for listing in listings]
         if listing_ids:
             await session.execute(delete(HubStock).where(HubStock.listing_id.in_(listing_ids)))
             await session.execute(delete(CropImage).where(CropImage.listing_id.in_(listing_ids)))

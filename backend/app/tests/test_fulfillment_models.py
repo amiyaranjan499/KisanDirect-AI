@@ -5,10 +5,10 @@ from uuid import uuid4
 
 import pytest
 from geoalchemy2.elements import WKTElement
+from pydantic import ValidationError
 from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from pydantic import ValidationError
 
 from backend.app.core.config import Settings
 from backend.app.database.session import build_engine
@@ -20,8 +20,8 @@ from backend.app.models import (
     Farmer,
     Hub,
     HubStock,
-    RiderAvailability,
     RiderApprovalStatus,
+    RiderAvailability,
     ShipmentStatus,
     User,
     UserRole,

@@ -8,7 +8,12 @@ from backend.app.database.session import get_db_session
 from backend.app.dependencies import get_current_user
 from backend.app.models import User, UserRole
 from backend.app.repositories.price_repository import PriceRepository
-from backend.app.schemas.price import PricePredictionQuery, PricePredictionResponse
+from backend.app.schemas.price import (
+    PriceEstimateRequest,
+    PriceEstimateResponse,
+    PricePredictionQuery,
+    PricePredictionResponse,
+)
 from backend.app.services.price_service import PriceService
 
 router = APIRouter(prefix="/ai/price", tags=["ai-price"])
@@ -35,6 +40,15 @@ async def predict_price(
         return await service.predict(current_user.id, listing_id, query)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/estimate", response_model=PriceEstimateResponse, status_code=status.HTTP_200_OK)
+async def estimate_price(
+    request: PriceEstimateRequest,
+    _current_user: Annotated[User, Depends(require_farmer)],
+    service: Annotated[PriceService, Depends(get_price_service)],
+) -> PriceEstimateResponse:
+    return service.estimate(request)
 
 
 @router.get("/{prediction_id}", response_model=PricePredictionResponse)

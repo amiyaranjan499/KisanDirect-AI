@@ -1,7 +1,6 @@
 from datetime import datetime
 from uuid import UUID
 
-from geoalchemy2 import Geography
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload

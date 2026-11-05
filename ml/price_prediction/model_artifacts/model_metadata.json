@@ -1,0 +1,41 @@
+{
+  "model_name": "fair-price-random-forest",
+  "model_version": "v1.0",
+  "architecture": "RandomForestRegressor",
+  "n_estimators": 100,
+  "max_depth": 14,
+  "random_seed": 42,
+  "r2_score": 0.9963,
+  "mae": 1.7837,
+  "rmse": 2.7483,
+  "categorical_features": [
+    "crop_name",
+    "quality_grade",
+    "state",
+    "district"
+  ],
+  "numerical_features": [
+    "market_price",
+    "quantity",
+    "harvest_month"
+  ],
+  "supported_crops": [
+    "apple",
+    "banana",
+    "brinjal",
+    "cabbage",
+    "carrot",
+    "dragon fruit",
+    "mango",
+    "onion",
+    "orange",
+    "papaya",
+    "potato",
+    "tomato"
+  ],
+  "supported_grades": [
+    "Grade A",
+    "Grade B",
+    "Grade C"
+  ]
+}

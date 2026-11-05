@@ -41,7 +41,10 @@ export default function FarmerOrderDetails() {
   const [success, setSuccess] = useState("");
   const [busyOrderId, setBusyOrderId] = useState(null);
 
-  // Automatic Send to My Hub in progress
+  // Modal: Send to My Hub (Hub Selection)
+  const [sendHubModalOrder, setSendHubModalOrder] = useState(null);
+  const [selectedHubId, setSelectedHubId] = useState("");
+  const [sendHubError, setSendHubError] = useState("");
   const [sendingHubOrderId, setSendingHubOrderId] = useState(null);
 
   // Modal: Deliver Order (Self-Delivery)
@@ -129,33 +132,43 @@ export default function FarmerOrderDetails() {
     }
   };
 
-  // Workflow B: Send to My Hub automatically
-  const handleSendToMyHub = async (order) => {
+  // Workflow B: Send to My Hub with Hub Selection Modal
+  const handleOpenSendToHubModal = (order) => {
     if (!farmerHasHubs) {
-      setError("You do not have a Kisan Hub registered yet. Please create your hub in 'My Hub' before sending orders to a hub.");
+      setError("You do not have any Kisan Hubs registered yet. Please create your hub in 'My Hub' first, or accept this order for on-farm preparation.");
       return;
     }
 
-    const hubWithStaff = facilities.find((f) => (f.staff_count || 0) > 0);
-    const targetFacility = hubWithStaff || facilities[0];
+    setSendHubModalOrder(order);
+    const initialHub = facilities.find((f) => (f.staff_count || 0) > 0) || facilities[0];
+    setSelectedHubId(initialHub?.id || "");
+    setSendHubError("");
+  };
+
+  const handleConfirmSendToHub = async () => {
+    if (!sendHubModalOrder || !selectedHubId) return;
+
+    const targetFacility = facilities.find((f) => f.id === selectedHubId);
     if (!targetFacility || (targetFacility.staff_count || 0) === 0) {
-      setError(
-        `Your Kisan Hub (${targetFacility?.name || "Hub"}) has no active Hub Staff assigned. Please assign staff in 'Hub Staff' first.`
+      setSendHubError(
+        `The hub '${targetFacility?.name || "Selected Hub"}' has no active Hub Staff assigned to prepare orders. Please assign staff in 'Hub Staff' before transferring orders.`
       );
       return;
     }
 
-    setSendingHubOrderId(order.id);
+    setSendingHubOrderId(sendHubModalOrder.id);
+    setSendHubError("");
     setError("");
     setSuccess("");
     try {
-      await sendFarmerOrderToHub(order.id);
+      await sendFarmerOrderToHub(sendHubModalOrder.id, { hub_id: selectedHubId });
       const hubName = targetFacility.name || "your Kisan Hub";
-      const orderRef = `ORD-${String(order.id).slice(0, 8).toUpperCase()}`;
+      const orderRef = `ORD-${String(sendHubModalOrder.id).slice(0, 8).toUpperCase()}`;
       setSuccess(`Order ${orderRef} transferred to ${hubName}! Assigned Hub Staff have been notified to review and pack.`);
+      setSendHubModalOrder(null);
       await loadAll();
     } catch (err) {
-      setError(err.message || "Failed to transfer order to your hub.");
+      setSendHubError(err.message || "Failed to transfer order to your hub.");
     } finally {
       setSendingHubOrderId(null);
     }
@@ -300,8 +313,20 @@ export default function FarmerOrderDetails() {
       {/* 1. Header */}
       <div className="farmer-page-header">
         <div>
-          <span className="eyebrow">CUSTOMER FULFILLMENT</span>
-          <h1>My Orders &amp; Fulfillment</h1>
+          <span className="eyebrow" style={{ color: "var(--forest, #1B6B34)", fontWeight: 700 }}>CUSTOMER FULFILLMENT</span>
+          <h1
+            className="farmer-page-title"
+            style={{
+              fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
+              fontSize: "26px",
+              fontWeight: 700,
+              color: "var(--forest, #1B6B34)",
+              margin: "2px 0 6px 0",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            My Orders
+          </h1>
           <p>
             Manage incoming orders, on-farm packing, hub staff delegations, and rider delivery handoffs.
           </p>
@@ -552,9 +577,9 @@ export default function FarmerOrderDetails() {
                                 background: "#FFFFFF",
                                 cursor: "pointer",
                               }}
-                              onClick={() => handleSendToMyHub(ord)}
+                              onClick={() => handleOpenSendToHubModal(ord)}
                               disabled={isBusy || sendingHubOrderId === ord.id}
-                              title="Automatically transfer order to your existing Kisan Hub"
+                              title="Select a Kisan Hub to prepare and pack this order"
                             >
                               <i className="bi bi-building" /> {sendingHubOrderId === ord.id ? "Transferring..." : "Send to My Hub"}
                             </button>
@@ -813,7 +838,7 @@ export default function FarmerOrderDetails() {
                         onClick={() => {
                           const o = inspectOrder;
                           setInspectOrder(null);
-                          handleSendToMyHub(o);
+                          handleOpenSendToHubModal(o);
                         }}
                       >
                         <i className="bi bi-building me-1" /> Send to My Hub
@@ -925,6 +950,219 @@ export default function FarmerOrderDetails() {
           </div>
         </div>
       )}
+      {/* MODAL: SELECT FARMER HUB FOR FULFILMENT */}
+      {sendHubModalOrder && (
+        <div className="farmer-modal-backdrop" onClick={() => !sendingHubOrderId && setSendHubModalOrder(null)}>
+          <div className="farmer-modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "520px" }}>
+            <div
+              className="farmer-modal-header"
+              style={{
+                borderBottom: "1px solid #E4DFD1",
+                padding: "16px 20px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "8px",
+                    background: "var(--farmer-lime-soft, #edf8df)",
+                    color: "var(--farmer-forest, #073a26)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "1.1rem",
+                  }}
+                >
+                  <i className="bi bi-building" />
+                </div>
+                <div>
+                  <h3
+                    style={{
+                      fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
+                      color: "var(--farmer-forest, #073a26)",
+                      margin: 0,
+                      fontSize: "17px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Select Kisan Hub for Fulfilment
+                  </h3>
+                  <div style={{ fontSize: "12px", color: "var(--clay, #79705F)" }}>
+                    Order ORD-{String(sendHubModalOrder.id).slice(0, 8).toUpperCase()}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-close"
+                onClick={() => !sendingHubOrderId && setSendHubModalOrder(null)}
+                aria-label="Close"
+                disabled={Boolean(sendingHubOrderId)}
+              />
+            </div>
+
+            <div className="farmer-modal-body" style={{ padding: "18px 20px" }}>
+              {sendHubError && (
+                <div className="alert alert-danger py-2 px-3 mb-3" style={{ fontSize: "13px" }}>
+                  <i className="bi bi-exclamation-triangle-fill me-2" />
+                  {sendHubError}
+                </div>
+              )}
+
+              <p style={{ fontSize: "13.5px", color: "var(--ink, #1C1C16)", margin: "0 0 14px", lineHeight: 1.5 }}>
+                Select which of your Kisan Hubs should prepare and pack this order. The task notification will be sent
+                only to the staff assigned to the chosen hub.
+              </p>
+
+              {/* Hub Dropdown */}
+              <div className="mb-3">
+                <label
+                  htmlFor="hub-selector"
+                  style={{
+                    fontSize: "12.5px",
+                    fontWeight: 600,
+                    color: "var(--ink, #1C1C16)",
+                    marginBottom: "6px",
+                    display: "block",
+                  }}
+                >
+                  Your Registered Hubs ({facilities.length}):
+                </label>
+                <select
+                  id="hub-selector"
+                  className="form-select"
+                  value={selectedHubId}
+                  onChange={(e) => {
+                    setSelectedHubId(e.target.value);
+                    setSendHubError("");
+                  }}
+                  style={{ borderColor: "#E4DFD1", fontSize: "13.5px", fontWeight: 500 }}
+                  disabled={Boolean(sendingHubOrderId)}
+                >
+                  {facilities.map((hub) => (
+                    <option key={hub.id} value={hub.id}>
+                      {hub.name} {hub.pincode ? `(PIN: ${hub.pincode})` : ""} — {hub.staff_count || 0} active staff
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Selected Hub Details Card */}
+              {(() => {
+                const currentHub = facilities.find((f) => f.id === selectedHubId) || facilities[0];
+                const staffCount = currentHub?.staff_count || 0;
+                return (
+                  <div
+                    style={{
+                      background: "#FAF7EF",
+                      border: "1px solid #E4DFD1",
+                      borderRadius: "10px",
+                      padding: "14px",
+                      marginBottom: "12px",
+                    }}
+                  >
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--farmer-forest, #073a26)" }}>
+                        <i className="bi bi-building me-1" /> {currentHub?.name || "Kisan Hub"}
+                      </span>
+                      <span
+                        className={`badge ${staffCount > 0 ? "bg-success" : "bg-warning text-dark"}`}
+                        style={{ fontSize: "11.5px", padding: "4px 8px" }}
+                      >
+                        <i className="bi bi-people-fill me-1" />
+                        {staffCount} Active Staff
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: "12.5px", color: "var(--clay, #79705F)", lineHeight: 1.6 }}>
+                      <div>
+                        <i className="bi bi-geo-alt me-1" /> {currentHub?.address || "Hub location"}
+                        {currentHub?.pincode ? `, PIN ${currentHub.pincode}` : ""}
+                      </div>
+                      <div>
+                        <i className="bi bi-radar me-1" /> Coverage radius: {currentHub?.service_radius_km || 8} km
+                      </div>
+                    </div>
+
+                    {staffCount === 0 ? (
+                      <div
+                        className="alert alert-warning py-2 px-3 mt-3 mb-0"
+                        style={{ fontSize: "12.5px", lineHeight: 1.4 }}
+                      >
+                        <i className="bi bi-exclamation-triangle-fill me-2" />
+                        <strong>No Staff Assigned:</strong> This hub currently has no active Hub Staff assigned.
+                        Please assign staff to this hub in <strong>Hub Staff</strong> before transferring orders, or
+                        select another hub.
+                      </div>
+                    ) : (
+                      <div className="text-muted mt-2 small" style={{ fontSize: "12px" }}>
+                        <i className="bi bi-check-circle-fill text-success me-1" />
+                        Fulfilment task will be routed exclusively to the {staffCount} staff member(s) assigned to this hub.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div
+              className="farmer-modal-footer"
+              style={{
+                borderTop: "1px solid #E4DFD1",
+                padding: "14px 20px",
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "10px",
+              }}
+            >
+              <button
+                type="button"
+                className="kisan-btn-outline kisan-btn-sm"
+                onClick={() => setSendHubModalOrder(null)}
+                disabled={Boolean(sendingHubOrderId)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{
+                  background: "var(--forest, #1B6B34)",
+                  color: "#FFFFFF",
+                  borderRadius: "8px",
+                  padding: "8px 18px",
+                  fontWeight: 600,
+                  border: "none",
+                }}
+                onClick={handleConfirmSendToHub}
+                disabled={
+                  Boolean(sendingHubOrderId) ||
+                  !selectedHubId ||
+                  (facilities.find((f) => f.id === selectedHubId)?.staff_count || 0) === 0
+                }
+              >
+                {sendingHubOrderId === sendHubModalOrder.id ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" />
+                    Transferring...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-send-check me-1" />
+                    Confirm & Send to Hub
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: CONFIRM FARMER SELF-DELIVERY */}
       {deliverModalOrder && (
         <div className="farmer-modal-backdrop" onClick={() => !delivering && setDeliverModalOrder(null)}>

@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import {
   getHubOperationsOverview,
   listHubStaffHubs,
+  listNotifications,
   markHubShipmentReady,
   receiveHubStockDelivery,
   startHubOrderPacking,
@@ -42,8 +43,19 @@ export default function HubStaffOperationsPage({ user, logout }) {
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [notifications, setNotifications] = useState([]);
   const [activeTab, setActiveTab] = useState("new_orders");
   // Tabs: "new_orders" | "being_prepared" | "ready_handover" | "completed" | "stock_deliveries"
+
+  const loadNotifications = async () => {
+    try {
+      const data = await listNotifications("limit=5");
+      const items = Array.isArray(data) ? data : data?.items || [];
+      setNotifications(items);
+    } catch {
+      // ignore
+    }
+  };
 
   // ── One-time login-success banner ────────────────────────────
   const location = useLocation();
@@ -81,6 +93,7 @@ export default function HubStaffOperationsPage({ user, logout }) {
       setOverview(null);
     } finally {
       setLoadingOverview(false);
+      loadNotifications();
     }
   };
 
@@ -318,6 +331,25 @@ export default function HubStaffOperationsPage({ user, logout }) {
               <span>{success}</span>
             </div>
             <button type="button" className="btn-close" onClick={() => setSuccess("")} aria-label="Close" />
+          </div>
+        )}
+
+        {notifications.length > 0 && (
+          <div
+            id="hub-staff-task-notifications"
+            className="alert alert-info d-flex align-items-center justify-content-between mb-3 py-2 px-3"
+            role="status"
+            style={{ fontSize: "13px" }}
+          >
+            <div className="d-flex align-items-center gap-2">
+              <i className="bi bi-bell-fill text-primary fs-6" />
+              <div>
+                <strong>{notifications[0].title}:</strong> {notifications[0].message}
+              </div>
+            </div>
+            <span className="badge bg-light text-dark" style={{ fontSize: "11px" }}>
+              {notifications.length} Task Alert{notifications.length > 1 ? "s" : ""}
+            </span>
           </div>
         )}
 

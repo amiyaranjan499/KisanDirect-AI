@@ -1,15 +1,38 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
+  analyzeCropQuality,
+  createQualityPrediction,
   getFarmerDashboardAISummary,
   getFarmerDashboardAnalytics,
-  listFarmerDashboardListings,
   listFarmerDashboardOrders,
+  listMyFarmerListings,
+  mediaUrl,
+  updateFarmerListing,
 } from "../services/api";
 import "./farmer-operations.css";
 
-const formatMoney = (val = 0) =>
-  `₹${Number(val || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+function CropsIcon({ size = 20, className = "" }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      style={{ display: "inline-block", verticalAlign: "-0.15em", flexShrink: 0 }}
+      aria-hidden="true"
+    >
+      <path d="M12 21V9" />
+      <path d="M12 9C12 9 6 9 6 3c6 0 6 6 6 6Z" />
+      <path d="M12 13c0 0 6 0 6-6c-6 0-6 6-6 6Z" />
+    </svg>
+  );
+}
 
 const formatDate = (dateStr) => {
   if (!dateStr) return "—";
@@ -24,127 +47,329 @@ const formatDate = (dateStr) => {
   }
 };
 
+const resolveCropImage = (item) => {
+  if (item?.images?.[0]) return mediaUrl(item.images[0]);
+  const name = String(item?.crop_name || "").toLowerCase();
+  if (name.includes("tomato")) return "/assets/images/tomato.jpg";
+  if (name.includes("onion")) return "/assets/images/onion.png";
+  if (name.includes("potato") || name.includes("potao")) return "/assets/images/potato.png";
+  return "";
+};
+
+function getCropQualityInfo(crop, assessment) {
+  const rawLabel = assessment?.quality_label || crop?.ai_quality_label || null;
+  let quality = "Unassessed";
+  if (rawLabel) {
+    const l = String(rawLabel).toLowerCase();
+    if (l === "good" || l.includes("grade a")) quality = "Good";
+    else if (l === "average" || l.includes("grade b")) quality = "Average";
+    else if (l === "poor" || l.includes("grade c")) quality = "Poor";
+    else if (["good", "average", "poor"].includes(l)) {
+      quality = l.charAt(0).toUpperCase() + l.slice(1);
+    }
+  }
+
+  const isEvaluated = quality === "Good" || quality === "Average" || quality === "Poor";
+
+  const badgeBg =
+    quality === "Good"
+      ? "#E8F5E9"
+      : quality === "Average"
+      ? "#FFF8E1"
+      : quality === "Poor"
+      ? "#FFEBEE"
+      : "#F5F1E6";
+
+  const badgeColor =
+    quality === "Good"
+      ? "#1B6B34"
+      : quality === "Average"
+      ? "#B27300"
+      : quality === "Poor"
+      ? "#C53929"
+      : "#65766E";
+
+  return {
+    isEvaluated,
+    quality: isEvaluated ? quality : "Unassessed",
+    badgeBg,
+    badgeColor,
+  };
+}
+
+const PAGE_SIZE = 5;
+
 export default function FarmerAIAnalysis({ onBack }) {
-  const navigate = useNavigate();
+  const [page, setPage] = useState(1);
+  const [totalCrops, setTotalCrops] = useState(0);
+  const [listings, setListings] = useState([]);
   const [aiData, setAiData] = useState(null);
   const [analytics, setAnalytics] = useState(null);
-  const [listings, setListings] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingInitial, setLoadingInitial] = useState(true);
+  const [loadingCrops, setLoadingCrops] = useState(false);
+  const [evaluatingId, setEvaluatingId] = useState(null);
+  const [qualityMessage, setQualityMessage] = useState(null);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    let isMounted = true;
-    setLoading(true);
-    setError("");
+  const handleCropClick = async (crop) => {
+    const assessment = assessmentByListingId.get(String(crop.id));
+    const qInfo = getCropQualityInfo(crop, assessment);
 
-    Promise.all([
-      getFarmerDashboardAISummary().catch(() => ({ quality_assessments: [], price_predictions: [] })),
-      getFarmerDashboardAnalytics().catch(() => null),
-      listFarmerDashboardListings().catch(() => []),
-      listFarmerDashboardOrders().catch(() => []),
-    ])
-      .then(([summary, analyticsData, listingsData, ordersData]) => {
-        if (!isMounted) return;
-        setAiData(summary || { quality_assessments: [], price_predictions: [] });
-        setAnalytics(analyticsData);
-        setListings(Array.isArray(listingsData) ? listingsData : []);
-        setOrders(Array.isArray(ordersData) ? ordersData : []);
-      })
-      .catch((err) => {
-        if (!isMounted) return;
-        setError(err.message || "Unable to load AI crop insights.");
-      })
-      .finally(() => {
-        if (isMounted) setLoading(false);
+    if (qInfo.isEvaluated) {
+      setQualityMessage({
+        title: crop.crop_name,
+        text: `Stored Quality: ${qInfo.quality}`,
+        badgeBg: qInfo.badgeBg,
+        badgeColor: qInfo.badgeColor,
+        quality: qInfo.quality,
+      });
+      return;
+    }
+
+    const imgUrl = resolveCropImage(crop);
+    if (!imgUrl) {
+      setQualityMessage({
+        title: crop.crop_name,
+        text: "No crop image found. Please upload a photo to evaluate visual quality.",
+        quality: "Unassessed",
+        badgeBg: "#F5F1E6",
+        badgeColor: "#65766E",
+      });
+      return;
+    }
+
+    try {
+      setEvaluatingId(crop.id);
+      const res = await fetch(imgUrl);
+      const blob = await res.blob();
+      const file = new File([blob], `${crop.crop_name}.jpg`, { type: blob.type || "image/jpeg" });
+      const pred = await createQualityPrediction(crop.id, file);
+      if (pred && pred.quality_label) {
+        const rawL = String(pred.quality_label).toLowerCase();
+        let mappedQ = "Average";
+        if (rawL === "good" || rawL.includes("grade a")) mappedQ = "Good";
+        else if (rawL === "average" || rawL.includes("grade b")) mappedQ = "Average";
+        else if (rawL === "poor" || rawL.includes("grade c")) mappedQ = "Poor";
+
+        setAiData((prev) => ({
+          ...prev,
+          quality_assessments: [
+            ...(prev?.quality_assessments || []).filter((a) => String(a.listing_id) !== String(crop.id)),
+            pred,
+          ],
+        }));
+        setListings((prev) =>
+          prev.map((item) =>
+            String(item.id) === String(crop.id)
+              ? { ...item, ai_quality_label: mappedQ }
+              : item
+          )
+        );
+        setQualityMessage({
+          title: crop.crop_name,
+          text: `Evaluated Quality: ${mappedQ}`,
+          quality: mappedQ,
+          badgeBg: mappedQ === "Good" ? "#E8F5E9" : mappedQ === "Average" ? "#FFF8E1" : "#FFEBEE",
+          badgeColor: mappedQ === "Good" ? "#1B6B34" : mappedQ === "Average" ? "#B27300" : "#C53929",
+        });
+      }
+    } catch (evalErr) {
+      console.warn("Quality evaluation attempt:", evalErr);
+      try {
+        const res = await fetch(imgUrl);
+        const blob = await res.blob();
+        const file = new File([blob], `${crop.crop_name}.jpg`, { type: blob.type || "image/jpeg" });
+        const directPred = await analyzeCropQuality(file);
+        if (directPred && directPred.quality_label) {
+          const rawL = String(directPred.quality_label).toLowerCase();
+          let mappedQ = "Average";
+          if (rawL === "good" || rawL.includes("grade a")) mappedQ = "Good";
+          else if (rawL === "average" || rawL.includes("grade b")) mappedQ = "Average";
+          else if (rawL === "poor" || rawL.includes("grade c")) mappedQ = "Poor";
+
+          await updateFarmerListing(crop.id, { quality_information: mappedQ });
+          setListings((prev) =>
+            prev.map((item) =>
+              String(item.id) === String(crop.id)
+                ? { ...item, ai_quality_label: mappedQ }
+                : item
+            )
+          );
+          setQualityMessage({
+            title: crop.crop_name,
+            text: `Evaluated Quality: ${mappedQ}`,
+            quality: mappedQ,
+            badgeBg: mappedQ === "Good" ? "#E8F5E9" : mappedQ === "Average" ? "#FFF8E1" : "#FFEBEE",
+            badgeColor: mappedQ === "Good" ? "#1B6B34" : mappedQ === "Average" ? "#B27300" : "#C53929",
+          });
+        }
+      } catch (fErr) {
+        setQualityMessage({
+          title: crop.crop_name,
+          text: `Evaluation error: ${fErr.message || evalErr.message}`,
+          quality: "Unassessed",
+          badgeBg: "#F5F1E6",
+          badgeColor: "#65766E",
+        });
+      }
+    } finally {
+      setEvaluatingId(null);
+    }
+  };
+
+  // Load summary and telemetry data
+  const loadSummaryData = async () => {
+    try {
+      const [summary, analyticsData, ordersData] = await Promise.all([
+        getFarmerDashboardAISummary().catch(() => ({ quality_assessments: [], price_predictions: [] })),
+        getFarmerDashboardAnalytics().catch(() => null),
+        listFarmerDashboardOrders().catch(() => []),
+      ]);
+      setAiData(summary || { quality_assessments: [], price_predictions: [] });
+      setAnalytics(analyticsData);
+      setOrders(Array.isArray(ordersData) ? ordersData : []);
+    } catch (err) {
+      console.warn("Could not load summary telemetry:", err);
+    }
+  };
+
+  // Load paginated crop listings (exactly 5 records per request via server-side limit and offset)
+  const loadCropsPage = async (pageToLoad) => {
+    try {
+      setLoadingCrops(true);
+      setError("");
+      const res = await listMyFarmerListings({
+        limit: PAGE_SIZE,
+        offset: (pageToLoad - 1) * PAGE_SIZE,
+        exclude_unavailable: true,
       });
 
-    return () => {
-      isMounted = false;
-    };
+      if (res && Array.isArray(res.items)) {
+        setListings(res.items);
+        const serverTotal = res.total != null ? res.total : res.items.length;
+        setTotalCrops(serverTotal);
+
+        // Adjust page if out of bounds after deletions
+        if (serverTotal > 0 && (pageToLoad - 1) * PAGE_SIZE >= serverTotal) {
+          const maxP = Math.max(1, Math.ceil(serverTotal / PAGE_SIZE));
+          setPage(maxP);
+        }
+      } else if (Array.isArray(res)) {
+        // Fallback for non-paginated mock responses
+        const filtered = res.filter(
+          (i) => String(i.availability_status || "AVAILABLE").toUpperCase() !== "UNAVAILABLE"
+        );
+        setTotalCrops(filtered.length);
+        setListings(filtered.slice((pageToLoad - 1) * PAGE_SIZE, pageToLoad * PAGE_SIZE));
+      }
+    } catch (err) {
+      setError(err.message || "Unable to load crops.");
+    } finally {
+      setLoadingCrops(false);
+      setLoadingInitial(false);
+    }
+  };
+
+  // Initial load
+  useEffect(() => {
+    loadSummaryData();
+    loadCropsPage(1);
   }, []);
 
-  // 1. Real Quality Trend Analysis from live AI predictions
-  const qualityTrend = useMemo(() => {
-    const assessments = Array.isArray(aiData?.quality_assessments)
-      ? aiData.quality_assessments
-      : [];
-
-    if (assessments.length === 0) {
-      return {
-        hasData: false,
-        cropName: listings[0]?.crop_name || "Produce",
-        bars: [],
-        note: "No crop quality scans evaluated yet. Upload harvest photos in Crop Quality AI to receive instant MobileNetV2 cosmetic grading.",
-        recentScans: [],
-      };
+  // Page change handler triggers real server-side fetch with offset
+  useEffect(() => {
+    if (!loadingInitial) {
+      loadCropsPage(page);
     }
+  }, [page]);
 
-    // Group assessments by crop name
-    const cropGroups = {};
+  // Real-time synchronization when crops are added, edited, evaluated, marked sold, or deleted
+  useEffect(() => {
+    const handleCropDeleted = () => {
+      loadSummaryData();
+      setPage((curPage) => {
+        loadCropsPage(curPage);
+        return curPage;
+      });
+    };
+
+    const handleCropAdded = () => {
+      loadSummaryData();
+      loadCropsPage(page);
+    };
+
+    const handleCropUpdated = () => {
+      loadSummaryData();
+      loadCropsPage(page);
+    };
+
+    window.addEventListener("farmer-crop-deleted", handleCropDeleted);
+    window.addEventListener("farmer-crop-added", handleCropAdded);
+    window.addEventListener("farmer-crop-updated", handleCropUpdated);
+
+    return () => {
+      window.removeEventListener("farmer-crop-deleted", handleCropDeleted);
+      window.removeEventListener("farmer-crop-added", handleCropAdded);
+      window.removeEventListener("farmer-crop-updated", handleCropUpdated);
+    };
+  }, [page]);
+
+  // Lookup map of listing_id -> quality assessment
+  const assessmentByListingId = useMemo(() => {
+    const map = new Map();
+    if (Array.isArray(aiData?.quality_assessments)) {
+      aiData.quality_assessments.forEach((item) => {
+        if (item.listing_id) {
+          map.set(String(item.listing_id), item);
+        }
+      });
+    }
+    return map;
+  }, [aiData]);
+
+  // 1. Quality Trend: Real Deep Learning crop quality analysis (Good, Average, Poor counts).
+  const qualityTrendStats = useMemo(() => {
+    let good = 0;
+    let average = 0;
+    let poor = 0;
+
+    const assessments = Array.isArray(aiData?.quality_assessments) ? aiData.quality_assessments : [];
+
     assessments.forEach((item) => {
-      const name = item.crop_name || "Produce";
-      if (!cropGroups[name]) cropGroups[name] = [];
-      cropGroups[name].push(item);
-    });
-
-    // Pick crop with most assessments
-    let primaryCrop = assessments[0]?.crop_name || "Produce";
-    let maxCount = 0;
-    Object.entries(cropGroups).forEach(([crop, list]) => {
-      if (list.length > maxCount) {
-        maxCount = list.length;
-        primaryCrop = crop;
+      const l = String(item.quality_label || "").trim().toLowerCase();
+      if (item.prediction_status === "COMPLETED" || l) {
+        if (l === "good" || l.includes("grade a")) good++;
+        else if (l === "average" || l.includes("grade b")) average++;
+        else if (l === "poor" || l.includes("grade c")) poor++;
       }
     });
 
-    const activeList = cropGroups[primaryCrop] || assessments;
-    const sortedAssessments = [...activeList].sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
-
-    const rawScores = sortedAssessments
-      .map((item) => (item.confidence != null ? Math.round(Number(item.confidence) * 100) : 60));
-
-    const bars = rawScores.map((score, idx) => ({
-      height: Math.max(15, Math.min(100, score)),
-      score,
-      label: `#${idx + 1}`,
-      date: sortedAssessments[idx]?.created_at,
-    }));
-
-    const latest = rawScores[rawScores.length - 1];
-    const first = rawScores[0];
-    let note = "";
-    if (rawScores.length > 1) {
-      if (latest >= first) {
-        note = `Model confidence improved from ${first}% to ${latest}% across ${rawScores.length} evaluated batches for ${primaryCrop}.`;
-      } else {
-        note = `Model confidence: ${latest}% across ${rawScores.length} evaluated batches for ${primaryCrop} (initial: ${first}%).`;
-      }
-    } else {
-      note = `Latest evaluation confidence: ${latest}% for ${primaryCrop}.`;
-    }
+    const total = good + average + poor;
+    const maxVal = Math.max(good, average, poor, 1);
 
     return {
-      hasData: true,
-      cropName: primaryCrop,
-      bars,
-      note,
-      recentScans: sortedAssessments.slice(-4).reverse(),
+      good,
+      average,
+      poor,
+      total,
+      hasData: total > 0,
+      goodHeight: total > 0 && good > 0 ? Math.max(16, Math.round((good / maxVal) * 100)) : 0,
+      averageHeight: total > 0 && average > 0 ? Math.max(16, Math.round((average / maxVal) * 100)) : 0,
+      poorHeight: total > 0 && poor > 0 ? Math.max(16, Math.round((poor / maxVal) * 100)) : 0,
     };
-  }, [aiData, listings]);
+  }, [aiData]);
 
-  // 2. Real Demand & Order Signals from live orders
+  // 2. Demand Signal: actual consumer order demand and current active listings count
   const demandAnalysis = useMemo(() => {
     const orderCounts = analytics?.crop_wise_order_count || {};
-    const orderSales = analytics?.crop_wise_sales || {};
     const cropNames = Object.keys(orderCounts);
 
     if (cropNames.length === 0 && orders.length === 0) {
       return {
         hasData: false,
         signals: [],
+        totalOrders: 0,
         note: "No consumer order signals recorded yet in your hub zone. Active harvest listings are being monitored for local demand.",
       };
     }
@@ -154,12 +379,10 @@ export default function FarmerAIAnalysis({ onBack }) {
 
     const signals = cropNames.map((crop) => {
       const count = Number(orderCounts[crop] || 0);
-      const sales = Number(orderSales[crop] || 0);
       const share = totalOrders > 0 ? Math.round((count / totalOrders) * 100) : 0;
       return {
         crop,
         count,
-        sales,
         share,
       };
     });
@@ -167,81 +390,37 @@ export default function FarmerAIAnalysis({ onBack }) {
     return {
       hasData: true,
       signals,
+      totalOrders,
       note: `${totalOrders} total customer orders analyzed across your local Kisan Hub network.`,
     };
   }, [analytics, orders]);
 
-  // 3. Real AI Price Predictions & Valuation Analysis
-  const priceValuation = useMemo(() => {
-    const preds = Array.isArray(aiData?.price_predictions) ? aiData.price_predictions : [];
-    const predMap = {};
-    preds.forEach((p) => {
-      if (p.crop_name) {
-        predMap[p.crop_name.toLowerCase()] = p;
-      }
-    });
-
-    if (listings.length === 0) {
-      return {
-        hasData: false,
-        items: [],
-      };
-    }
-
-    const items = listings.map((l) => {
-      const cropKey = (l.crop_name || "").toLowerCase();
-      const aiPred = predMap[cropKey];
-      const asking = Number(l.asking_price || 0);
-      const predicted = aiPred?.predicted_price ? Number(aiPred.predicted_price) : null;
-      let statusText = "Market Benchmark Aligned";
-      let statusColor = "var(--forest, #1B6B34)";
-
-      if (predicted != null) {
-        if (asking <= predicted) {
-          statusText = "Fair Market Price";
-          statusColor = "var(--forest, #1B6B34)";
-        } else {
-          statusText = "Above Modal Average";
-          statusColor = "var(--ochre, #C68A3D)";
-        }
-      }
-
-      return {
-        id: l.id,
-        cropName: l.crop_name,
-        askingPrice: asking,
-        predictedPrice: predicted,
-        unit: l.unit || "kg",
-        confidence: aiPred?.confidence ? Math.round(Number(aiPred.confidence) * 100) : null,
-        statusText,
-        statusColor,
-      };
-    });
-
-    return {
-      hasData: true,
-      items,
-    };
-  }, [aiData, listings]);
+  // Pagination bounds
+  const totalPages = Math.max(1, Math.ceil(totalCrops / PAGE_SIZE));
+  const startRecord = totalCrops === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const endRecord = Math.min(totalCrops, page * PAGE_SIZE);
 
   return (
-    <div className="farmer-dashboard-view farmer-ai-page">
-      {/* 1. Header */}
+    <div className="farmer-dashboard-view farmer-ai-page" style={{ paddingBottom: "40px" }}>
+      {/* Page Header */}
       <div className="farmer-page-header">
         <div>
-          <span className="eyebrow">MACHINE LEARNING INFERENCE</span>
-          <h1>Crop Quality AI &amp; Predictive Insights</h1>
-          <p>
-            MobileNetV2 computer vision quality evaluation, APMC benchmark rates, and live regional demand analytics.
+          <h1
+            className="farmer-page-title"
+            style={{
+              fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
+              fontSize: "26px",
+              fontWeight: 700,
+              color: "var(--forest, #1B6B34)",
+              margin: "2px 0 6px 0",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            Crop Quality AI
+          </h1>
+          <p style={{ color: "var(--farmer-muted, #65766e)", fontSize: "14px", margin: 0 }}>
+            Visual crop quality and regional demand for your listed crops.
           </p>
-        </div>
-        <div className="farmer-header-actions">
-          <Link to="/farmer/crops/new" className="farmer-action-pill primary">
-            <i className="bi bi-plus-circle" /> Scan New Harvest
-          </Link>
-          <Link to="/farmer/prices" className="farmer-action-pill">
-            <i className="bi bi-tag" /> AI Fair Price
-          </Link>
         </div>
       </div>
 
@@ -249,26 +428,27 @@ export default function FarmerAIAnalysis({ onBack }) {
         <div className="alert alert-danger" role="alert">
           {error}
         </div>
-      ) : loading ? (
+      ) : loadingInitial ? (
         <div style={{ padding: "60px 20px", textAlign: "center" }}>
           <div className="spinner-border text-success" role="status" />
           <p style={{ marginTop: "12px", color: "var(--clay, #79705F)" }}>
-            Synchronizing live AI quality models and telemetry...
+            Synchronizing live crop quality telemetry...
           </p>
         </div>
       ) : (
         <>
-          {/* Top 2 Cards: Quality Trend & Demand Signals */}
+          {/* Top Grid: 1. Quality Trend and 2. Demand Signal */}
           <div
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
               gap: "20px",
               marginTop: "16px",
+              marginBottom: "24px",
             }}
           >
-            {/* Card 1: Real Quality Trend */}
-            <div className="kisan-card kisan-card-pad">
+            {/* Section 1: Quality Trend - Actual Real Deep Learning Analysis */}
+            <section className="kisan-card kisan-card-pad">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div
                   style={{
@@ -278,60 +458,163 @@ export default function FarmerAIAnalysis({ onBack }) {
                     color: "var(--forest, #1B6B34)",
                   }}
                 >
-                  Quality Trend — {qualityTrend.cropName}
+                  Quality Trend
                 </div>
-                {qualityTrend.hasData ? (
-                  <span className="kisan-badge kisan-badge-ok">Verified</span>
-                ) : (
-                  <span className="kisan-badge kisan-badge-neutral">Pending Scans</span>
+                {qualityTrendStats.hasData && (
+                  <span className="kisan-badge kisan-badge-ok">
+                    {qualityTrendStats.total} Analyzed
+                  </span>
                 )}
               </div>
 
-              {qualityTrend.hasData ? (
+              {qualityTrendStats.hasData ? (
                 <>
+                  {/* Real quality distribution graph: Good, Average, Poor counts */}
                   <div
                     style={{
-                      display: "flex",
-                      alignItems: "flex-end",
-                      gap: "8px",
-                      height: "100px",
-                      marginTop: "18px",
-                      paddingBottom: "4px",
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, 1fr)",
+                      gap: "16px",
+                      marginTop: "20px",
+                      alignItems: "end",
+                      height: "125px",
+                      paddingBottom: "8px",
+                      borderBottom: "1px solid #F0ECE1",
                     }}
                   >
-                    {qualityTrend.bars.map((bar, i) => (
-                      <div
-                        key={i}
-                        title={`Scan #${i + 1}: ${bar.score}% confidence`}
+                    {/* 1. Good Bar */}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        height: "100%",
+                        justifyContent: "flex-end",
+                      }}
+                    >
+                      <span
                         style={{
-                          flex: 1,
-                          background: "linear-gradient(180deg, var(--sage, #4CAF50), var(--forest, #1B6B34))",
-                          borderRadius: "5px 5px 0 0",
-                          height: `${bar.height}%`,
-                          minHeight: "10px",
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          color: "var(--forest, #1B6B34)",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        {qualityTrendStats.good}
+                      </span>
+                      <div
+                        style={{
+                          width: "60%",
+                          maxWidth: "46px",
+                          background: "linear-gradient(180deg, #4CAF50, #1B6B34)",
+                          borderRadius: "6px 6px 0 0",
+                          height: `${qualityTrendStats.goodHeight}%`,
+                          minHeight: qualityTrendStats.good > 0 ? "14px" : "0px",
                           transition: "height 0.3s ease",
                         }}
                       />
-                    ))}
+                      <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink, #1C1C16)", marginTop: "6px" }}>
+                        Good
+                      </span>
+                    </div>
+
+                    {/* 2. Average Bar */}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        height: "100%",
+                        justifyContent: "flex-end",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          color: "#C68A3D",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        {qualityTrendStats.average}
+                      </span>
+                      <div
+                        style={{
+                          width: "60%",
+                          maxWidth: "46px",
+                          background: "linear-gradient(180deg, #FBBF24, #C68A3D)",
+                          borderRadius: "6px 6px 0 0",
+                          height: `${qualityTrendStats.averageHeight}%`,
+                          minHeight: qualityTrendStats.average > 0 ? "14px" : "0px",
+                          transition: "height 0.3s ease",
+                        }}
+                      />
+                      <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink, #1C1C16)", marginTop: "6px" }}>
+                        Average
+                      </span>
+                    </div>
+
+                    {/* 3. Poor Bar */}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        height: "100%",
+                        justifyContent: "flex-end",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          color: "#DC2626",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        {qualityTrendStats.poor}
+                      </span>
+                      <div
+                        style={{
+                          width: "60%",
+                          maxWidth: "46px",
+                          background: "linear-gradient(180deg, #F87171, #DC2626)",
+                          borderRadius: "6px 6px 0 0",
+                          height: `${qualityTrendStats.poorHeight}%`,
+                          minHeight: qualityTrendStats.poor > 0 ? "14px" : "0px",
+                          transition: "height 0.3s ease",
+                        }}
+                      />
+                      <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink, #1C1C16)", marginTop: "6px" }}>
+                        Poor
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: "12.5px", color: "var(--clay, #79705F)", marginTop: "12px", lineHeight: "1.5" }}>
-                    {qualityTrend.note}
+
+                  <div
+                    style={{
+                      fontSize: "12.5px",
+                      color: "var(--clay, #79705F)",
+                      marginTop: "12px",
+                      lineHeight: "1.5",
+                    }}
+                  >
+                    Quality distribution: {qualityTrendStats.good} Good, {qualityTrendStats.average} Average, and {qualityTrendStats.poor} Poor batches verified.
                   </div>
                 </>
               ) : (
-                <div style={{ padding: "28px 10px", textAlign: "center" }}>
-                  <p style={{ fontSize: "13px", color: "var(--clay, #79705F)", margin: "0 0 14px" }}>
-                    {qualityTrend.note}
-                  </p>
-                  <Link to="/farmer/crops/new" className="kisan-btn-accent kisan-btn-sm">
-                    + Run Quality Scan
-                  </Link>
+                <div style={{ padding: "28px 16px", textAlign: "center", color: "var(--clay, #79705F)", fontSize: "13px" }}>
+                  <i className="bi bi-bar-chart" style={{ fontSize: "28px", display: "block", marginBottom: "8px", opacity: 0.5 }} />
+                  <div><b>No quality assessment data yet</b></div>
+                  <div style={{ marginTop: "4px", fontSize: "12px" }}>
+                    No visual quality assessments recorded yet. Upload harvest photos in Add Crop to generate verified quality results.
+                  </div>
                 </div>
               )}
-            </div>
+            </section>
 
-            {/* Card 2: Real Demand Signal */}
-            <div className="kisan-card kisan-card-pad">
+            {/* Section 2: Demand Signal */}
+            <section className="kisan-card kisan-card-pad">
               <div
                 style={{
                   fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
@@ -354,7 +637,17 @@ export default function FarmerAIAnalysis({ onBack }) {
                       </b>
                     </div>
                   ))}
-                  <div style={{ fontSize: "12px", color: "var(--clay, #79705F)", marginTop: "10px" }}>
+                  <div
+                    style={{
+                      fontSize: "12.5px",
+                      color: "var(--forest, #1B6B34)",
+                      fontWeight: 600,
+                      marginTop: "12px",
+                    }}
+                  >
+                    🌿 {totalCrops} harvest crops currently listed in your local Kisan Hub network.
+                  </div>
+                  <div style={{ fontSize: "12px", color: "var(--clay, #79705F)", marginTop: "4px" }}>
                     {demandAnalysis.note}
                   </div>
                 </div>
@@ -363,22 +656,22 @@ export default function FarmerAIAnalysis({ onBack }) {
                   <p style={{ fontSize: "13px", color: "var(--clay, #79705F)", margin: "0 0 10px" }}>
                     {demandAnalysis.note}
                   </p>
-                  <div style={{ fontSize: "12px", color: "var(--forest, #1B6B34)", fontWeight: 600 }}>
-                    {listings.length} active crop batches currently listed and awaiting local orders.
+                  <div style={{ fontSize: "12.5px", color: "var(--forest, #1B6B34)", fontWeight: 600 }}>
+                    🌿 {totalCrops} harvest crops currently listed and awaiting local orders.
                   </div>
                 </div>
               )}
-            </div>
+            </section>
           </div>
 
-          {/* Card 3: Real AI Valuation & Price Analysis */}
-          <div className="kisan-card kisan-card-pad" style={{ marginTop: "20px" }}>
+          {/* Section 3: My Crops & Quality Details with Server-Side Pagination */}
+          <section className="kisan-card" style={{ overflow: "hidden" }}>
             <div
               style={{
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                marginBottom: "14px",
+                padding: "20px 20px 14px",
                 flexWrap: "wrap",
                 gap: "10px",
               }}
@@ -393,76 +686,242 @@ export default function FarmerAIAnalysis({ onBack }) {
                     fontWeight: 700,
                   }}
                 >
-                  AI Price Valuation & Market Alignment
+                  My Crops &amp; Quality Details
                 </h3>
-                <div style={{ fontSize: "12.5px", color: "var(--clay, #79705F)" }}>
-                  Asking price comparisons against live APMC benchmark rates and machine-learning predictions.
+                <div style={{ fontSize: "12.5px", color: "var(--clay, #79705F)", marginTop: "2px" }}>
+                  Showing 5 crops per page. Page {page} of {totalPages} ({totalCrops} total crops).
                 </div>
               </div>
-              <Link to="/farmer/prices" className="kisan-btn-outline kisan-btn-sm">
-                View Mandi Benchmarks
-              </Link>
+              <span
+                className="kisan-badge"
+                style={{ background: "#E1EEE2", color: "#1B6B34", fontWeight: 700 }}
+              >
+                {totalCrops} Total Crops
+              </span>
             </div>
 
-            {priceValuation.hasData ? (
-              <div className="kisan-table-wrap">
-                <table className="kisan-table">
-                  <thead>
-                    <tr>
-                      <th>Crop</th>
-                      <th>Asking Price</th>
-                      <th>AI Recommended Valuation</th>
-                      <th>Model Confidence</th>
-                      <th>Alignment</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {priceValuation.items.map((item) => (
-                      <tr key={item.id}>
-                        <td>
-                          <b>{item.cropName}</b>
-                        </td>
-                        <td>
-                          {formatMoney(item.askingPrice)} / {item.unit}
-                        </td>
-                        <td>
-                          {item.predictedPrice != null
-                            ? `${formatMoney(item.predictedPrice)} / ${item.unit}`
-                            : "APMC Modal Aligned"}
-                        </td>
-                        <td>
-                          {item.confidence != null ? `${item.confidence}%` : "Mandi Baseline"}
-                        </td>
-                        <td>
-                          <span
-                            className="kisan-badge"
-                            style={{
-                              background: item.statusColor === "var(--forest, #1B6B34)" ? "#E1EEE2" : "#F4E2C4",
-                              color: item.statusColor === "var(--forest, #1B6B34)" ? "#3C7A4E" : "#8A5A1C",
-                            }}
-                          >
-                            {item.statusText}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {qualityMessage && (
+              <div
+                style={{
+                  margin: "0 20px 14px",
+                  padding: "10px 16px",
+                  background: qualityMessage.badgeBg || "#F5F1E6",
+                  border: "1px solid #E4DFD1",
+                  borderRadius: "10px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  fontSize: "13px",
+                  color: qualityMessage.badgeColor || "var(--ink, #1C1C16)",
+                  fontWeight: 600,
+                }}
+              >
+                <div>
+                  <span style={{ fontWeight: 700 }}>{qualityMessage.title}: </span>
+                  <span>{qualityMessage.text}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQualityMessage(null)}
+                  style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: "16px", padding: "0 4px" }}
+                >
+                  &times;
+                </button>
               </div>
+            )}
+
+            {loadingCrops ? (
+              <div style={{ padding: "40px 20px", textAlign: "center" }}>
+                <div className="spinner-border spinner-border-sm text-success" role="status" />
+                <span style={{ marginLeft: "10px", fontSize: "13px", color: "var(--clay, #79705F)" }}>
+                  Loading page {page}...
+                </span>
+              </div>
+            ) : listings.length > 0 ? (
+              <>
+                <div className="kisan-table-wrap" style={{ border: "none", borderRadius: 0 }}>
+                  <table className="kisan-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: "80px", textAlign: "center" }}>Crop Image</th>
+                        <th style={{ minWidth: "150px" }}>Crop Name</th>
+                        <th>Category</th>
+                        <th>Quality</th>
+                        <th>Harvest Date</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {listings.map((crop) => {
+                        const assessment = assessmentByListingId.get(String(crop.id));
+                        const q = getCropQualityInfo(crop, assessment);
+                        const imgUrl = resolveCropImage(crop);
+                        const isAvailable =
+                          String(crop.availability_status || "AVAILABLE").toUpperCase() === "AVAILABLE";
+                        const isEvaluatingThis = evaluatingId === crop.id;
+
+                        return (
+                          <tr key={crop.id}>
+                            <td style={{ textAlign: "center" }}>
+                              <div
+                                onClick={() => handleCropClick(crop)}
+                                title="Click image to evaluate or view quality"
+                                style={{
+                                  width: "46px",
+                                  height: "46px",
+                                  borderRadius: "8px",
+                                  overflow: "hidden",
+                                  border: "1px solid #E4DFD1",
+                                  background: "#FAF7EF",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  cursor: "pointer",
+                                  position: "relative",
+                                  margin: "0 auto",
+                                }}
+                              >
+                                {imgUrl ? (
+                                  <img
+                                    src={imgUrl}
+                                    alt={crop.crop_name}
+                                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = "none";
+                                      if (e.currentTarget.nextSibling) {
+                                        e.currentTarget.nextSibling.style.display = "flex";
+                                      }
+                                    }}
+                                  />
+                                ) : null}
+                                <div
+                                  style={{
+                                    display: imgUrl ? "none" : "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    width: "100%",
+                                    height: "100%",
+                                    color: "var(--forest, #1B6B34)",
+                                  }}
+                                >
+                                  <CropsIcon size={18} />
+                                </div>
+                                {isEvaluatingThis && (
+                                  <div
+                                    style={{
+                                      position: "absolute",
+                                      inset: 0,
+                                      background: "rgba(255,255,255,0.8)",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                    }}
+                                  >
+                                    <div className="spinner-border spinner-border-sm text-success" role="status" style={{ width: "16px", height: "16px" }} />
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td>
+                              <div
+                                onClick={() => handleCropClick(crop)}
+                                style={{ fontWeight: 600, color: "var(--ink, #1C1C16)", fontSize: "14px", cursor: "pointer" }}
+                                title="Click to evaluate or view quality"
+                              >
+                                {crop.crop_name}
+                              </div>
+                              <div style={{ fontSize: "11px", color: "var(--clay, #79705F)" }}>
+                                {crop.quantity != null ? `${crop.quantity} ${crop.unit || "kg"}` : ""}
+                              </div>
+                            </td>
+                            <td>
+                              <span style={{ fontSize: "13px", color: "var(--ink, #1C1C16)" }}>
+                                {crop.crop_category || "Vegetables"}
+                              </span>
+                            </td>
+                            <td>
+                              <span
+                                className="kisan-badge"
+                                onClick={() => handleCropClick(crop)}
+                                style={{
+                                  background: q.badgeBg,
+                                  color: q.badgeColor,
+                                  fontWeight: 700,
+                                  fontSize: "12px",
+                                  padding: "4px 10px",
+                                  borderRadius: "6px",
+                                  cursor: "pointer",
+                                }}
+                                title="Click to evaluate or view quality"
+                              >
+                                {isEvaluatingThis ? "Evaluating..." : q.quality}
+                              </span>
+                            </td>
+                            <td>
+                              <span style={{ color: "var(--ink, #1C1C16)", fontSize: "13px" }}>
+                                {crop.harvest_date ? formatDate(crop.harvest_date) : "—"}
+                              </span>
+                            </td>
+                            <td>
+                              {isAvailable ? (
+                                <span className="kisan-badge kisan-badge-ok">Active</span>
+                              ) : (
+                                <span className="kisan-badge kisan-badge-neutral">Sold Out</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Footer matching Admin Listings design */}
+                <div className="admin-pagination-bar">
+                  <div className="admin-pagination-info">
+                    Showing <b>{startRecord}</b> to <b>{endRecord}</b> of <b>{totalCrops}</b> records
+                  </div>
+
+                  <div className="admin-pagination-controls">
+                    <button
+                      type="button"
+                      className="admin-page-btn"
+                      disabled={page <= 1 || loadingCrops}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      aria-label="Previous page"
+                    >
+                      <i className="bi bi-chevron-left" /> Previous
+                    </button>
+
+                    <span className="admin-page-indicator">
+                      Page <b>{page}</b> of <b>{totalPages}</b>
+                    </span>
+
+                    <button
+                      type="button"
+                      className="admin-page-btn"
+                      disabled={page >= totalPages || loadingCrops}
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      aria-label="Next page"
+                    >
+                      Next <i className="bi bi-chevron-right" />
+                    </button>
+                  </div>
+                </div>
+              </>
             ) : (
-              <div style={{ padding: "32px 10px", textAlign: "center" }}>
-                <p style={{ fontSize: "13px", color: "var(--clay, #79705F)", margin: "0 0 12px" }}>
-                  No crop listings found. Add your harvest inventory to compare rates against AI valuation.
+              <div style={{ padding: "36px 12px", textAlign: "center" }}>
+                <p style={{ fontSize: "13.5px", color: "var(--clay, #79705F)", margin: "0 0 12px" }}>
+                  No crops found in your inventory. Add your crops in My Crops to view quality assessments.
                 </p>
-                <Link to="/farmer/crops/new" className="kisan-btn-accent kisan-btn-sm">
-                  + Add New Crop
+                <Link to="/farmer/crops" className="kisan-btn-accent kisan-btn-sm">
+                  Go to My Crops
                 </Link>
               </div>
             )}
-          </div>
+          </section>
         </>
       )}
     </div>
   );
 }
-

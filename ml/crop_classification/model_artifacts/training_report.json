@@ -1,0 +1,281 @@
+{
+  "model_name": "crop-classifier-mobilenet-v2",
+  "model_version": "v2.0-10crops",
+  "overall_test_accuracy": 0.8304093480110168,
+  "overall_test_loss": 0.4348711669445038,
+  "macro_f1": 0.814998222945092,
+  "weighted_f1": 0.8206377353179843,
+  "classification_report": {
+    "apple": {
+      "precision": 0.6,
+      "recall": 0.5625,
+      "f1-score": 0.5806451612903226,
+      "support": 16.0
+    },
+    "banana": {
+      "precision": 0.9,
+      "recall": 0.9,
+      "f1-score": 0.9,
+      "support": 20.0
+    },
+    "brinjal": {
+      "precision": 1.0,
+      "recall": 0.2857142857142857,
+      "f1-score": 0.4444444444444444,
+      "support": 14.0
+    },
+    "cabbage": {
+      "precision": 0.9444444444444444,
+      "recall": 1.0,
+      "f1-score": 0.9714285714285714,
+      "support": 17.0
+    },
+    "carrot": {
+      "precision": 0.9333333333333333,
+      "recall": 0.9333333333333333,
+      "f1-score": 0.9333333333333333,
+      "support": 15.0
+    },
+    "mango": {
+      "precision": 0.6296296296296297,
+      "recall": 0.9444444444444444,
+      "f1-score": 0.7555555555555555,
+      "support": 18.0
+    },
+    "onion": {
+      "precision": 0.9411764705882353,
+      "recall": 0.8421052631578947,
+      "f1-score": 0.8888888888888888,
+      "support": 19.0
+    },
+    "orange": {
+      "precision": 1.0,
+      "recall": 0.9230769230769231,
+      "f1-score": 0.96,
+      "support": 13.0
+    },
+    "potato": {
+      "precision": 0.8823529411764706,
+      "recall": 0.8823529411764706,
+      "f1-score": 0.8823529411764706,
+      "support": 17.0
+    },
+    "tomato": {
+      "precision": 0.7692307692307693,
+      "recall": 0.9090909090909091,
+      "f1-score": 0.8333333333333334,
+      "support": 22.0
+    },
+    "accuracy": 0.8304093567251462,
+    "macro avg": {
+      "precision": 0.8600167588402883,
+      "recall": 0.818261809999426,
+      "f1-score": 0.814998222945092,
+      "support": 171.0
+    },
+    "weighted avg": {
+      "precision": 0.8525983552815338,
+      "recall": 0.8304093567251462,
+      "f1-score": 0.8206377353179843,
+      "support": 171.0
+    }
+  },
+  "confusion_matrix": [
+    [
+      9,
+      0,
+      0,
+      0,
+      0,
+      4,
+      0,
+      0,
+      0,
+      3
+    ],
+    [
+      0,
+      18,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      3,
+      1,
+      4,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      2
+    ],
+    [
+      0,
+      0,
+      0,
+      17,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      14,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      17,
+      0,
+      0,
+      1,
+      0
+    ],
+    [
+      1,
+      1,
+      0,
+      0,
+      0,
+      1,
+      16,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      12,
+      1,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      15,
+      0
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      20
+    ]
+  ],
+  "classes": [
+    "apple",
+    "banana",
+    "brinjal",
+    "cabbage",
+    "carrot",
+    "mango",
+    "onion",
+    "orange",
+    "potato",
+    "tomato"
+  ],
+  "demo_results": {
+    "apple": {
+      "expected": "apple",
+      "predicted": "apple",
+      "confidence": 0.8514,
+      "is_correct": true
+    },
+    "banana": {
+      "expected": "banana",
+      "predicted": "banana",
+      "confidence": 0.9991,
+      "is_correct": true
+    },
+    "brinjal": {
+      "expected": "brinjal",
+      "predicted": "brinjal",
+      "confidence": 0.2505,
+      "is_correct": true
+    },
+    "cabbage": {
+      "expected": "cabbage",
+      "predicted": "cabbage",
+      "confidence": 0.9954,
+      "is_correct": true
+    },
+    "carrot": {
+      "expected": "carrot",
+      "predicted": "carrot",
+      "confidence": 0.9349,
+      "is_correct": true
+    },
+    "mango": {
+      "expected": "mango",
+      "predicted": "mango",
+      "confidence": 0.7298,
+      "is_correct": true
+    },
+    "onion": {
+      "expected": "onion",
+      "predicted": "onion",
+      "confidence": 0.9763,
+      "is_correct": true
+    },
+    "orange": {
+      "expected": "orange",
+      "predicted": "orange",
+      "confidence": 0.9814,
+      "is_correct": true
+    },
+    "potato": {
+      "expected": "potato",
+      "predicted": "potato",
+      "confidence": 0.9957,
+      "is_correct": true
+    },
+    "tomato": {
+      "expected": "tomato",
+      "predicted": "tomato",
+      "confidence": 0.3293,
+      "is_correct": true
+    }
+  },
+  "demo_score": "10/10",
+  "demo_pass": true
+}

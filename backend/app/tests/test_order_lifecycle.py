@@ -43,6 +43,12 @@ from backend.app.models import (
     User,
     UserRole,
 )
+from backend.app.repositories.consumer_repository import ConsumerRepository
+from backend.app.repositories.hub_operations_repository import HubOperationsRepository
+from backend.app.repositories.orders_repository import OrdersRepository
+from backend.app.schemas.hub_operations import StockDeliveryCreate
+from backend.app.schemas.rider import RiderShipmentResponse
+from backend.app.services.hub_operations_service import HubOperationsService
 from backend.app.services.order_lifecycle_service import (
     LifecycleActor,
     LifecycleConflict,
@@ -50,12 +56,6 @@ from backend.app.services.order_lifecycle_service import (
     LifecyclePermissionError,
     OrderLifecycleService,
 )
-from backend.app.repositories.hub_operations_repository import HubOperationsRepository
-from backend.app.repositories.consumer_repository import ConsumerRepository
-from backend.app.repositories.orders_repository import OrdersRepository
-from backend.app.schemas.hub_operations import StockDeliveryCreate
-from backend.app.schemas.rider import RiderShipmentResponse
-from backend.app.services.hub_operations_service import HubOperationsService
 from backend.app.services.orders_service import OrdersService
 
 if sys.platform == "win32":

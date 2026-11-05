@@ -1,14 +1,14 @@
+import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
-import json
 from uuid import UUID
 
 from geoalchemy2.elements import WKTElement
 from sqlalchemy import select
 
-from backend.app.core.security import hash_password
 from backend.app.core.config import get_settings
+from backend.app.core.security import hash_password
 from backend.app.models import (
     AdminAuditEvent,
     AvailabilityStatus,
@@ -23,12 +23,6 @@ from backend.app.models import (
     UserRole,
 )
 from backend.app.repositories.admin_repository import AdminRepository
-from backend.app.services.order_lifecycle_service import (
-    LifecycleActor,
-    LifecycleConflict,
-    LifecycleNotFound,
-    LifecyclePermissionError,
-)
 from backend.app.schemas.admin import (
     AdminAnalyticsActivityResponse,
     AdminAnalyticsResponse,
@@ -39,8 +33,8 @@ from backend.app.schemas.admin import (
     AdminFarmerResponse,
     AdminHubDeliveryResponse,
     AdminHubResponse,
-    AdminHubStockResponse,
     AdminHubStaffResponse,
+    AdminHubStockResponse,
     AdminListingResponse,
     AdminNotificationResponse,
     AdminOrderResponse,
@@ -49,6 +43,12 @@ from backend.app.schemas.admin import (
     AdminRiderResponse,
     AdminShipmentResponse,
     AdminUserStatusResponse,
+)
+from backend.app.services.order_lifecycle_service import (
+    LifecycleActor,
+    LifecycleConflict,
+    LifecycleNotFound,
+    LifecyclePermissionError,
 )
 
 
@@ -123,9 +123,10 @@ class AdminService:
     async def dashboard_summary(self) -> AdminDashboardSummaryResponse:
         total_users = await self.repository.count_users()
         active_users = await self.repository.count_active_users()
-        total_farmers = await self.repository.count_users_by_role(UserRole.FARMER)
-        total_consumers = await self.repository.count_users_by_role(UserRole.CONSUMER)
+        total_farmers = await self.repository.count_genuine_farmers()
+        total_consumers = await self.repository.count_genuine_consumers()
         total_admins = await self.repository.count_users_by_role(UserRole.ADMIN)
+        total_genuine_users = total_farmers + total_consumers
         total_listings = await self.repository.count_listings()
         active_listings = await self.repository.count_listings_by_status(AvailabilityStatus.AVAILABLE)
         sold_out_listings = await self.repository.count_listings_by_status(AvailabilityStatus.SOLD_OUT)
@@ -148,6 +149,7 @@ class AdminService:
             total_farmers=total_farmers,
             total_consumers=total_consumers,
             total_admins=total_admins,
+            total_genuine_users=total_genuine_users,
             total_listings=total_listings,
             active_listings=active_listings,
             sold_out_listings=sold_out_listings,

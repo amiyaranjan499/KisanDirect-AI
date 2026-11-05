@@ -127,7 +127,7 @@ def main() -> None:
     try:
         has_existing_admin = asyncio.run(admin_exists())
     except Exception as exc:
-        raise SystemExit(f"Database connection error: {exc}")
+        raise SystemExit(f"Database connection error: {exc}") from exc
 
     if has_existing_admin and not allow_additional:
         if sys.stdin.isatty():
@@ -178,7 +178,7 @@ def main() -> None:
         user = asyncio.run(create_admin(email, password, name, allow_additional=allow_additional))
         print(f"Successfully provisioned Administrator account: {user.email} (ID: {user.id})")
     except ValueError as exc:
-        raise SystemExit(f"Provisioning error: {exc}")
+        raise SystemExit(f"Provisioning error: {exc}") from exc
 
 
 if __name__ == "__main__":

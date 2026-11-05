@@ -1,11 +1,11 @@
+import hashlib
+import hmac
+import secrets
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, ROUND_CEILING
-import hashlib
-import hmac
-import secrets
+from decimal import ROUND_CEILING, Decimal
 from uuid import UUID, uuid4
 
 from geoalchemy2 import Geography
@@ -24,8 +24,9 @@ from backend.app.models import (
     DeliverySlot,
     DeliveryStatus,
     Farmer,
-    HubStaff,
+    FulfillmentMethod,
     Hub,
+    HubStaff,
     HubStatus,
     HubStock,
     NotificationType,

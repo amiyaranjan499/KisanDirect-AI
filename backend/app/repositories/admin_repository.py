@@ -48,6 +48,22 @@ class AdminRepository:
         result = await self.session.execute(select(func.count(User.id)).where(User.role == role))
         return int(result.scalar_one() or 0)
 
+    async def count_genuine_farmers(self) -> int:
+        result = await self.session.execute(
+            select(func.count(func.distinct(Farmer.user_id)))
+            .join(User, User.id == Farmer.user_id)
+            .where(User.is_active.is_(True), User.role == UserRole.FARMER)
+        )
+        return int(result.scalar_one() or 0)
+
+    async def count_genuine_consumers(self) -> int:
+        result = await self.session.execute(
+            select(func.count(func.distinct(Consumer.user_id)))
+            .join(User, User.id == Consumer.user_id)
+            .where(User.is_active.is_(True), User.role == UserRole.CONSUMER)
+        )
+        return int(result.scalar_one() or 0)
+
     async def count_listings(self) -> int:
         result = await self.session.execute(select(func.count(CropListing.id)))
         return int(result.scalar_one() or 0)

@@ -301,3 +301,90 @@ def test_admin_analytics_range_changes_results() -> None:
             assert short.json()["total_sales"] != medium.json()["total_sales"]
     finally:
         cleanup_admin_data(data)
+
+
+def test_admin_dashboard_genuine_users_and_crop_deletion_counts() -> None:
+    data = seed_admin_data()
+    admin_user, farmer_user, consumer_user, admin_profile_user_id, consumer_profile, farmer_profile, crop, listing, order, payment, review, notification, baseline_counts = data
+
+    rider_user = None
+    staff_user = None
+    extra_listing = None
+
+    async def setup_extra() -> None:
+        nonlocal rider_user, staff_user, extra_listing
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            async with session.begin_nested():
+                rider_user = User(
+                    email=f"rider-{uuid4()}@test.internal",
+                    hashed_password=hash_password("Test-password-123"),
+                    role=UserRole.RIDER,
+                )
+                staff_user = User(
+                    email=f"staff-{uuid4()}@test.internal",
+                    hashed_password=hash_password("Test-password-123"),
+                    role=UserRole.HUB_STAFF,
+                )
+                session.add_all([rider_user, staff_user])
+                await session.flush()
+
+                extra_listing = CropListing(
+                    crop_id=crop.id,
+                    farmer_id=farmer_profile.id,
+                    quantity=Decimal("15.000"),
+                    minimum_order_quantity=Decimal("1.000"),
+                    unit="kg",
+                    asking_price=Decimal("20.00"),
+                    availability_status=AvailabilityStatus.AVAILABLE,
+                )
+                session.add(extra_listing)
+                await session.flush()
+            await session.commit()
+        await engine.dispose()
+
+    async def cleanup_extra() -> None:
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            async with session.begin_nested():
+                if extra_listing:
+                    await session.execute(delete(CropListing).where(CropListing.id == extra_listing.id))
+                user_ids = [u.id for u in [rider_user, staff_user] if u is not None]
+                if user_ids:
+                    await session.execute(delete(User).where(User.id.in_(user_ids)))
+            await session.commit()
+        await engine.dispose()
+
+    try:
+        asyncio.run(setup_extra())
+        with TestClient(create_app()) as client:
+            summary = client.get("/api/v1/admins/dashboard/summary", headers=auth_header(admin_user))
+            assert summary.status_code == 200, summary.text
+            payload = summary.json()
+
+            # 1. Total genuine users must equal farmers + consumers
+            assert payload["total_genuine_users"] == payload["total_farmers"] + payload["total_consumers"]
+            # 2. Riders and Hub Staff must NOT be counted in farmers, consumers, or genuine users
+            assert payload["total_farmers"] == baseline_counts["farmers"] + 1
+            assert payload["total_consumers"] == baseline_counts["consumers"] + 1
+            assert payload["total_genuine_users"] == (baseline_counts["farmers"] + 1) + (baseline_counts["consumers"] + 1)
+
+            # Record listing counts with the extra available listing
+            cum_listings_before = payload["total_listings"]
+            active_listings_before = payload["active_listings"]
+
+            # 3. Deactivate / delete the extra listing via farmer endpoint
+            del_resp = client.delete(f"/api/v1/farmers/me/listings/{extra_listing.id}", headers=auth_header(farmer_user))
+            assert del_resp.status_code == 204, del_resp.text
+
+            # 4. Check updated summary: cumulative remains unchanged, active decreases by 1
+            updated_summary = client.get("/api/v1/admins/dashboard/summary", headers=auth_header(admin_user))
+            assert updated_summary.status_code == 200
+            updated_payload = updated_summary.json()
+            assert updated_payload["total_listings"] == cum_listings_before
+            assert updated_payload["active_listings"] == active_listings_before - 1
+    finally:
+        asyncio.run(cleanup_extra())
+        cleanup_admin_data(data)

@@ -79,7 +79,7 @@ def evaluate_onnx_test_set() -> dict[str, Any]:
 
     # Confusion matrix
     confusion = np.zeros((NUM_CLASSES, NUM_CLASSES), dtype=int)
-    for t, p in zip(y_true, y_pred):
+    for t, p in zip(y_true, y_pred, strict=True):
         confusion[t, p] += 1
 
     total = len(y_true)

@@ -26,13 +26,12 @@ import logging
 import os
 import random
 import urllib.request
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
-import pyarrow as pa
 import pyarrow.parquet as pq
+from PIL import Image
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -239,14 +238,14 @@ class CropQualityDataPipeline:
 
             for rg_idx in range(p_file.num_row_groups):
                 # Inspect lightweight schema and types first
-                meta_rg = p_file.metadata.row_group(rg_idx)
+                _ = p_file.metadata.row_group(rg_idx)
                 rg_summary = p_file.read_row_group(rg_idx, columns=["fruit_type", "label"])
                 fruits = rg_summary["fruit_type"].to_pylist()
                 labels = rg_summary["label"].to_pylist()
 
                 relevant_indices = [
-                    i for i, (f, l) in enumerate(zip(fruits, labels))
-                    if f in SELECTED_PRODUCE and l in LABEL_MAP
+                    i for i, (fruit, label) in enumerate(zip(fruits, labels, strict=True))
+                    if fruit in SELECTED_PRODUCE and label in LABEL_MAP
                 ]
                 if not relevant_indices:
                     continue
@@ -269,9 +268,9 @@ class CropQualityDataPipeline:
                 img_col = rg_full["image"]
 
                 for i in needed_indices:
-                    f = fruits[i]
-                    l = labels[i]
-                    bucket_key = (f, l)
+                    fruit = fruits[i]
+                    label = labels[i]
+                    bucket_key = (fruit, label)
 
                     if len(candidates_by_bucket[bucket_key]) >= TARGET_PER_BUCKET + 15:
                         continue
@@ -282,13 +281,13 @@ class CropQualityDataPipeline:
                         continue
 
                     sample_meta = {
-                        "sample_id": f"P{p_idx}_RG{rg_idx}_R{i}_{f}_L{l}",
+                        "sample_id": f"P{p_idx}_RG{rg_idx}_R{i}_{fruit}_L{label}",
                         "parquet_idx": p_idx,
                         "row_group_idx": rg_idx,
                         "row_in_rg": i,
-                        "fruit_type": f,
-                        "original_label": l,
-                        "mapped_label": LABEL_MAP[l],
+                        "fruit_type": fruit,
+                        "original_label": label,
+                        "mapped_label": LABEL_MAP[label],
                     }
 
                     validated = self.validate_and_deduplicate(raw_bytes, sample_meta)
@@ -298,8 +297,8 @@ class CropQualityDataPipeline:
         # Audit bucket counts
         logger.info("--- CANDIDATE POOL SUMMARY AFTER DEDUPLICATION ---")
         min_bucket_count = min(len(samples) for samples in candidates_by_bucket.values()) if candidates_by_bucket else 0
-        for (f, l), samples in sorted(candidates_by_bucket.items()):
-            logger.info("Bucket (%s, Grade %d -> %s): %d unique valid images", f, l, LABEL_MAP[l], len(samples))
+        for (fruit, label), samples in sorted(candidates_by_bucket.items()):
+            logger.info("Bucket (%s, Grade %d -> %s): %d unique valid images", fruit, label, LABEL_MAP[label], len(samples))
 
         # Determine uniform target count: min(60, min_bucket_count)
         final_per_bucket = min(TARGET_PER_BUCKET, min_bucket_count)
@@ -329,7 +328,7 @@ class CropQualityDataPipeline:
         class_summary = collections.Counter()
         fruit_summary = collections.Counter()
 
-        for (f, l), samples in sorted(candidates_by_bucket.items()):
+        for _bucket_key, samples in sorted(candidates_by_bucket.items()):
             # Deterministic shuffle
             rng.shuffle(samples)
             selected = samples[:final_per_bucket]

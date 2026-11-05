@@ -3,11 +3,8 @@ from decimal import Decimal
 from math import ceil
 from uuid import UUID
 
-from sqlalchemy import select
-
 from backend.app.core.config import Settings
 from backend.app.models import (
-    HubStaff,
     NotificationType,
     Order,
     OrderStatus,
@@ -17,13 +14,12 @@ from backend.app.models import (
 from backend.app.repositories.consumer_repository import ConsumerRepository
 from backend.app.repositories.notifications_repository import NotificationRepository
 from backend.app.repositories.orders_repository import OrdersRepository
-from backend.app.services.order_lifecycle_service import LifecycleActor, OrderLifecycleService
 from backend.app.schemas.orders import (
     CartItemResponse,
     CartResponse,
-    CheckoutRequest,
     CheckoutHubOption,
     CheckoutOptionsResponse,
+    CheckoutRequest,
     CheckoutSlotOption,
     CheckoutUnavailableItem,
     OrderItemResponse,
@@ -34,6 +30,7 @@ from backend.app.schemas.orders import (
     TrackingLocationResponse,
 )
 from backend.app.schemas.payments import PaymentResponse
+from backend.app.services.order_lifecycle_service import LifecycleActor, OrderLifecycleService
 
 
 class OrdersService:

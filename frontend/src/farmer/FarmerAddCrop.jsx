@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
+  analyzeCropQuality,
+  classifyCropImage,
   createFarmerListing,
   createPricePrediction,
   createQualityPrediction,
+  estimateFairPrice,
   getFarmerProfile,
+  getLatestMarketPrice,
   listMyFarmerListings,
   mediaUrl,
   reverseGeocodeLocation,
@@ -41,11 +45,10 @@ const sanitizeProfilePayload = (data) => {
 
 const initialForm = {
   crop_name: "",
-  crop_category: "Vegetables",
-  variety: "",
+  crop_category: "",
   quantity: "",
   unit: "kg",
-  asking_price: "",
+  asking_price: "0",
   harvest_date: new Date().toISOString().slice(0, 10),
   farm_location: "",
   latitude: "",
@@ -54,96 +57,16 @@ const initialForm = {
   description: "",
 };
 
-const steps = [
-  "Crop Details",
-  "Upload Images",
-  "AI Quality",
-  "Market Price",
-  "AI Price",
-  "Review",
-];
-
-const VARIETY_OPTIONS_BY_CATEGORY = {
-  "Vegetables": ["Hybrid", "Desi (Native)", "Organic", "Indam-2", "Pusa Ruby", "Roma", "Cherry", "Greenhouse"],
-  "Leafy Greens & Herbs": ["Spinach (Palak)", "Methi (Fenugreek)", "Coriander (Dhaniya)", "Mint (Pudina)", "Curry Leaves", "Amaranth", "Organic"],
-  "Fruits": ["Desi (Native)", "Hybrid", "Organic", "Alphonso", "Kesar", "Robusta", "Nagpur", "Export Grade"],
-  "Grains & Cereals": ["Desi", "Basmati", "Sona Masoori", "Sharbati", "Organic", "High-Yield 1509", "1121", "Brown Rice"],
-  "Pulses & Lentils": ["Desi Chana", "Kabuli", "Toor / Arhar", "Moong", "Urad", "Masoor", "Organic", "Unhulled"],
-  "Roots & Tubers": ["Desi", "Kufri Jyoti", "Chipsona", "Organic", "Sweet Red", "Table Grade", "Beetroot", "Carrot"],
-  "Spices & Condiments": ["Desi / Local", "Guntur Chilli", "Byadgi", "Salem Turmeric", "Black Pepper", "Cardamom", "Cumin (Jeera)", "Organic"],
-  "Millets": ["Ragi (Finger)", "Bajra (Pearl)", "Jowar (Sorghum)", "Foxtail (Kangni)", "Little Millet", "Kodo", "Organic"],
-  "Oilseeds & Edible Oils": ["Groundnut / Peanut", "Mustard (Sarson)", "Sesame (Til)", "Sunflower", "Soybean", "Cold Pressed", "Organic"],
-  "Dry Fruits & Nuts": ["Almonds (Badam)", "Cashews (Kaju)", "Walnuts (Akhrot)", "Raisins (Kishmish)", "Pistachio", "Dates", "Organic"],
-  "Dairy & Farm Fresh": ["A2 Cow Milk", "Buffalo Milk", "Desi Ghee", "Fresh Paneer", "Curd / Dahi", "Farm Eggs", "Butter"],
-  "Flowers & Floriculture": ["Marigold (Genda)", "Rose (Gulab)", "Jasmine (Mogra)", "Chrysanthemum (Sevanti)", "Tuberose", "Lotus"],
-  "Mushrooms & Exotic Produce": ["Button Mushroom", "Oyster Mushroom", "Milky Mushroom", "Bell Pepper", "Broccoli", "Zucchini", "Hydroponic"],
-  "Honey & Natural Sweeteners": ["Raw Wild Honey", "Multi-Flora Honey", "Organic Jaggery (Gud)", "Jaggery Powder", "Liquid Jaggery", "Raw Sugar"],
-  "Plantation & Beverages": ["Fresh Coconut", "Tender Coconut", "Coffee Beans", "Green Tea", "CTC Tea", "Arecanut"],
-  "Medicinal & Ayurvedic Herbs": ["Tulsi", "Ashwagandha", "Aloe Vera", "Giloy", "Neem", "Brahmi", "Shatavari", "Organic"],
-  "Certified Organic Produce": ["Certified Organic", "Natural Farming", "Zero Budget (SPNF)", "Heirloom", "Desi (Native)"],
-};
-
-const DEFAULT_VARIETIES = ["Hybrid", "Desi (Native)", "Organic", "Heirloom", "Greenhouse", "Export Grade"];
-
-const CATEGORY_OPTIONS = [
-  "Vegetables",
-  "Leafy Greens & Herbs",
-  "Fruits",
-  "Grains & Cereals",
-  "Pulses & Lentils",
-  "Roots & Tubers",
-  "Spices & Condiments",
-  "Millets",
-  "Oilseeds & Edible Oils",
-  "Dry Fruits & Nuts",
-  "Dairy & Farm Fresh",
-  "Flowers & Floriculture",
-  "Mushrooms & Exotic Produce",
-  "Honey & Natural Sweeteners",
-  "Plantation & Beverages",
-  "Medicinal & Ayurvedic Herbs",
-  "Certified Organic Produce",
-];
-
 const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-
-const SAMPLE_CROP_IMAGES = [
-  {
-    preview: "/assets/images/onion.png",
-    url: "/assets/images/onion.png",
-    fallbackUrl: "https://images.unsplash.com/photo-1508747703725-719777637510?q=80&w=400&auto=format&fit=crop",
-    name: "Fresh Onion",
-    isSample: true,
-  },
-  {
-    preview: "/assets/images/potato.png",
-    url: "/assets/images/potato.png",
-    fallbackUrl: "https://images.unsplash.com/photo-1518977676601-b53f82aba655?q=80&w=400&auto=format&fit=crop",
-    name: "Farm Potato",
-    isSample: true,
-  },
-];
-
-async function urlToFile(url, filename = "crop_image.png") {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    return new File([blob], filename, { type: blob.type || "image/png" });
-  } catch (err) {
-    console.warn("Could not convert url to file:", err);
-    return null;
-  }
-}
 
 export default function FarmerAddCrop({ onBack }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const editingId = searchParams.get("listingId");
-  const [currentStep, setCurrentStep] = useState(0);
+
   const [form, setForm] = useState(initialForm);
   const [draftId, setDraftId] = useState(null);
-  const [imageFiles, setImageFiles] = useState(SAMPLE_CROP_IMAGES);
+  const [imageFiles, setImageFiles] = useState([]);
   const [quality, setQuality] = useState(null);
   const [qualityLoading, setQualityLoading] = useState(false);
   const [market, setMarket] = useState(null);
@@ -155,6 +78,25 @@ export default function FarmerAddCrop({ onBack }) {
   const [locLoading, setLocLoading] = useState(false);
   const [locStatus, setLocStatus] = useState("");
 
+  // AI-first flow states
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisStep, setAnalysisStep] = useState("");
+  const [cropClassification, setCropClassification] = useState(null);
+  const [locationDetails, setLocationDetails] = useState({ state: "", district: "", city: "" });
+
+  // Camera & Photo Selection Modal
+  const fileInputRef = useRef(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const priceDebounceTimer = useRef(null);
+
+  const [showSourceModal, setShowSourceModal] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState("environment");
+  const [cameraError, setCameraError] = useState("");
+
+  // Load existing listing if editing
   useEffect(() => {
     if (!editingId) return;
     setLoading(true);
@@ -170,11 +112,10 @@ export default function FarmerAddCrop({ onBack }) {
         setDraftId(listing.id);
         setForm({
           crop_name: listing.crop_name || "",
-          crop_category: listing.crop_category || "Vegetables",
-          variety: listing.crop_name || "",
+          crop_category: listing.crop_category || "",
           quantity: listing.quantity != null ? String(listing.quantity) : "",
           unit: listing.unit || "kg",
-          asking_price: listing.asking_price != null ? String(listing.asking_price) : "",
+          asking_price: listing.asking_price != null ? String(listing.asking_price) : "0",
           harvest_date: listing.harvest_date ? new Date(listing.harvest_date).toISOString().slice(0, 10) : "",
           farm_location: listing.location ? `${listing.location.latitude}, ${listing.location.longitude}` : "",
           latitude: listing.location?.latitude != null ? String(listing.location.latitude) : "",
@@ -195,6 +136,7 @@ export default function FarmerAddCrop({ onBack }) {
       .finally(() => setLoading(false));
   }, [editingId]);
 
+  // Location resolution logic
   const resolveLocationDetails = async (lat, lng) => {
     setLocLoading(true);
     setLocStatus(`GPS acquired: ${lat}, ${lng}. Resolving address & pincode...`);
@@ -211,7 +153,6 @@ export default function FarmerAddCrop({ onBack }) {
     let detectedState = "";
 
     try {
-      // 1. Try backend reverse-geocode endpoint
       const result = await reverseGeocodeLocation(lat, lng);
       if (result && (result.pincode || result.locality || result.city || result.formatted)) {
         detectedPin = result.pincode || "";
@@ -224,7 +165,6 @@ export default function FarmerAddCrop({ onBack }) {
       console.warn("Backend reverse-geocode notice:", apiError);
     }
 
-    // 2. Client-side fallback via BigDataCloud if address or pin still missing
     if (!detectedAddress || !detectedPin) {
       try {
         const resp = await fetch(
@@ -251,6 +191,12 @@ export default function FarmerAddCrop({ onBack }) {
     const finalAddress = detectedAddress || `${lat}, ${lng}`;
     const formattedWithPin = finalAddress + (detectedPin && !finalAddress.includes(detectedPin) ? ` - ${detectedPin}` : "");
 
+    setLocationDetails({
+      state: detectedState,
+      district: detectedDistrict,
+      city: detectedCity,
+    });
+
     setForm((prev) => ({
       ...prev,
       latitude: lat,
@@ -261,7 +207,6 @@ export default function FarmerAddCrop({ onBack }) {
     setLocStatus(`Auto-detected: ${finalAddress}${detectedPin ? ` (PIN: ${detectedPin})` : ""}`);
     setLocLoading(false);
 
-    // Sync detected location and PIN to the farmer's database profile so both sections stay updated
     try {
       const syncPayload = sanitizeProfilePayload({
         location: { latitude: lat, longitude: lng },
@@ -279,7 +224,7 @@ export default function FarmerAddCrop({ onBack }) {
     }
   };
 
-  // On mount: first load saved location from farmer profile; if none, auto-detect GPS
+  // Location auto-detection on mount
   useEffect(() => {
     if (editingId) return;
 
@@ -293,6 +238,11 @@ export default function FarmerAddCrop({ onBack }) {
         const profileAddr = farmerProfile.address || [farmerProfile.city, farmerProfile.district, farmerProfile.state].filter(Boolean).join(", ");
 
         if (profileLat != null && profileLng != null && !isNaN(profileLat) && !isNaN(profileLng)) {
+          setLocationDetails({
+            state: farmerProfile.state || "",
+            district: farmerProfile.district || "",
+            city: farmerProfile.city || "",
+          });
           setForm((prev) => ({
             ...prev,
             latitude: profileLat,
@@ -302,7 +252,6 @@ export default function FarmerAddCrop({ onBack }) {
           }));
           setLocStatus(`Location loaded from saved profile: ${profileAddr || `${profileLat}, ${profileLng}`}${profilePin ? ` (PIN: ${profilePin})` : ""}`);
         } else if (typeof navigator !== "undefined" && navigator.geolocation) {
-          // If no location saved in profile yet, auto-detect via browser geolocation
           navigator.geolocation.getCurrentPosition(
             (pos) => {
               if (!isMounted) return;
@@ -310,9 +259,7 @@ export default function FarmerAddCrop({ onBack }) {
               const lng = Number(pos.coords.longitude.toFixed(6));
               resolveLocationDetails(lat, lng);
             },
-            () => {
-              // Location permission not granted or prompt dismissed
-            },
+            () => {},
             { enableHighAccuracy: true, timeout: 8000 }
           );
         }
@@ -358,183 +305,7 @@ export default function FarmerAddCrop({ onBack }) {
     );
   };
 
-  const [isCustomVariety, setIsCustomVariety] = useState(false);
-
-  const handleCategoryChange = (e) => {
-    const nextCat = e.target.value;
-    setForm((prev) => ({
-      ...prev,
-      crop_category: nextCat,
-      variety: "",
-    }));
-    setIsCustomVariety(false);
-  };
-
-  const handleVarietySelect = (e) => {
-    const val = e.target.value;
-    if (val === "Other") {
-      setIsCustomVariety(true);
-      setForm((prev) => ({ ...prev, variety: "" }));
-    } else {
-      setIsCustomVariety(false);
-      setForm((prev) => ({ ...prev, variety: val }));
-    }
-  };
-
-  const updateField = (field) => (event) => setForm((previous) => ({ ...previous, [field]: event.target.value }));
-
-  const persistListing = async (override = {}) => {
-    let locationObj = null;
-    if (form.latitude != null && form.latitude !== "" && form.longitude != null && form.longitude !== "") {
-      locationObj = {
-        latitude: Number(form.latitude),
-        longitude: Number(form.longitude),
-      };
-    } else if (form.farm_location) {
-      const match = form.farm_location.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
-      if (match) {
-        locationObj = {
-          latitude: Number(match[1]),
-          longitude: Number(match[2]),
-        };
-      }
-    }
-
-    const descParts = [
-      form.variety ? `Variety: ${form.variety}` : null,
-      form.pincode ? `PIN: ${form.pincode}` : null,
-      form.description?.trim() || null,
-    ].filter(Boolean);
-
-    const priceValue = override?.asking_price != null ? Number(override.asking_price) : Number(form.asking_price);
-
-    const payload = {
-      crop_name: (override?.crop_name || form.crop_name).trim(),
-      crop_category: (override?.crop_category || form.crop_category || "Vegetables").trim(),
-      quantity: Number(override?.quantity != null ? override.quantity : form.quantity),
-      unit: override?.unit || form.unit || "kg",
-      asking_price: priceValue,
-      description: descParts.join(". ") || null,
-      harvest_date: form.harvest_date ? new Date(form.harvest_date).toISOString() : null,
-      location: locationObj,
-    };
-
-    if (!payload.crop_name || !payload.quantity || !payload.asking_price) {
-      throw new Error("Crop name, quantity, and expected price are required.");
-    }
-
-    if (draftId) {
-      const updated = await updateFarmerListing(draftId, payload);
-      setDraftId(updated.id);
-      if (updated.asking_price != null) {
-        setForm((prev) => ({ ...prev, asking_price: String(updated.asking_price) }));
-      }
-      return updated;
-    }
-
-    const created = await createFarmerListing(payload);
-    setDraftId(created.id);
-    if (created.asking_price != null) {
-      setForm((prev) => ({ ...prev, asking_price: String(created.asking_price) }));
-    }
-    return created;
-  };
-
-  const uploadImages = async () => {
-    if (!draftId || !imageFiles.length) return;
-    for (const item of imageFiles) {
-      const fileToUpload = item.file || (item.preview ? await urlToFile(item.preview, item.name || "crop.png") : null);
-      if (fileToUpload) {
-        try {
-          await uploadFarmerListingImage(draftId, fileToUpload);
-        } catch (uploadErr) {
-          console.warn("Upload image notice:", uploadErr);
-        }
-      }
-    }
-    setSuccess("Images uploaded successfully.");
-  };
-
-  const runQualityPrediction = async () => {
-    if (!draftId || qualityLoading) return null;
-    const primaryItem = imageFiles.find((item) => item.file) || imageFiles[0];
-    const primaryFile = primaryItem?.file || (primaryItem?.preview ? await urlToFile(primaryItem.preview, primaryItem.name || "crop.png") : null);
-    if (!primaryFile) {
-      const fallbackResult = {
-        prediction_status: "UNAVAILABLE",
-        quality_label: "No Image",
-        confidence: null,
-        model_name: "crop-quality-mobilenet-v2",
-        result_metadata: { reason: "Please upload an image in Step 2 to assess crop quality." },
-      };
-      setQuality(fallbackResult);
-      return fallbackResult;
-    }
-    try {
-      setQualityLoading(true);
-      const result = await createQualityPrediction(draftId, primaryFile);
-      setQuality(result);
-      return result;
-    } catch (qualityErr) {
-      console.warn("Quality prediction notice:", qualityErr);
-      const fallbackResult = {
-        prediction_status: "UNAVAILABLE",
-        quality_label: "Unavailable",
-        confidence: null,
-        model_name: "crop-quality-mobilenet-v2",
-        result_metadata: { reason: qualityErr?.message || "Crop quality assessment model is currently unavailable." },
-      };
-      setQuality(fallbackResult);
-      return fallbackResult;
-    } finally {
-      setQualityLoading(false);
-    }
-  };
-
-  const runPricePrediction = async () => {
-    if (!draftId || priceLoading) return null;
-    try {
-      setPriceLoading(true);
-      const result = await createPricePrediction(draftId, { quality_grade: quality?.quality_label || "Good" });
-      setPrice(result);
-      if (
-        result &&
-        result.predicted_price != null &&
-        !isNaN(Number(result.predicted_price)) &&
-        Number(result.predicted_price) > 0 &&
-        result.prediction_status !== "MODEL_UNAVAILABLE"
-      ) {
-        // Populate Final Listing Price only when a valid recommendation is returned
-        setForm((prev) => ({
-          ...prev,
-          asking_price: prev.asking_price && Number(prev.asking_price) > 0 ? prev.asking_price : String(result.predicted_price),
-        }));
-      }
-      return result;
-    } catch (priceErr) {
-      console.warn("Price prediction request error:", priceErr);
-      const fallback = {
-        prediction_status: "MODEL_UNAVAILABLE",
-        predicted_price: null,
-        result_metadata: { reason: priceErr?.message || "Fair-price recommendation model is currently unavailable." },
-      };
-      setPrice(fallback);
-      return fallback;
-    } finally {
-      setPriceLoading(false);
-    }
-  };
-
-  const fileInputRef = useRef(null);
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-
-  const [showSourceModal, setShowSourceModal] = useState(false);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [cameraFacing, setCameraFacing] = useState("environment");
-  const [cameraError, setCameraError] = useState("");
-
+  // Camera handling
   const stopCameraStream = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -586,6 +357,7 @@ export default function FarmerAddCrop({ onBack }) {
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
+    if (!ctx) return;
     ctx.drawImage(video, 0, 0, width, height);
 
     canvas.toBlob(
@@ -594,10 +366,9 @@ export default function FarmerAddCrop({ onBack }) {
         const filename = `crop_photo_${Date.now()}.jpg`;
         const file = new File([blob], filename, { type: "image/jpeg" });
         const previewUrl = URL.createObjectURL(blob);
-        setImageFiles((prev) => [...prev, { file, preview: previewUrl, name: filename }]);
         stopCameraStream();
         setCameraActive(false);
-        setSuccess("Photo captured from live camera successfully!");
+        handlePhotoCapturedOrSelected(file, previewUrl);
       },
       "image/jpeg",
       0.92
@@ -618,208 +389,353 @@ export default function FarmerAddCrop({ onBack }) {
   useEffect(() => {
     return () => {
       stopCameraStream();
+      if (priceDebounceTimer.current) {
+        clearTimeout(priceDebounceTimer.current);
+      }
     };
   }, []);
 
   const handleImageSelection = (event) => {
-    const nextFiles = Array.from(event.target.files || []).slice(0, 5).map((file) => ({
-      file,
-      preview: URL.createObjectURL(file),
-      name: file.name,
-    }));
-    setImageFiles((previous) => [...previous.filter((item) => !item.file), ...nextFiles]);
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const previewUrl = URL.createObjectURL(file);
     setShowSourceModal(false);
     if (event.target) event.target.value = "";
+    handlePhotoCapturedOrSelected(file, previewUrl);
   };
 
-  const validateStep1 = () => {
-    const name = form.crop_name?.trim();
-    const qty = Number(form.quantity);
-    const askingPrice = Number(form.asking_price);
-    if (!name) return "Please enter a crop name before proceeding.";
-    if (!form.quantity || isNaN(qty) || qty <= 0) return "Please enter a valid available quantity greater than 0.";
-    if (!form.asking_price || isNaN(askingPrice) || askingPrice <= 0) return "Please enter a valid expected price greater than ₹0.";
-    return null;
-  };
-
-  useEffect(() => {
-    if (currentStep === 2 && draftId && !quality && !qualityLoading) {
-      runQualityPrediction();
-    }
-  }, [currentStep, draftId, quality, qualityLoading]);
-
-  useEffect(() => {
-    if (currentStep === 4 && draftId && !price && !priceLoading) {
-      runPricePrediction();
-    }
-  }, [currentStep, draftId, price, priceLoading]);
-
-  const goToStep = async (targetIndex) => {
-    if (targetIndex === currentStep || targetIndex < 0 || targetIndex >= steps.length) return;
-    if (loading || qualityLoading || priceLoading) return;
-    setError("");
-    setSuccess("");
-
-    // Prevent bypassing Step 1 if required fields are missing
-    if (targetIndex > 0) {
-      const step1Error = validateStep1();
-      if (step1Error) {
-        setError(step1Error);
-        setCurrentStep(0);
-        return;
+  const persistListing = async (override = {}) => {
+    let locationObj = null;
+    if (form.latitude != null && form.latitude !== "" && form.longitude != null && form.longitude !== "") {
+      locationObj = {
+        latitude: Number(form.latitude),
+        longitude: Number(form.longitude),
+      };
+    } else if (form.farm_location) {
+      const match = form.farm_location.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+      if (match) {
+        locationObj = {
+          latitude: Number(match[1]),
+          longitude: Number(match[2]),
+        };
       }
     }
 
-    // If leaving step 0 and fields are valid, auto-persist draft
-    if (currentStep === 0 && !validateStep1()) {
+    const descParts = [
+      form.pincode ? `PIN: ${form.pincode}` : null,
+      form.description?.trim() || null,
+    ].filter(Boolean);
+
+    const priceValue = override?.asking_price != null ? Number(override.asking_price) : Number(form.asking_price || 0);
+
+    const rawCropName = override?.crop_name || form.crop_name;
+    const finalCropName = (rawCropName && String(rawCropName).trim()) || "Crop identification unavailable";
+
+    const payload = {
+      crop_name: finalCropName,
+      crop_category: (override?.crop_category !== undefined ? override.crop_category : form.crop_category) || null,
+      quantity: Number(override?.quantity != null ? override.quantity : (form.quantity || 10)),
+      unit: override?.unit || form.unit || "kg",
+      asking_price: priceValue >= 0 ? priceValue : 0,
+      description: descParts.join(". ") || null,
+      harvest_date: form.harvest_date ? new Date(form.harvest_date).toISOString() : new Date().toISOString(),
+      location: locationObj,
+    };
+
+    if (editingId) {
+      const updated = await updateFarmerListing(editingId, payload);
+      return updated;
+    }
+
+    const created = await createFarmerListing(payload);
+    return created;
+  };
+
+  /**
+   * Main AI-First Pipeline:
+   * Photo captured/selected -> Real Crop Classifier & Visual Quality (concurrent) -> Real APMC Market Price -> Real Fair Price.
+   * Runs in-memory ONLY. Does NOT create or persist any listing until the farmer explicitly clicks 'Publish Crop'.
+   */
+  const handlePhotoCapturedOrSelected = async (file, previewUrl) => {
+    if (!file) return;
+    setError("");
+    setSuccess("");
+    setImageFiles([{ file, preview: previewUrl, name: file.name }]);
+    setIsAnalyzing(true);
+    setAnalysisStep("Analyzing crop and assessing quality...");
+
+    try {
+      setQualityLoading(true);
+
+      // 1. Run Crop Classifier AND Crop Quality Assessment concurrently in memory
+      const [classifyRes, qualityRes] = await Promise.all([
+        classifyCropImage(file).catch((cErr) => {
+          console.warn("Crop classification error:", cErr);
+          return null;
+        }),
+        analyzeCropQuality(file).catch((qErr) => {
+          console.warn("Quality prediction error:", qErr);
+          return {
+            prediction_status: "UNAVAILABLE",
+            quality_label: null,
+            confidence: null,
+            model_name: "crop-quality-mobilenet-v2",
+            result_metadata: { reason: qErr?.message || "Crop quality assessment model is currently unavailable." },
+          };
+        }),
+      ]);
+
+      setCropClassification(classifyRes);
+      setQuality(qualityRes);
+      setQualityLoading(false);
+
+      let detectedCropName = "Crop identification unavailable";
+      let detectedCategory = "Not detected";
+
+      if (classifyRes && classifyRes.crop_name && classifyRes.prediction_status === "COMPLETED") {
+        detectedCropName = classifyRes.crop_name;
+        detectedCategory = classifyRes.category || "Vegetables";
+      } else if (editingId && form.crop_name) {
+        detectedCropName = form.crop_name;
+        detectedCategory = form.crop_category || "Vegetables";
+      } else if (classifyRes && classifyRes.prediction_status === "LOW_CONFIDENCE") {
+        setError("Crop identification confidence is low. Please upload a clearer crop image.");
+      } else if (classifyRes && classifyRes.prediction_status === "MODEL_UNAVAILABLE") {
+        setError("Crop identification model is unavailable.");
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        crop_name: detectedCropName,
+        crop_category: detectedCategory,
+      }));
+
+      // 2. Fetch real APMC mandi market price for identified crop and location
+      setAnalysisStep(`Fetching real APMC mandi market price for ${detectedCropName}...`);
+      let marketRes = null;
+      if (detectedCropName && detectedCropName !== "Crop identification unavailable" && detectedCropName !== "Not detected") {
+        try {
+          marketRes = await getLatestMarketPrice(
+            detectedCropName,
+            locationDetails.state || null,
+            locationDetails.district || null
+          );
+          setMarket(marketRes);
+        } catch (mErr) {
+          console.warn("Market feed error:", mErr);
+          setMarket({
+            status: "UNAVAILABLE",
+            market_source: "Agmarknet APMC Mandi Network",
+            message: "Live market data is currently unavailable.",
+          });
+        }
+      }
+
+      // 3. Run AI Fair Price Prediction in memory using estimateFairPrice (NO database listing needed)
+      setAnalysisStep("Evaluating fair price recommendation...");
       try {
-        setLoading(true);
-        await persistListing();
-      } catch (err) {
-        console.warn("Draft auto-save notice:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    setCurrentStep(targetIndex);
-  };
-
-  const nextStep = async () => {
-    if (loading || qualityLoading || priceLoading) return;
-    try {
-      setError("");
-      setSuccess("");
-      if (currentStep === 0) {
-        const step1Error = validateStep1();
-        if (step1Error) {
-          setError(step1Error);
-          return;
-        }
-        setLoading(true);
-        await persistListing();
-        setLoading(false);
-      }
-      if (currentStep === 1) {
-        setLoading(true);
-        await uploadImages();
-        setLoading(false);
-      }
-      if (currentStep === 2) {
-        if (!quality && draftId) {
-          setLoading(true);
-          await runQualityPrediction();
-          setLoading(false);
-          return;
-        }
-      }
-      if (currentStep === 4) {
-        setLoading(true);
-        let predictionResult = price;
-        if (draftId && !predictionResult) {
-          try {
-            predictionResult = await runPricePrediction();
-          } catch (predErr) {
-            console.warn("Price prediction call notice:", predErr);
-          }
-        }
-
-        // Handle real response:
-        // Populate Final Listing Price only when a valid recommendation is returned
+        setPriceLoading(true);
+        const qualityGrade = qualityRes?.quality_label || "Grade B";
+        const mktPriceNum = marketRes?.market_price ? Number(marketRes.market_price) : null;
+        const initialQty = form.quantity && Number(form.quantity) > 0 ? Number(form.quantity) : 10;
+        const priceRes = await estimateFairPrice({
+          crop_name: detectedCropName,
+          quality_grade: qualityGrade,
+          market_price: mktPriceNum,
+          quantity: initialQty,
+          unit: form.unit || "kg",
+          state: locationDetails.state || null,
+          district: locationDetails.district || null,
+        });
+        setPrice(priceRes);
         if (
-          predictionResult &&
-          predictionResult.predicted_price != null &&
-          !isNaN(Number(predictionResult.predicted_price)) &&
-          Number(predictionResult.predicted_price) > 0 &&
-          predictionResult.prediction_status !== "MODEL_UNAVAILABLE"
+          priceRes &&
+          priceRes.predicted_price != null &&
+          !isNaN(Number(priceRes.predicted_price)) &&
+          Number(priceRes.predicted_price) > 0 &&
+          priceRes.prediction_status === "COMPLETED"
         ) {
-          setForm((prev) => ({
-            ...prev,
-            asking_price: prev.asking_price ? prev.asking_price : String(predictionResult.predicted_price),
-          }));
+          setForm((prev) => ({ ...prev, asking_price: String(priceRes.predicted_price) }));
         }
-
-        // Validate final price before moving to Review (Step 6)
-        const finalPriceNum = Number(form.asking_price);
-        if (!form.asking_price || isNaN(finalPriceNum) || finalPriceNum <= 0) {
-          setLoading(false);
-          throw new Error("Please enter a valid listing price greater than ₹0.");
-        }
-
-        // Persist validated final price to the existing listing API
-        if (draftId) {
-          await persistListing({ asking_price: finalPriceNum });
-        }
-        setLoading(false);
+      } catch (pErr) {
+        console.warn("Price prediction error:", pErr);
+        const fallbackPrice = {
+          prediction_status: "MODEL_UNAVAILABLE",
+          predicted_price: null,
+          result_metadata: { reason: pErr?.message || "Fair-price recommendation model is currently unavailable." },
+        };
+        setPrice(fallbackPrice);
+      } finally {
+        setPriceLoading(false);
       }
 
-      setCurrentStep((previous) => Math.min(previous + 1, steps.length - 1));
-    } catch (requestError) {
-      setLoading(false);
-      setError(requestError.message || "Unable to continue with this step.");
+      if (detectedCropName && detectedCropName !== "Crop identification unavailable" && detectedCropName !== "Not detected") {
+        const sourceLabel = classifyRes?.source === "gemini" ? "Gemini Vision" : "Local Model";
+        setSuccess(`Identified ${detectedCropName} via ${sourceLabel}. Please enter available harvest quantity.`);
+      }
+    } catch (analysisErr) {
+      console.error("AI analysis failure:", analysisErr);
+      setError(analysisErr.message || "Failed to analyze crop photo. Please try again.");
+    } finally {
+      setIsAnalyzing(false);
+      setAnalysisStep("");
+      setQualityLoading(false);
     }
   };
 
-  const previousStep = () => {
-    setError("");
-    setSuccess("");
-    if (currentStep > 0) {
-      setCurrentStep((previous) => Math.max(previous - 1, 0));
-    } else {
-      if (onBack) {
-        onBack();
-      } else {
-        navigate("/farmer/crops");
-      }
+  // Recalculate price prediction in-memory when farmer changes quantity (NO database updates)
+  const handleQuantityChange = (e) => {
+    const val = e.target.value;
+    setForm((prev) => ({ ...prev, quantity: val }));
+
+    if (priceDebounceTimer.current) {
+      clearTimeout(priceDebounceTimer.current);
     }
+
+    const qtyNum = Number(val);
+    if (isNaN(qtyNum) || qtyNum <= 0) return;
+
+    priceDebounceTimer.current = setTimeout(async () => {
+      try {
+        setPriceLoading(true);
+        const qualityGrade = quality?.quality_label || "Grade B";
+        const mktPriceNum = market?.market_price ? Number(market.market_price) : null;
+        const result = await estimateFairPrice({
+          crop_name: form.crop_name,
+          quality_grade: qualityGrade,
+          market_price: mktPriceNum,
+          quantity: qtyNum,
+          unit: form.unit || "kg",
+          state: locationDetails.state || null,
+          district: locationDetails.district || null,
+        });
+        setPrice(result);
+        if (
+          result &&
+          result.predicted_price != null &&
+          !isNaN(Number(result.predicted_price)) &&
+          Number(result.predicted_price) > 0 &&
+          result.prediction_status === "COMPLETED"
+        ) {
+          setForm((prev) => ({ ...prev, asking_price: String(result.predicted_price) }));
+        }
+      } catch (err) {
+        console.warn("Quantity price recalculation notice:", err);
+      } finally {
+        setPriceLoading(false);
+      }
+    }, 250);
   };
 
+  // The ONLY operation that publishes and persists a crop listing to the database
   const handlePublish = async () => {
-    if (loading || qualityLoading || priceLoading) return;
+    if (loading || isAnalyzing || qualityLoading) return;
+    const qty = Number(form.quantity);
+    if (!form.quantity || isNaN(qty) || qty <= 0) {
+      setError("Please enter a valid available harvest quantity greater than 0 kg.");
+      return;
+    }
+
+    if (!form.crop_name || form.crop_name === "Crop identification unavailable" || form.crop_name === "Not detected") {
+      setError("Cannot publish without a valid identified crop. Please take or select a clear photo of your produce.");
+      return;
+    }
+
     try {
-      const step1Error = validateStep1();
-      if (step1Error) {
-        throw new Error(step1Error);
-      }
-      const finalPriceNum = Number(form.asking_price);
-      if (!form.asking_price || isNaN(finalPriceNum) || finalPriceNum <= 0) {
-        throw new Error("Please enter a valid listing price greater than ₹0.");
-      }
       setLoading(true);
       setError("");
       setSuccess("");
-      const listing = await persistListing({ asking_price: finalPriceNum });
-      setDraftId(listing.id);
 
-      // Immediate optimistic update into session cache & broadcast event
+      const finalPriceNum = form.asking_price && Number(form.asking_price) >= 0 ? Number(form.asking_price) : 0;
+      const listing = await persistListing({
+        crop_name: form.crop_name,
+        crop_category: form.crop_category !== "Not detected" ? form.crop_category : null,
+        quantity: qty,
+        unit: form.unit || "kg",
+        asking_price: finalPriceNum,
+      });
+
+      // 1. Upload harvest photo and store real quality prediction to the created listing
+      let finalQualityLabel = quality?.quality_label || null;
+      if (imageFiles.length > 0 && imageFiles[0].file) {
+        try {
+          const qualRes = await createQualityPrediction(listing.id, imageFiles[0].file);
+          if (qualRes && qualRes.quality_label) {
+            finalQualityLabel = qualRes.quality_label;
+          }
+        } catch (qualErr) {
+          console.warn("Quality prediction direct attachment fallback:", qualErr);
+          try {
+            await uploadFarmerListingImage(listing.id, imageFiles[0].file);
+          } catch (uploadErr) {
+            console.warn("Listing image attachment warning:", uploadErr);
+          }
+          if (finalQualityLabel) {
+            try {
+              await updateFarmerListing(listing.id, { quality_information: finalQualityLabel });
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
+
+      // 2. Attach real AI fair price prediction to the created listing
+      try {
+        await createPricePrediction(listing.id, {
+          crop_name: form.crop_name,
+          quality_grade: finalQualityLabel || "Grade B",
+          quantity: qty,
+          unit: form.unit || "kg",
+          market_price: market?.market_price ? Number(market.market_price) : null,
+          state: locationDetails.state || null,
+          district: locationDetails.district || null,
+        });
+      } catch (priceErr) {
+        console.warn("Price prediction attachment warning:", priceErr);
+      }
+
+      // 3. Fetch fresh listing with attached images & quality from server
+      let freshListing = listing;
+      try {
+        const fetched = await getFarmerListing(listing.id);
+        if (fetched) freshListing = fetched;
+      } catch {
+        // use listing
+      }
+
+      // 4. Update session storage cache and broadcast event
       try {
         const CROP_CACHE_KEY = "kd_farmer_crops_cache";
         const cachedRaw = sessionStorage.getItem(CROP_CACHE_KEY);
         const cachedList = cachedRaw ? JSON.parse(cachedRaw) : [];
-        const listArray = Array.isArray(cachedList) ? cachedList : (cachedList?.items || []);
+        const listArray = Array.isArray(cachedList) ? cachedList : cachedList?.items || [];
         const primaryPreview = imageFiles.length > 0 && imageFiles[0].preview ? imageFiles[0].preview : null;
-        const imagesWithFallback = (listing.images && listing.images.length > 0)
-          ? listing.images
+        const imagesWithFallback = (freshListing.images && freshListing.images.length > 0)
+          ? freshListing.images
           : (primaryPreview ? [primaryPreview] : []);
         const enhancedListing = {
-          ...listing,
+          ...freshListing,
           images: imagesWithFallback,
-          crop_name: listing.crop_name || form.crop_name,
-          crop_category: listing.crop_category || form.crop_category || "Vegetables",
-          quantity: listing.quantity != null ? listing.quantity : form.quantity,
-          unit: listing.unit || form.unit || "kg",
-          asking_price: listing.asking_price != null ? listing.asking_price : finalPriceNum,
-          availability_status: listing.availability_status || "AVAILABLE",
+          crop_name: freshListing.crop_name || form.crop_name,
+          crop_category: freshListing.crop_category || form.crop_category || null,
+          quantity: freshListing.quantity != null ? freshListing.quantity : qty,
+          unit: freshListing.unit || form.unit || "kg",
+          asking_price: freshListing.asking_price != null ? freshListing.asking_price : finalPriceNum,
+          availability_status: freshListing.availability_status || "AVAILABLE",
+          ai_quality_label: freshListing.ai_quality_label || finalQualityLabel || null,
+          quality_grade: freshListing.quality_grade || finalQualityLabel || null,
         };
-        const updatedList = [enhancedListing, ...listArray.filter((i) => i.id !== listing.id)];
+        const updatedList = [enhancedListing, ...listArray.filter((i) => String(i.id) !== String(freshListing.id))];
         sessionStorage.setItem(CROP_CACHE_KEY, JSON.stringify(updatedList));
+        sessionStorage.removeItem("kd_farmer_dashboard_cache");
         window.dispatchEvent(new CustomEvent("farmer-crop-added", { detail: enhancedListing }));
       } catch (cacheErr) {
         console.warn("Could not write to crops cache:", cacheErr);
       }
 
-      setSuccess("Listing published successfully.");
-      setTimeout(() => navigate("/farmer/crops"), 400);
+      setSuccess("Crop listing published successfully!");
+      navigate("/farmer/crops");
     } catch (requestError) {
       setError(requestError.message || "Could not publish listing.");
     } finally {
@@ -827,114 +743,665 @@ export default function FarmerAddCrop({ onBack }) {
     }
   };
 
-  const renderStepContent = () => {
-    if (currentStep === 0) {
-      return (
-        <div className="farmer-add-crop-step0">
-          <div className="field">
-            <label>Crop name</label>
-            <input
-              type="text"
-              value={form.crop_name}
-              onChange={updateField("crop_name")}
-              placeholder="e.g. Fresh Tomato"
-              required
-            />
+  const hasCropPhoto = imageFiles.length > 0 && (imageFiles[0].preview || imageFiles[0].url);
+  const isPublishable =
+    hasCropPhoto &&
+    form.crop_name &&
+    form.crop_name !== "Crop identification unavailable" &&
+    form.crop_name !== "Not detected" &&
+    form.quantity &&
+    !isNaN(Number(form.quantity)) &&
+    Number(form.quantity) > 0 &&
+    !isAnalyzing &&
+    !qualityLoading;
+
+  return (
+    <section className="farmer-dashboard-view add-crop-page" style={{ maxWidth: "720px", margin: "0 auto", padding: "16px 12px 60px" }}>
+      {/* Hidden File Picker and Offscreen Canvas */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleImageSelection}
+        style={{ display: "none" }}
+      />
+      <canvas ref={canvasRef} style={{ display: "none" }} />
+
+      {error && <div className="alert alert-danger py-2 px-3 mb-3 small d-flex align-items-center gap-2" style={{ borderRadius: "10px" }}><i className="bi bi-exclamation-circle me-1" /><span>{error}</span></div>}
+      {success && <div className="alert alert-success py-2 px-3 mb-3 small d-flex align-items-center gap-2" style={{ borderRadius: "10px" }}><i className="bi bi-check-circle me-1" /><span>{success}</span></div>}
+
+      {/* SCREEN 1: Simple, clean, modern, farmer-friendly Add Crop photo screen */}
+      {!hasCropPhoto && !isAnalyzing && (
+        <div
+          style={{
+            background: "#FFFFFF",
+            border: "1px solid #EAE5DC",
+            borderRadius: "20px",
+            padding: "44px 32px 36px",
+            boxShadow: "0 4px 20px rgba(14, 50, 36, 0.05)",
+            textAlign: "center",
+          }}
+        >
+          {/* Top Camera Icon Badge */}
+          <div
+            style={{
+              width: "68px",
+              height: "68px",
+              borderRadius: "50%",
+              background: "#E8F5E9",
+              color: "#1B6B34",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "28px",
+              marginBottom: "18px",
+            }}
+          >
+            <i className="bi bi-camera" />
           </div>
 
-          <div className="form-row-2col">
-            <div className="field" style={{ flex: 1 }}>
-              <label>Category</label>
-              <select value={form.crop_category} onChange={handleCategoryChange}>
-                {CATEGORY_OPTIONS.map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
+          {/* Heading and Subtitle - EXACT copy required */}
+          <h1
+            style={{
+              fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
+              fontSize: "28px",
+              fontWeight: 700,
+              color: "#104230",
+              margin: "0 0 8px",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            Add Crop
+          </h1>
+          <p style={{ color: "#65766e", fontSize: "15px", margin: "0 0 32px" }}>
+            Add a photo of your crop
+          </p>
+
+          {cameraError && (
+            <div className="alert alert-warning py-2 px-3 mb-3 small d-flex align-items-center gap-2" style={{ maxWidth: "480px", margin: "0 auto 16px", borderRadius: "10px" }}>
+              <i className="bi bi-exclamation-triangle" />
+              <span>{cameraError}</span>
             </div>
-            <div className="field" style={{ flex: 1 }}>
-              <label>Variety</label>
-              <select
-                value={
-                  isCustomVariety
-                    ? "Other"
-                    : (VARIETY_OPTIONS_BY_CATEGORY[form.crop_category] || DEFAULT_VARIETIES).includes(form.variety)
-                    ? form.variety
-                    : form.variety
-                    ? "Other"
-                    : ""
-                }
-                onChange={handleVarietySelect}
+          )}
+
+          {/* Clean Action Cards: Take Photo & Choose Photo */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px", maxWidth: "480px", margin: "0 auto 24px" }}>
+            <button
+              type="button"
+              className="farmer-photo-choice-card"
+              onClick={() => startCamera("environment")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                width: "100%",
+                padding: "18px 20px",
+                border: "1.5px solid #EAE5DC",
+                borderRadius: "14px",
+                background: "#FFFFFF",
+                cursor: "pointer",
+                textAlign: "left",
+                gap: "16px",
+                transition: "all 0.2s ease",
+              }}
+            >
+              <div
+                style={{
+                  width: "52px",
+                  height: "52px",
+                  borderRadius: "12px",
+                  background: "#E8F5E9",
+                  color: "#1B6B34",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  fontSize: "24px",
+                }}
               >
-                <option value="">Select variety...</option>
-                {(VARIETY_OPTIONS_BY_CATEGORY[form.crop_category] || DEFAULT_VARIETIES).map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-                <option value="Other">Other / Custom</option>
-              </select>
-              {(isCustomVariety || (form.variety && !(VARIETY_OPTIONS_BY_CATEGORY[form.crop_category] || DEFAULT_VARIETIES).includes(form.variety))) && (
-                <input
-                  type="text"
-                  value={form.variety}
-                  onChange={updateField("variety")}
-                  placeholder="Enter custom variety (e.g. Indam-2)"
-                  style={{ marginTop: "8px" }}
-                  autoFocus
-                />
-              )}
-            </div>
+                <i className="bi bi-camera" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: "16px", color: "#183229" }}>
+                  Take Photo
+                </div>
+                <div style={{ fontSize: "13px", color: "#65766e", marginTop: "2px" }}>
+                  Open live camera to snap fresh crop photos directly
+                </div>
+              </div>
+              <i className="bi bi-chevron-right" style={{ color: "#9CA3AF", fontSize: "16px" }} />
+            </button>
+
+            <button
+              type="button"
+              className="farmer-photo-choice-card"
+              onClick={() => {
+                if (fileInputRef.current) fileInputRef.current.click();
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                width: "100%",
+                padding: "18px 20px",
+                border: "1.5px solid #EAE5DC",
+                borderRadius: "14px",
+                background: "#FFFFFF",
+                cursor: "pointer",
+                textAlign: "left",
+                gap: "16px",
+                transition: "all 0.2s ease",
+              }}
+            >
+              <div
+                style={{
+                  width: "52px",
+                  height: "52px",
+                  borderRadius: "12px",
+                  background: "#E3F2FD",
+                  color: "#1976D2",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  fontSize: "24px",
+                }}
+              >
+                <i className="bi bi-image" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: "16px", color: "#183229" }}>
+                  Choose Photo
+                </div>
+                <div style={{ fontSize: "13px", color: "#65766e", marginTop: "2px" }}>
+                  Select photos from your device storage or files
+                </div>
+              </div>
+              <i className="bi bi-chevron-right" style={{ color: "#9CA3AF", fontSize: "16px" }} />
+            </button>
           </div>
 
-          <div className="form-row-2col">
-            <div className="field" style={{ flex: 1 }}>
-              <label>Available quantity ({form.unit || "kg"})</label>
-              <input
-                type="number"
-                min="0.01"
-                step="any"
-                value={form.quantity}
-                onChange={updateField("quantity")}
-                placeholder="e.g. 120"
-                required
-              />
+          {/* Compact Location Card: 📍 Location — ↻ Refresh */}
+          <div
+            style={{
+              maxWidth: "480px",
+              margin: "0 auto",
+              padding: "12px 18px",
+              background: "#FDFBF7",
+              border: "1px solid #EAE5DC",
+              borderRadius: "12px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "10px",
+              fontSize: "13px",
+              color: "#183229",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0, flex: 1 }}>
+              <i className="bi bi-geo-alt" style={{ color: "#1B6B34", fontSize: "16px", flexShrink: 0 }} />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>
+                {locStatus || form.farm_location || "Location loaded from profile"}
+              </span>
             </div>
-            <div className="field" style={{ flex: 1 }}>
-              <label>Expected price (₹/unit)</label>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={form.asking_price}
-                onChange={updateField("asking_price")}
-                placeholder="e.g. 28"
-                required
-              />
+            <button
+              type="button"
+              onClick={detectLocation}
+              disabled={locLoading}
+              style={{
+                background: "none",
+                border: "none",
+                color: "#1B6B34",
+                fontWeight: 600,
+                fontSize: "13px",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: 0,
+                flexShrink: 0,
+              }}
+            >
+              <i className={`bi bi-arrow-clockwise ${locLoading ? "spin" : ""}`} />
+              <span>{locLoading ? "Locating..." : "Refresh"}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* SCREEN 2: Simple, clean Analyzing State Card */}
+      {isAnalyzing && (
+        <div
+          style={{
+            background: "#FFFFFF",
+            border: "1px solid #EAE5DC",
+            borderRadius: "20px",
+            padding: "44px 32px 36px",
+            textAlign: "center",
+            boxShadow: "0 4px 20px rgba(14, 50, 36, 0.05)",
+          }}
+        >
+          <div className="spinner-border text-success mb-3" role="status" style={{ width: "40px", height: "40px", color: "#1B6B34" }} />
+          <h2
+            style={{
+              fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
+              fontSize: "24px",
+              fontWeight: 700,
+              color: "#104230",
+              margin: "0 0 8px",
+            }}
+          >
+            Analyzing your crop photo...
+          </h2>
+          <p style={{ color: "#65766e", fontSize: "14.5px", margin: "0 0 24px" }}>
+            Detecting crop name, visual quality, and current mandi benchmark prices
+          </p>
+
+          {imageFiles[0]?.preview && (
+            <div
+              style={{
+                width: "130px",
+                height: "130px",
+                borderRadius: "16px",
+                overflow: "hidden",
+                margin: "0 auto 24px",
+                border: "2px solid #1B6B34",
+                boxShadow: "0 4px 14px rgba(27, 107, 52, 0.12)",
+              }}
+            >
+              <img src={imageFiles[0].preview} alt="Crop" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "inline-flex",
+              flexDirection: "column",
+              gap: "8px",
+              textAlign: "left",
+              fontSize: "13.5px",
+              color: "#183229",
+              background: "#FDFBF7",
+              border: "1px solid #EAE5DC",
+              padding: "14px 22px",
+              borderRadius: "12px",
+              maxWidth: "420px",
+              margin: "0 auto",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <i className="bi bi-check2 text-success fw-bold" /> Photo received
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <i className="bi bi-check2 text-success fw-bold" /> Identifying crop species &amp; quality
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <i className="bi bi-check2 text-success fw-bold" /> Checking APMC mandi benchmark rates &amp; trends
             </div>
           </div>
+        </div>
+      )}
 
-          <div className="form-row-2col">
-            <div className="field" style={{ flex: 1 }}>
-              <label>Harvest date</label>
-              <input
-                type="date"
-                value={form.harvest_date}
-                onChange={updateField("harvest_date")}
-              />
+      {/* SCREEN 3: Review & Publish Screen (Shown after photo is analyzed) */}
+      {hasCropPhoto && !isAnalyzing && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+          {/* Header Row with Back Button */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <h1
+                style={{
+                  fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
+                  fontSize: "26px",
+                  fontWeight: 700,
+                  color: "#104230",
+                  margin: "0 0 4px",
+                }}
+              >
+                Add Crop
+              </h1>
+              <p style={{ color: "#65766e", fontSize: "14px", margin: 0 }}>
+                Review details, enter available harvest quantity, and publish
+              </p>
             </div>
-            <div className="field" style={{ flex: 1 }}>
-              <label>Pincode / Postal code</label>
-              <input
-                type="text"
-                maxLength={6}
-                value={form.pincode}
-                onChange={updateField("pincode")}
-                placeholder="e.g. 560064"
-              />
-            </div>
+            <button
+              type="button"
+              className="kisan-btn-outline"
+              onClick={onBack || (() => navigate("/farmer/crops"))}
+              style={{
+                height: "38px",
+                padding: "6px 14px",
+                borderRadius: "8px",
+                fontSize: "13px",
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <i className="bi bi-chevron-left" /> Back to My Crops
+            </button>
           </div>
 
-          <div className="field">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-              <label style={{ margin: 0 }}>Farm location (Auto-detected with Pincode)</label>
+          {/* Main Clean White Card */}
+          <div
+            style={{
+              background: "#FFFFFF",
+              border: "1px solid #EAE5DC",
+              borderRadius: "20px",
+              padding: "28px 24px",
+              boxShadow: "0 4px 20px rgba(14, 50, 36, 0.05)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "22px",
+            }}
+          >
+            {/* Produce Photo Banner */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "14px",
+                paddingBottom: "18px",
+                borderBottom: "1px solid #EAE5DC",
+              }}
+            >
+              <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+                <div
+                  style={{
+                    width: "80px",
+                    height: "80px",
+                    borderRadius: "14px",
+                    overflow: "hidden",
+                    border: "1.5px solid #EAE5DC",
+                    flexShrink: 0,
+                  }}
+                >
+                  <img
+                    src={imageFiles[0].preview || imageFiles[0].url}
+                    alt={form.crop_name || "Harvest Crop"}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                </div>
+                <div>
+                  <h2
+                    style={{
+                      fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
+                      fontSize: "22px",
+                      fontWeight: 700,
+                      color: "#104230",
+                      margin: "0 0 4px",
+                    }}
+                  >
+                    {form.crop_name || "Crop identification unavailable"}
+                  </h2>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      padding: "2px 10px",
+                      borderRadius: "6px",
+                      background: "#E8F5E9",
+                      color: "#1B6B34",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {form.crop_category || "Produce"}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="kisan-btn-outline"
+                onClick={() => setShowSourceModal(true)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontSize: "13px",
+                  padding: "8px 14px",
+                  borderRadius: "8px",
+                  fontWeight: 600,
+                }}
+              >
+                <i className="bi bi-camera" /> Change Photo
+              </button>
+            </div>
+
+            {/* AI Crop Analysis Results: EXACT 6 fields (NO Variety, NO Confidence, NO Model Details) */}
+            <div>
+              <h3
+                style={{
+                  fontSize: "15px",
+                  fontWeight: 700,
+                  color: "#104230",
+                  margin: "0 0 14px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <i className="bi bi-check2-circle text-success" /> Crop Analysis Results
+              </h3>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: "12px",
+                }}
+              >
+                {/* 1. Crop Name */}
+                <div
+                  style={{
+                    background: "#FDFBF7",
+                    border: "1px solid #EAE5DC",
+                    borderRadius: "12px",
+                    padding: "14px 16px",
+                  }}
+                >
+                  <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#65766e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>
+                    Crop Name
+                  </div>
+                  <div style={{ fontSize: "16px", fontWeight: 700, color: "#183229" }}>
+                    {form.crop_name || "Unavailable"}
+                  </div>
+                </div>
+
+                {/* 2. Category */}
+                <div
+                  style={{
+                    background: "#FDFBF7",
+                    border: "1px solid #EAE5DC",
+                    borderRadius: "12px",
+                    padding: "14px 16px",
+                  }}
+                >
+                  <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#65766e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>
+                    Category
+                  </div>
+                  <div style={{ fontSize: "16px", fontWeight: 700, color: "#183229" }}>
+                    {form.crop_category || "Not detected"}
+                  </div>
+                </div>
+
+                {/* 3. Quality */}
+                <div
+                  style={{
+                    background: "#FDFBF7",
+                    border: "1px solid #EAE5DC",
+                    borderRadius: "12px",
+                    padding: "14px 16px",
+                  }}
+                >
+                  <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#65766e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>
+                    Quality
+                  </div>
+                  <div style={{ fontSize: "16px", fontWeight: 700, color: "#1B6B34" }}>
+                    {quality?.quality_label
+                      ? (quality.result_metadata?.grade ? `${quality.result_metadata.grade} (${quality.quality_label})` : quality.quality_label)
+                      : "Assessed"}
+                  </div>
+                </div>
+
+                {/* 4. Market Reference Price */}
+                <div
+                  style={{
+                    background: "#FDFBF7",
+                    border: "1px solid #EAE5DC",
+                    borderRadius: "12px",
+                    padding: "14px 16px",
+                  }}
+                >
+                  <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#65766e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>
+                    Market Reference Price
+                  </div>
+                  <div style={{ fontSize: "16px", fontWeight: 700, color: "#183229" }}>
+                    {market?.market_price ? `${money(market.market_price)} / ${form.unit || "kg"}` : "Unavailable"}
+                  </div>
+                </div>
+
+                {/* 5. AI Fair Price */}
+                <div
+                  style={{
+                    background: "#E8F5E9",
+                    border: "1.5px solid #C8E6C9",
+                    borderRadius: "12px",
+                    padding: "14px 16px",
+                  }}
+                >
+                  <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#1B6B34", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>
+                    AI Fair Price
+                  </div>
+                  <div style={{ fontSize: "18px", fontWeight: 800, color: "#104230" }}>
+                    {price?.predicted_price ? `${money(price.predicted_price)} / ${form.unit || "kg"}` : "Pending"}
+                  </div>
+                </div>
+
+                {/* 6. Price Trend */}
+                <div
+                  style={{
+                    background: "#FDFBF7",
+                    border: "1px solid #EAE5DC",
+                    borderRadius: "12px",
+                    padding: "14px 16px",
+                  }}
+                >
+                  <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#65766e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>
+                    Price Trend
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "16px",
+                      fontWeight: 700,
+                      color: market?.price_trend === "Rising" ? "#15803D" : market?.price_trend === "Falling" ? "#DC2626" : "#4B5563",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    {market?.price_trend === "Rising" && <i className="bi bi-arrow-up-right" />}
+                    {market?.price_trend === "Falling" && <i className="bi bi-arrow-down-right" />}
+                    {(!market?.price_trend || market?.price_trend === "Stable") && <i className="bi bi-dash" />}
+                    <span>{market?.price_trend || "Stable"}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section: Farmer Available Quantity */}
+            <div
+              style={{
+                background: "#FDFBF7",
+                border: "1.5px solid #EAE5DC",
+                borderRadius: "14px",
+                padding: "20px",
+              }}
+            >
+              <div style={{ fontWeight: 700, color: "#104230", fontSize: "15px", marginBottom: "4px" }}>
+                Available Harvest Quantity
+              </div>
+              <p style={{ fontSize: "13px", color: "#65766e", margin: "0 0 14px" }}>
+                Enter the total harvest quantity you have ready for dispatch to your local Kisan Hub.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+                <div>
+                  <label style={{ fontSize: "12.5px", fontWeight: 700, color: "#183229", marginBottom: "6px", display: "block" }}>
+                    Quantity ({form.unit || "kg"}) <span style={{ color: "#DC2626" }}>*</span>
+                  </label>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="any"
+                      value={form.quantity}
+                      onChange={handleQuantityChange}
+                      placeholder="e.g. 100"
+                      required
+                      autoFocus
+                      style={{
+                        fontSize: "17px",
+                        fontWeight: 700,
+                        padding: "10px 14px",
+                        borderRadius: "10px",
+                        border: "1.5px solid #1B6B34",
+                        color: "#104230",
+                        width: "100%",
+                        background: "#FFFFFF",
+                      }}
+                    />
+                    <span style={{ fontSize: "14px", fontWeight: 700, color: "#65766e", padding: "0 8px" }}>
+                      {form.unit || "kg"}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: "12.5px", fontWeight: 700, color: "#183229", marginBottom: "6px", display: "block" }}>
+                    Harvest Date
+                  </label>
+                  <input
+                    type="date"
+                    value={form.harvest_date}
+                    onChange={(e) => setForm((prev) => ({ ...prev, harvest_date: e.target.value }))}
+                    style={{
+                      height: "44px",
+                      padding: "8px 12px",
+                      borderRadius: "10px",
+                      border: "1.5px solid #EAE5DC",
+                      width: "100%",
+                      fontSize: "14px",
+                      background: "#FFFFFF",
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Compact Location Card: 📍 Location — ↻ Refresh */}
+            <div
+              style={{
+                padding: "12px 16px",
+                background: "#FDFBF7",
+                border: "1px solid #EAE5DC",
+                borderRadius: "12px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "10px",
+                fontSize: "13px",
+                color: "#183229",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0, flex: 1 }}>
+                <i className="bi bi-geo-alt" style={{ color: "#1B6B34", fontSize: "16px", flexShrink: 0 }} />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {locStatus || form.farm_location || "Saved profile location"}
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={detectLocation}
@@ -942,753 +1409,285 @@ export default function FarmerAddCrop({ onBack }) {
                 style={{
                   background: "none",
                   border: "none",
-                  color: "var(--forest, #1B6B34)",
-                  fontSize: "12px",
+                  color: "#1B6B34",
                   fontWeight: 600,
+                  fontSize: "13px",
                   cursor: "pointer",
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: "4px",
-                  padding: 0
+                  gap: "5px",
+                  padding: 0,
+                  flexShrink: 0,
                 }}
               >
-                <i className={`bi bi-geo-alt-fill ${locLoading ? "spin" : ""}`} />
-                {locLoading ? "Detecting location..." : "Auto-detect location"}
+                <i className={`bi bi-arrow-clockwise ${locLoading ? "spin" : ""}`} />
+                <span>{locLoading ? "Locating..." : "Refresh"}</span>
               </button>
             </div>
-            <input
-              type="text"
-              value={form.farm_location}
-              onChange={updateField("farm_location")}
-              placeholder="e.g. Yelahanka, Bengaluru Urban, Karnataka - 560064"
-            />
 
-            {/* Live GPS Coordinates & Pincode Badges */}
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-              gap: "8px",
-              marginTop: "8px"
-            }}>
-              <div style={{ background: "#FAF8F5", border: "1px solid var(--line, #E4DFD1)", borderRadius: "8px", padding: "6px 10px" }}>
-                <span style={{ fontSize: "10.5px", color: "var(--clay, #79705F)", fontWeight: 700, display: "block" }}>LATITUDE</span>
-                <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--ink, #1C1C16)" }}>
-                  {form.latitude ? `${Number(form.latitude).toFixed(6)}°` : "Detecting..."}
-                </span>
-              </div>
-              <div style={{ background: "#FAF8F5", border: "1px solid var(--line, #E4DFD1)", borderRadius: "8px", padding: "6px 10px" }}>
-                <span style={{ fontSize: "10.5px", color: "var(--clay, #79705F)", fontWeight: 700, display: "block" }}>LONGITUDE</span>
-                <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--ink, #1C1C16)" }}>
-                  {form.longitude ? `${Number(form.longitude).toFixed(6)}°` : "Detecting..."}
-                </span>
-              </div>
-              <div style={{ background: "#FAF8F5", border: "1px solid var(--line, #E4DFD1)", borderRadius: "8px", padding: "6px 10px" }}>
-                <span style={{ fontSize: "10.5px", color: "var(--clay, #79705F)", fontWeight: 700, display: "block" }}>PINCODE</span>
-                <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--forest, #1B6B34)" }}>
-                  {form.pincode || "Fetching..."}
-                </span>
-              </div>
-            </div>
-
-            {locStatus && (
-              <div style={{ fontSize: "11.5px", color: "var(--forest, #1B6B34)", marginTop: "6px", display: "flex", alignItems: "center", gap: "4px" }}>
-                <i className="bi bi-info-circle-fill" style={{ fontSize: "12px" }} /> {locStatus}
-              </div>
-            )}
-          </div>
-
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label>
-              Description <span style={{ fontWeight: 400, color: "var(--clay, #79705F)" }}>(Optional)</span>
-            </label>
-            <textarea
-              rows={3}
-              value={form.description}
-              onChange={updateField("description")}
-              placeholder="Describe growing method, freshness, etc."
-            />
-          </div>
-        </div>
-      );
-    }
-
-    if (currentStep === 1) {
-      return (
-        <div>
-          <p style={{ fontSize: "13.5px", color: "var(--clay, #79705F)", marginBottom: "14px" }}>
-            Upload clear photos of your crop. These will be used for AI quality assessment.
-          </p>
-
-          {/* 4-Column Image Grid matching design reference */}
-          <div className="farmer-upload-grid">
-            {imageFiles.map((image, index) => (
-              <div key={`${image.preview || image.url || index}`} className="farmer-upload-item">
-                <a
-                  href={image.preview || image.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="farmer-upload-link"
-                  title="Click to view full image in a new tab"
-                >
-                  <img
-                    src={image.preview || image.url}
-                    alt={image.name || `Crop upload ${index + 1}`}
-                    onError={(e) => {
-                      if (image.fallbackUrl && e.target.src !== image.fallbackUrl) {
-                        e.target.src = image.fallbackUrl;
-                      }
-                    }}
-                  />
-                  <span className="farmer-image-link-icon" title="Open full image">
-                    <i className="bi bi-box-arrow-up-right" />
-                  </span>
-                </a>
-                <button
-                  type="button"
-                  className="farmer-upload-remove-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setImageFiles((prev) => prev.filter((_, i) => i !== index));
-                  }}
-                  title="Remove image"
-                  aria-label="Remove image"
-                >
-                  &times;
-                </button>
-              </div>
-            ))}
-
-            {/* The 4th slot / Add photo tile matching design reference */}
+            {/* Review Summary Box */}
             <div
-              className="farmer-add-photo-tile"
-              title="Click to add photos of your crop"
-              onClick={() => setShowSourceModal(true)}
-            >
-              <i className="bi bi-camera" style={{ fontSize: "22px", color: "var(--forest, #1B6B34)" }} />
-              <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--ink, #1C1C16)" }}>Add photo</span>
-            </div>
-          </div>
-
-          {/* Hidden Device File Picker & Canvas for Photo Snapping */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleImageSelection}
-            style={{ display: "none" }}
-          />
-          <canvas ref={canvasRef} style={{ display: "none" }} />
-
-          {/* Source Selection Modal (Live Camera or Device Photo) */}
-          {showSourceModal && (
-            <div className="farmer-modal-backdrop" onClick={() => setShowSourceModal(false)}>
-              <div className="farmer-photo-modal p-4" onClick={(e) => e.stopPropagation()}>
-                <div className="d-flex align-items-center justify-content-between mb-3">
-                  <h3 style={{ fontSize: "17px", fontWeight: 700, margin: 0, color: "var(--forest, #1B6B34)" }}>
-                    Add Crop Photo
-                  </h3>
-                  <button
-                    type="button"
-                    className="btn-close"
-                    aria-label="Close"
-                    onClick={() => setShowSourceModal(false)}
-                  />
-                </div>
-
-                <p style={{ fontSize: "13px", color: "var(--clay, #79705F)", marginBottom: "16px" }}>
-                  Choose how you want to add photos for your crop:
-                </p>
-
-                {cameraError && (
-                  <div className="alert alert-warning py-2 px-3 mb-3 small d-flex align-items-center gap-2">
-                    <i className="bi bi-exclamation-triangle-fill text-warning" />
-                    <span>{cameraError}</span>
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  className="farmer-photo-choice-card"
-                  onClick={() => startCamera("environment")}
-                >
-                  <div className="farmer-choice-icon-wrap" style={{ background: "#E8F5E9", color: "#1B6B34" }}>
-                    <i className="bi bi-camera-fill" style={{ fontSize: "26px" }} />
-                  </div>
-                  <div className="farmer-choice-text">
-                    <div className="farmer-choice-title">Take Photo (Live Camera)</div>
-                    <div className="farmer-choice-desc">Open live camera to snap fresh crop photos directly</div>
-                  </div>
-                  <i className="bi bi-chevron-right text-muted" />
-                </button>
-
-                <button
-                  type="button"
-                  className="farmer-photo-choice-card"
-                  onClick={() => {
-                    setShowSourceModal(false);
-                    if (fileInputRef.current) fileInputRef.current.click();
-                  }}
-                >
-                  <div className="farmer-choice-icon-wrap" style={{ background: "#E3F2FD", color: "#1976D2" }}>
-                    <i className="bi bi-images" style={{ fontSize: "26px" }} />
-                  </div>
-                  <div className="farmer-choice-text">
-                    <div className="farmer-choice-title">Choose from Device / Gallery</div>
-                    <div className="farmer-choice-desc">Select photos from your device storage or files</div>
-                  </div>
-                  <i className="bi bi-chevron-right text-muted" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Live Camera Viewfinder Modal */}
-          {cameraActive && (
-            <div className="farmer-modal-backdrop" onClick={closeCamera}>
-              <div className="farmer-photo-modal" style={{ maxWidth: "520px" }} onClick={(e) => e.stopPropagation()}>
-                <div className="p-3 d-flex align-items-center justify-content-between" style={{ background: "#111", color: "#FFF" }}>
-                  <div className="d-flex align-items-center gap-2">
-                    <i className="bi bi-camera-video-fill text-success" />
-                    <span style={{ fontWeight: 600, fontSize: "14px" }}>Live Camera Preview</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-sm text-white"
-                    onClick={closeCamera}
-                    style={{ fontSize: "18px", padding: "0 6px", lineHeight: 1 }}
-                  >
-                    &times;
-                  </button>
-                </div>
-
-                <div className="farmer-camera-container">
-                  <video
-                    ref={videoRef}
-                    className="farmer-camera-video"
-                    autoPlay
-                    playsInline
-                    muted
-                  />
-                  <div className="farmer-camera-shutter-bar">
-                    <button
-                      type="button"
-                      className="btn text-white d-flex flex-column align-items-center"
-                      onClick={switchCamera}
-                      title="Switch Camera (Front/Rear)"
-                      style={{ fontSize: "12px", gap: "2px" }}
-                    >
-                      <i className="bi bi-arrow-repeat fs-4" />
-                      <span>Flip</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      className="farmer-camera-shutter-btn"
-                      onClick={capturePhoto}
-                      title="Capture Photo"
-                    >
-                      <i className="bi bi-camera-fill" />
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn text-white d-flex flex-column align-items-center"
-                      onClick={closeCamera}
-                      title="Cancel"
-                      style={{ fontSize: "12px", gap: "2px" }}
-                    >
-                      <i className="bi bi-x-circle fs-4 text-danger" />
-                      <span>Cancel</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (currentStep === 2) {
-      return (
-        <div style={{ background: "var(--sage-light, #E3F5E4)", borderRadius: "10px", padding: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 700, color: "var(--forest, #1B6B34)", fontSize: "14px" }}>
-            <i className="bi bi-stars" /> AI Crop Quality Assessment
-          </div>
-          {qualityLoading ? (
-            <div style={{ marginTop: "16px", padding: "20px", textAlign: "center", color: "var(--forest, #1B6B34)" }}>
-              <div className="spinner-border spinner-border-sm mb-2" role="status" style={{ width: "24px", height: "24px" }} />
-              <div style={{ fontSize: "13.5px", fontWeight: 600 }}>Analyzing crop quality using on-device/backend ONNX model...</div>
-            </div>
-          ) : quality ? (
-            <>
-              <div style={{ marginTop: "16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                <div>
-                  <div style={{ fontSize: "11.5px", color: "var(--clay, #79705F)", fontWeight: 600 }}>QUALITY CLASS</div>
-                  <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: "22px", fontWeight: 600, color: "var(--forest, #1B6B34)" }}>
-                    {quality.result_metadata?.grade ? `${quality.result_metadata.grade} (${quality.quality_label})` : quality.quality_label || "Pending"}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: "11.5px", color: "var(--clay, #79705F)", fontWeight: 600 }}>CONFIDENCE SCORE</div>
-                  <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: "22px", fontWeight: 600, color: "var(--forest, #1B6B34)" }}>
-                    {quality.confidence != null ? `${Math.round(Number(quality.confidence) * 100)}%` : "N/A"}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: "11.5px", color: "var(--clay, #79705F)", fontWeight: 600 }}>STATUS</div>
-                  <div style={{ fontSize: "14px", fontWeight: 600, marginTop: "4px" }}>{quality.prediction_status}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: "11.5px", color: "var(--clay, #79705F)", fontWeight: 600 }}>MODEL</div>
-                  <div style={{ fontSize: "14px", fontWeight: 600, marginTop: "4px" }}>{quality.model_name || "crop-quality-mobilenet-v2"}</div>
-                </div>
-              </div>
-              <div style={{ height: "1px", background: "var(--line, #E4DFD1)", margin: "14px 0" }} />
-              <div style={{ fontSize: "12.5px", color: "var(--forest-2, #164024)", lineHeight: 1.6 }}>
-                <b>Explanation:</b> {quality.result_metadata?.quality_description || quality.result_metadata?.reason || "Real-time visual quality inference completed."}
-              </div>
-            </>
-          ) : (
-            <div style={{ marginTop: "12px" }}>
-              <p style={{ fontSize: "13.5px", color: "var(--clay, #79705F)", marginBottom: "12px" }}>
-                No completed quality assessment yet. Click Continue to run the real AI quality assessment on your uploaded crop image.
-              </p>
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-success"
-                onClick={runQualityPrediction}
-                disabled={qualityLoading}
-              >
-                {qualityLoading ? "Running assessment..." : "Run Quality Assessment Now"}
-              </button>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (currentStep === 3) {
-      return (
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 700, color: "var(--forest, #1B6B34)", marginBottom: "14px" }}>
-            <i className="bi bi-graph-up-arrow" /> Market Price Reference
-          </div>
-          <div className="kv" style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--line, #E4DFD1)" }}>
-            <span style={{ color: "var(--clay, #79705F)" }}>Market reference price</span>
-            <b>{market?.current ? `${money(market.current)} / ${form.unit || "kg"}` : "Market feed unavailable"}</b>
-          </div>
-          <div className="kv" style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--line, #E4DFD1)" }}>
-            <span style={{ color: "var(--clay, #79705F)" }}>7-day range</span>
-            <b>{market?.range ? `${money(market.range[0])} – ${money(market.range[1])}` : "Market feed unavailable"}</b>
-          </div>
-          <div className="kv" style={{ display: "flex", justifyContent: "space-between", padding: "8px 0" }}>
-            <span style={{ color: "var(--clay, #79705F)" }}>Your listed price</span>
-            <b>{form.asking_price && Number(form.asking_price) > 0 ? `${money(form.asking_price)} / ${form.unit || "kg"}` : "Not entered"}</b>
-          </div>
-          {!market?.current && (
-            <div style={{ marginTop: "14px", padding: "10px", background: "#FAF8F5", borderRadius: "8px", fontSize: "12px", color: "var(--clay, #79705F)" }}>
-              <i className="bi bi-info-circle me-1" /> External APMC mandi market price feed is currently unconfigured. Your entered listing price will be used.
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (currentStep === 4) {
-      const isModelUnavailable = price && (price.prediction_status === "MODEL_UNAVAILABLE" || price.predicted_price == null);
-      const hasValidPrediction = price && !isModelUnavailable && price.predicted_price != null && Number(price.predicted_price) > 0;
-
-      return (
-        <div>
-          <div style={{ background: "var(--ochre-light, #FEF7EE)", borderRadius: "10px", padding: "16px", border: "1px solid #EBD8C1" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", fontWeight: 700, color: "#8A5A1C", fontSize: "14px" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <i className="bi bi-lightning-charge-fill" /> AI Price Recommendation
-              </span>
-              {price && !priceLoading && (
-                <span
-                  style={{
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    padding: "3px 8px",
-                    borderRadius: "6px",
-                    background: isModelUnavailable ? "#F5E6D3" : "#D4EDDA",
-                    color: isModelUnavailable ? "#8A5A1C" : "#155724",
-                  }}
-                >
-                  {isModelUnavailable ? "MODEL UNAVAILABLE" : (price.prediction_status || "COMPLETED")}
-                </span>
-              )}
-            </div>
-
-            {priceLoading ? (
-              <div style={{ marginTop: "14px", padding: "16px", textAlign: "center", color: "#8A5A1C" }}>
-                <div className="spinner-border spinner-border-sm mb-2" role="status" style={{ width: "20px", height: "20px" }} />
-                <div style={{ fontSize: "13px", fontWeight: 600 }}>Evaluating fair price recommendation using AI pricing model...</div>
-              </div>
-            ) : hasValidPrediction ? (
-              <>
-                <div style={{ marginTop: "14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                  <div>
-                    <div style={{ fontSize: "11.5px", color: "#8A5A1C", fontWeight: 600 }}>SUGGESTED LISTING PRICE</div>
-                    <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: "22px", fontWeight: 600, color: "var(--forest, #1B6B34)" }}>
-                      {money(price.predicted_price)} / {form.unit || "kg"}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: "11.5px", color: "#8A5A1C", fontWeight: 600 }}>CONFIDENCE</div>
-                    <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: "22px", fontWeight: 600, color: "var(--forest, #1B6B34)" }}>
-                      {price.confidence != null ? `${Math.round(Number(price.confidence) * 100)}%` : "Standard"}
-                    </div>
-                  </div>
-                  {price.result_metadata?.range && (
-                    <div>
-                      <div style={{ fontSize: "11.5px", color: "#8A5A1C", fontWeight: 600 }}>RECOMMENDED RANGE</div>
-                      <div style={{ fontSize: "14px", fontWeight: 600, marginTop: "4px" }}>
-                        {money(price.result_metadata.range[0])} – {money(price.result_metadata.range[1])}
-                      </div>
-                    </div>
-                  )}
-                  {form.asking_price && Number(price.predicted_price) >= Number(form.asking_price) && (
-                    <div>
-                      <div style={{ fontSize: "11.5px", color: "#8A5A1C", fontWeight: 600 }}>ESTIMATED MARGIN</div>
-                      <div style={{ fontSize: "14px", fontWeight: 600, marginTop: "4px" }}>
-                        +{money(Number(price.predicted_price) - Number(form.asking_price))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div style={{ height: "1px", background: "#EBD8C1", margin: "14px 0" }} />
-                <div style={{ fontSize: "12.5px", color: "#684310", lineHeight: 1.6 }}>
-                  <b>Explanation:</b> {price.result_metadata?.reason || "Recommendation computed using real quality grade and hub pricing model."}
-                </div>
-              </>
-            ) : isModelUnavailable ? (
-              <div style={{ marginTop: "12px" }}>
-                <p style={{ margin: "0 0 6px", fontSize: "13.5px", fontWeight: 600, color: "#8A5A1C" }}>
-                  AI fair-price model is currently unavailable for this crop.
-                </p>
-                <p style={{ margin: 0, fontSize: "12.5px", color: "#684310", lineHeight: 1.5 }}>
-                  {price.result_metadata?.reason || "No trained and evaluated price model artifact is configured."} You can specify your listing price manually below.
-                </p>
-              </div>
-            ) : (
-              <p style={{ marginTop: "12px", fontSize: "13.5px", color: "var(--clay, #79705F)" }}>
-                Click Continue to evaluate fair price recommendation using the AI pricing model.
-              </p>
-            )}
-          </div>
-
-          <div className="field" style={{ marginTop: "16px" }}>
-            <label style={{ fontWeight: 600, color: "var(--ink, #1C1C16)", fontSize: "13.5px", display: "block", marginBottom: "6px" }}>
-              Your listing price (₹/{form.unit || "kg"})
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={form.asking_price}
-              onChange={updateField("asking_price")}
-              placeholder="e.g. 28"
-              required
-            />
-          </div>
-        </div>
-      );
-    }
-
-    const step1Err = validateStep1();
-    const finalPriceNum = Number(form.asking_price);
-    const isPublishable = !step1Err && !isNaN(finalPriceNum) && finalPriceNum > 0;
-
-    return (
-      <div>
-        <h3 style={{ fontSize: "16px", fontWeight: 700, marginBottom: "14px", color: "var(--forest, #1B6B34)" }}>
-          Review your listing
-        </h3>
-
-        {!isPublishable && (
-          <div className="alert alert-warning d-flex align-items-center gap-2 mb-3" style={{ fontSize: "13px", borderRadius: "8px" }}>
-            <i className="bi bi-exclamation-triangle-fill text-warning flex-shrink-0" />
-            <div style={{ flex: 1 }}>
-              <b>Incomplete listing details:</b> {step1Err || "A valid listing price greater than ₹0 is required before publishing."}
-            </div>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-dark"
-              style={{ fontSize: "12px", padding: "2px 8px" }}
-              onClick={() => setCurrentStep(0)}
-            >
-              Edit Details
-            </button>
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
-          <div style={{ width: "80px", height: "80px", borderRadius: "10px", overflow: "hidden", background: "#FAF8F5", border: "1px solid var(--line, #E4DFD1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            {imageFiles[0]?.preview ? (
-              <a
-                href={imageFiles[0].preview || imageFiles[0].url}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Click hyperlink to view full image in a new tab"
-                style={{ display: "block", width: "100%", height: "100%" }}
-              >
-                <img src={imageFiles[0].preview || imageFiles[0].url} alt={form.crop_name || "Crop"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              </a>
-            ) : (
-              <i className="bi bi-image" style={{ fontSize: "24px", color: "var(--clay, #79705F)" }} />
-            )}
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: "16px", color: form.crop_name ? "var(--ink, #1C1C16)" : "#C0392B" }}>
-              {form.crop_name || "Crop Name Missing (Required)"}
-            </div>
-            <div style={{ fontSize: "13px", color: "var(--clay, #79705F)", marginTop: "2px" }}>
-              {form.crop_category || "Vegetables"} · {form.quantity ? `${form.quantity} ${form.unit || "kg"} available` : "Quantity missing (Required)"}
-            </div>
-            {quality?.quality_label && quality.prediction_status !== "UNAVAILABLE" && (
-              <div style={{ marginTop: "6px" }}>
-                <span className="badge badge-sage">AI {quality.result_metadata?.grade || (quality.quality_label === "Good" ? "Grade A" : quality.quality_label === "Average" ? "Grade B" : quality.quality_label === "Poor" ? "Grade C" : quality.quality_label)}</span>
-              </div>
-            )}
-          </div>
-        </div>
-        <div style={{ height: "1px", background: "var(--line, #E4DFD1)", margin: "16px 0" }} />
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: "13.5px" }}>
-          <span style={{ color: "var(--clay, #79705F)" }}>Listing price</span>
-          <b>{form.asking_price && Number(form.asking_price) > 0 ? `${money(form.asking_price)} / ${form.unit || "kg"}` : "Price missing (Required)"}</b>
-        </div>
-        {price && (
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: "13.5px" }}>
-            <span style={{ color: "var(--clay, #79705F)" }}>AI price recommendation</span>
-            <b>
-              {price.predicted_price != null && price.prediction_status !== "MODEL_UNAVAILABLE"
-                ? `${money(price.predicted_price)} / ${form.unit || "kg"}`
-                : "Model unavailable (Manual price set)"}
-            </b>
-          </div>
-        )}
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: "13.5px" }}>
-          <span style={{ color: "var(--clay, #79705F)" }}>Harvest date</span>
-          <b>{form.harvest_date || "Not specified"}</b>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: "13.5px" }}>
-          <span style={{ color: "var(--clay, #79705F)" }}>Farm location</span>
-          <b style={{ textAlign: "right" }}>{form.farm_location || "Not specified"}</b>
-        </div>
-        {form.pincode && (
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: "13.5px" }}>
-            <span style={{ color: "var(--clay, #79705F)" }}>PIN Code</span>
-            <b>{form.pincode}</b>
-          </div>
-        )}
-        {form.latitude && form.longitude && (
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: "13.5px" }}>
-            <span style={{ color: "var(--clay, #79705F)" }}>GPS Coordinates</span>
-            <b>{Number(form.latitude).toFixed(6)}°, {Number(form.longitude).toFixed(6)}°</b>
-          </div>
-        )}
-        {form.description && (
-          <div style={{ marginTop: "12px", padding: "10px", background: "#FAF8F5", borderRadius: "8px", fontSize: "12.5px", color: "var(--clay, #79705F)" }}>
-            {form.description}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const isPublishable = !validateStep1() && !isNaN(Number(form.asking_price)) && Number(form.asking_price) > 0;
-
-  return (
-    <section className="farmer-dashboard-view add-crop-page" style={{ maxWidth: "880px", margin: "0 auto", padding: "16px 8px 60px" }}>
-      {/* Standard Farmer Page Header */}
-      <div className="farmer-page-header">
-        <div>
-          <div className="eyebrow"><i className="bi bi-flower1 me-1" /> FARM PRODUCE & HARVEST</div>
-          <h1 className="farmer-page-title">{editingId ? "Edit Crop Listing" : "Add New Crop"}</h1>
-          <p className="farmer-page-sub">Step-by-step listing wizard with AI quality grading, APMC mandi rates, and automated price intelligence.</p>
-        </div>
-        <div className="farmer-header-actions">
-          <button
-            type="button"
-            className="kisan-btn-outline"
-            onClick={onBack || (() => navigate("/farmer/crops"))}
-          >
-            <i className="bi bi-chevron-left me-1" /> Back to My Crops
-          </button>
-        </div>
-      </div>
-
-      {/* Stepper Dots Track */}
-      <div
-        className="step-track"
-        role="navigation"
-        aria-label="Add Crop Steps"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          width: "100%",
-          marginBottom: "18px",
-          padding: "4px 0",
-        }}
-      >
-        {steps.map((s, i) => {
-          const isDone = i < currentStep;
-          const isNow = i === currentStep;
-
-          return (
-            <div
-              key={s}
               style={{
+                background: "#E8F5E9",
+                border: "1px solid #C8E6C9",
+                borderRadius: "14px",
+                padding: "16px 20px",
                 display: "flex",
+                justifyContent: "space-between",
                 alignItems: "center",
-                flex: i < steps.length - 1 ? 1 : "0 0 auto",
+                flexWrap: "wrap",
+                gap: "12px",
               }}
             >
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "15px", color: "#104230" }}>
+                  {form.crop_name || "Produce"} · {form.quantity ? `${form.quantity} ${form.unit || "kg"}` : "Enter quantity"}
+                </div>
+                <div style={{ fontSize: "13px", color: "#1B6B34", marginTop: "2px" }}>
+                  Market: {market?.market_price ? money(market.market_price) + "/" + (form.unit || "kg") : "—"} · Fair Price: {price?.predicted_price ? money(price.predicted_price) + "/" + (form.unit || "kg") : "—"} · Trend: {market?.price_trend || "Stable"}
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: "11.5px", color: "#1B6B34", fontWeight: 600 }}>Estimated Total Value</div>
+                <div style={{ fontSize: "18px", fontWeight: 800, color: "#104230" }}>
+                  {form.quantity && price?.predicted_price
+                    ? money(Number(price.predicted_price) * Number(form.quantity))
+                    : "—"}
+                </div>
+              </div>
+            </div>
+
+            {/* Single "Publish Crop" Button */}
+            <button
+              type="button"
+              onClick={handlePublish}
+              disabled={loading || !isPublishable}
+              aria-label="Publish Crop"
+              style={{
+                width: "100%",
+                height: "52px",
+                background: isPublishable ? "#1B6B34" : "#D6D0C2",
+                color: "#FFFFFF",
+                fontWeight: 700,
+                fontSize: "16px",
+                borderRadius: "12px",
+                border: "none",
+                cursor: isPublishable ? "pointer" : "not-allowed",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                boxShadow: isPublishable ? "0 4px 14px rgba(27, 107, 52, 0.25)" : "none",
+                transition: "all 0.2s ease",
+              }}
+            >
+              {loading ? (
+                <>
+                  <div className="spinner-border spinner-border-sm" role="status" style={{ width: "18px", height: "18px" }} />
+                  <span>Publishing Crop...</span>
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-cloud-arrow-up" style={{ fontSize: "18px" }} />
+                  <span>Publish Crop</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Change / Retake Photo */}
+      {showSourceModal && (
+        <div className="farmer-modal-backdrop" onClick={() => setShowSourceModal(false)}>
+          <div
+            className="farmer-photo-modal"
+            style={{
+              maxWidth: "480px",
+              padding: "28px 24px",
+              borderRadius: "20px",
+              border: "1px solid #EAE5DC",
+              background: "#FFFFFF",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="d-flex align-items-center justify-content-between mb-2">
+              <h3 style={{ fontSize: "18px", fontWeight: 700, margin: 0, color: "#104230" }}>
+                Add Crop
+              </h3>
               <button
                 type="button"
-                className={`step-dot ${isDone ? "done" : isNow ? "now" : ""}`}
-                onClick={() => goToStep(i)}
-                title={`Click to go to Step ${i + 1}: ${s}`}
-                aria-label={`Step ${i + 1}: ${s}`}
+                className="btn-close"
+                aria-label="Close"
+                onClick={() => setShowSourceModal(false)}
+              />
+            </div>
+            <p style={{ fontSize: "14px", color: "#65766e", marginBottom: "20px" }}>
+              Add a photo of your crop
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <button
+                type="button"
+                className="farmer-photo-choice-card"
+                onClick={() => {
+                  setShowSourceModal(false);
+                  startCamera("environment");
+                }}
                 style={{
-                  width: "32px",
-                  height: "32px",
-                  minWidth: "32px",
-                  borderRadius: "50%",
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "13px",
-                  fontWeight: 700,
+                  width: "100%",
+                  padding: "16px 18px",
+                  border: "1.5px solid #EAE5DC",
+                  borderRadius: "14px",
+                  background: "#FFFFFF",
                   cursor: "pointer",
-                  padding: 0,
-                  transition: "all 0.2s ease",
-                  backgroundColor: isDone ? "var(--forest, #1B6B34)" : "#FFFFFF",
-                  color: isDone
-                    ? "#FFFFFF"
-                    : isNow
-                    ? "var(--forest, #1B6B34)"
-                    : "var(--clay, #79705F)",
-                  border: isDone
-                    ? "2px solid var(--forest, #1B6B34)"
-                    : isNow
-                    ? "2px solid var(--forest, #1B6B34)"
-                    : "2px solid var(--sand, #D8D2C2)",
-                  boxShadow: isNow ? "0 0 0 3px rgba(27, 107, 52, 0.12)" : "none",
+                  textAlign: "left",
+                  gap: "14px",
                 }}
               >
-                {isDone ? (
-                  <i className="bi bi-check" style={{ fontSize: "18px", strokeWidth: "2" }} />
-                ) : (
-                  i + 1
-                )}
-              </button>
-              {i < steps.length - 1 && (
                 <div
-                  className={`step-line ${isDone ? "done" : ""}`}
-                  onClick={() => goToStep(i + 1)}
-                  title={`Click to jump to Step ${i + 2}: ${steps[i + 1]}`}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") goToStep(i + 1);
-                  }}
                   style={{
-                    flex: 1,
-                    height: "2px",
-                    backgroundColor: isDone ? "var(--forest, #1B6B34)" : "var(--sand, #E4DFD1)",
-                    margin: "0 8px",
-                    cursor: "pointer",
-                    transition: "background-color 0.2s ease",
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "12px",
+                    background: "#E8F5E9",
+                    color: "#1B6B34",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    fontSize: "22px",
                   }}
-                />
-              )}
+                >
+                  <i className="bi bi-camera" />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: "15px", color: "#183229" }}>
+                    Take Photo
+                  </div>
+                  <div style={{ fontSize: "12.5px", color: "#65766e" }}>
+                    Open live camera to snap fresh crop photos directly
+                  </div>
+                </div>
+                <i className="bi bi-chevron-right" style={{ color: "#9CA3AF" }} />
+              </button>
+
+              <button
+                type="button"
+                className="farmer-photo-choice-card"
+                onClick={() => {
+                  setShowSourceModal(false);
+                  if (fileInputRef.current) fileInputRef.current.click();
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  width: "100%",
+                  padding: "16px 18px",
+                  border: "1.5px solid #EAE5DC",
+                  borderRadius: "14px",
+                  background: "#FFFFFF",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  gap: "14px",
+                }}
+              >
+                <div
+                  style={{
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "12px",
+                    background: "#E3F2FD",
+                    color: "#1976D2",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    fontSize: "22px",
+                  }}
+                >
+                  <i className="bi bi-image" />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: "15px", color: "#183229" }}>
+                    Choose Photo
+                  </div>
+                  <div style={{ fontSize: "12.5px", color: "#65766e" }}>
+                    Select photos from your device storage or files
+                  </div>
+                </div>
+                <i className="bi bi-chevron-right" style={{ color: "#9CA3AF" }} />
+              </button>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        </div>
+      )}
 
-      <div
-        style={{
-          fontSize: "14px",
-          fontWeight: 700,
-          color: "var(--forest, #1B6B34)",
-          marginBottom: "16px",
-        }}
-      >
-        Step {currentStep + 1} of {steps.length}: {steps[currentStep]}
-      </div>
+      {/* Live Camera Viewfinder Modal */}
+      {cameraActive && (
+        <div className="farmer-modal-backdrop" onClick={closeCamera}>
+          <div className="farmer-photo-modal" style={{ maxWidth: "520px", borderRadius: "18px", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
+            <div className="p-3 d-flex align-items-center justify-content-between" style={{ background: "#104230", color: "#FFF" }}>
+              <div className="d-flex align-items-center gap-2">
+                <i className="bi bi-camera text-white" />
+                <span style={{ fontWeight: 600, fontSize: "14px" }}>Take Crop Photo</span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm text-white"
+                onClick={closeCamera}
+                style={{ fontSize: "20px", padding: "0 6px", lineHeight: 1 }}
+              >
+                &times;
+              </button>
+            </div>
 
-      {error && <div className="error" style={{ marginBottom: "14px" }}>{error}</div>}
-      {success && <div className="success" style={{ marginBottom: "14px" }}>{success}</div>}
+            <div className="farmer-camera-container">
+              <video
+                ref={videoRef}
+                className="farmer-camera-video"
+                autoPlay
+                playsInline
+                muted
+              />
+              <div className="farmer-camera-shutter-bar" style={{ background: "rgba(16, 66, 48, 0.95)" }}>
+                <button
+                  type="button"
+                  className="btn text-white d-flex flex-column align-items-center"
+                  onClick={switchCamera}
+                  title="Switch Camera (Front/Rear)"
+                  style={{ fontSize: "12px", gap: "2px" }}
+                >
+                  <i className="bi bi-arrow-clockwise fs-4" />
+                  <span>Flip</span>
+                </button>
 
-      <div className="card card-pad" style={{ background: "var(--paper, #FFFFFF)", border: "1px solid var(--line, #E4DFD1)", borderRadius: "14px", padding: "20px" }}>
-        {renderStepContent()}
-      </div>
+                <button
+                  type="button"
+                  className="farmer-camera-shutter-btn"
+                  onClick={capturePhoto}
+                  title="Capture Photo"
+                  style={{ background: "#FFFFFF", color: "#104230" }}
+                >
+                  <i className="bi bi-camera" />
+                </button>
 
-      {/* Bottom Navigation Buttons */}
-      <div className="farmer-form-bottom-actions">
-        <button
-          type="button"
-          className="btn btn-outline"
-          style={{
-            borderColor: "var(--line, #D6D0C2)",
-            background: "var(--paper, #FFFFFF)",
-            color: "var(--ink, #1C1C16)",
-            fontWeight: 600,
-            padding: "12px 24px",
-            fontSize: "14px",
-            borderRadius: "10px",
-          }}
-          onClick={previousStep}
-          disabled={loading || qualityLoading || priceLoading}
-          aria-label="Back"
-        >
-          Back
-        </button>
-
-        {currentStep < steps.length - 1 ? (
-          <button
-            type="button"
-            className="btn btn-primary"
-            style={{
-              background: "var(--forest, #1B6B34)",
-              color: "#FFFFFF",
-              fontWeight: 600,
-              padding: "12px 24px",
-              fontSize: "14px",
-              borderRadius: "10px",
-              border: "none",
-            }}
-            onClick={nextStep}
-            disabled={loading || qualityLoading || priceLoading}
-            aria-label="Continue"
-          >
-            {loading ? "Saving..." : qualityLoading ? "Assessing..." : priceLoading ? "Evaluating..." : "Continue"}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="btn btn-accent"
-            style={{
-              background: isPublishable ? "var(--ochre, #C8822A)" : "#D6D0C2",
-              color: "#FFFFFF",
-              fontWeight: 600,
-              padding: "11px 24px",
-              cursor: isPublishable ? "pointer" : "not-allowed",
-            }}
-            onClick={handlePublish}
-            disabled={loading || !isPublishable}
-            aria-label="Publish Listing"
-          >
-            {loading ? "Publishing..." : "Publish Listing"}
-          </button>
-        )}
-      </div>
+                <button
+                  type="button"
+                  className="btn text-white d-flex flex-column align-items-center"
+                  onClick={closeCamera}
+                  title="Cancel"
+                >
+                  <i className="bi bi-x-circle fs-4 text-white-50" />
+                  <span>Cancel</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

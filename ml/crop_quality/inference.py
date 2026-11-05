@@ -31,6 +31,8 @@ class QualityPrediction:
 class CropQualityInference:
     """Inference engine using ONNX Runtime CPU for crop visual quality classification."""
 
+    _cached_sessions: dict[Path, Any] = {}
+
     def __init__(self, model_path: Path | str | None = None) -> None:
         self.model_path = Path(model_path) if model_path is not None else DEFAULT_MODEL_PATH
         self.session = None
@@ -40,6 +42,11 @@ class CropQualityInference:
     def _load_session(self) -> None:
         if not self.model_path.is_file():
             self.init_error = f"Model artifact not found at {self.model_path}"
+            self.session = None
+            return
+
+        if self.model_path in CropQualityInference._cached_sessions:
+            self.session = CropQualityInference._cached_sessions[self.model_path]
             return
 
         try:
@@ -49,11 +56,13 @@ class CropQualityInference:
             opts = ort.SessionOptions()
             opts.intra_op_num_threads = 2
             opts.inter_op_num_threads = 1
-            self.session = ort.InferenceSession(
+            session = ort.InferenceSession(
                 str(self.model_path),
                 sess_options=opts,
                 providers=["CPUExecutionProvider"],
             )
+            CropQualityInference._cached_sessions[self.model_path] = session
+            self.session = session
             self.init_error = None
         except Exception as exc:
             self.session = None

@@ -703,11 +703,12 @@ def test_delivery_slots_promised_windows_and_slot_capacity_lifecycle():
             for s in (future_slot, full_slot, past_slot, other_hub_slot):
                 await session.refresh(s)
 
+        import pytest
+
+        from backend.app.models import OrderStatus
         from backend.app.repositories.consumer_repository import ConsumerRepository
         from backend.app.repositories.orders_repository import OrdersRepository
         from backend.app.services.orders_service import OrdersService
-        from backend.app.models import OrderStatus
-        import pytest
 
         async with factory() as session:
             svc = OrdersService(

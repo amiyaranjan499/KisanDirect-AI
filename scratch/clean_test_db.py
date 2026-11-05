@@ -1,8 +1,11 @@
 import asyncio
+
+from sqlalchemy import text
+
 from backend.app.core.config import Settings
 from backend.app.database.session import build_engine
 from backend.app.models.domain import Base
-from sqlalchemy import text
+
 
 async def clean():
     settings = Settings()

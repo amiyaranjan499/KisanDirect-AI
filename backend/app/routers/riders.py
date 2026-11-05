@@ -11,7 +11,6 @@ from backend.app.dependencies import get_current_user
 from backend.app.models import ShipmentStatus, User, UserRole
 from backend.app.repositories.rider_repository import RiderRepository
 from backend.app.schemas.rider import (
-    RiderProfileUpdate,
     RiderAvailabilityUpdate,
     RiderHistoryResponse,
     RiderLocationCreate,
@@ -19,6 +18,7 @@ from backend.app.schemas.rider import (
     RiderOfferActionResponse,
     RiderOfferResponse,
     RiderOtpVerificationRequest,
+    RiderProfileUpdate,
     RiderSelfResponse,
     RiderShipmentResponse,
     RiderShipmentStatusUpdate,

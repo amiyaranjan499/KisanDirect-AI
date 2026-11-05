@@ -21,6 +21,7 @@ from backend.app.models import (
     OrderItem,
     OrderStatus,
     Shipment,
+    ShipmentStatus,
     User,
     UserRole,
 )
@@ -42,7 +43,6 @@ from backend.app.services.order_lifecycle_service import (
     LifecyclePermissionError,
     OrderLifecycleService,
 )
-from backend.app.models import ShipmentStatus
 
 
 class HubOperationsService:

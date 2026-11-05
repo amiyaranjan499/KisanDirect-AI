@@ -7,15 +7,18 @@ import {
 } from "../../services/adminApi";
 
 const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-const formatDate = (value) =>
-  value
-    ? new Date(value).toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "—";
+const formatDateTime = (value) => {
+  if (!value) return "—";
+  const d = new Date(value);
+  return d.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
 
 const RANGE_TABS = [
   { key: "7d", label: "Past 7 Days" },
@@ -236,45 +239,46 @@ export default function AdminAnalyticsPage() {
             <span>Recent Events</span>
           </div>
 
-          <div className="d-flex flex-direction-column gap-3">
+          <div className="admin-feed-list">
             {analytics?.recent_activity?.length ? (
               analytics.recent_activity.map((item, idx) => (
-                <div key={item.id || idx} className="d-flex align-items-start gap-3 pb-2 border-bottom">
-                  <div className="admin-avatar-mini" style={{ background: "#edf8df" }}>
-                    <i className="bi bi-bell-fill text-forest" />
+                <div key={item.id || idx} className="admin-feed-item">
+                  <div className="admin-feed-icon">
+                    <i className={item.type === "order" ? "bi bi-box-seam" : "bi bi-bell-fill"} />
                   </div>
-                  <div className="flex-fill min-w-0">
-                    <div className="d-flex align-items-center justify-content-between">
-                      <strong className="text-dark small">{item.title}</strong>
-                      <small className="text-muted" style={{ fontSize: "0.72rem" }}>
-                        {formatDate(item.created_at)}
-                      </small>
+                  <div className="admin-feed-body">
+                    <div className="admin-feed-header">
+                      <strong className="admin-feed-title">{item.title}</strong>
+                      <span className="admin-feed-time">
+                        {formatDateTime(item.created_at)}
+                      </span>
                     </div>
-                    <p className="text-muted small mb-0 text-truncate">{item.message}</p>
+                    <p className="admin-feed-message">{item.message}</p>
                   </div>
                 </div>
               ))
             ) : notifications.length ? (
               notifications.slice(0, 5).map((n) => (
-                <div key={n.id} className="d-flex align-items-start gap-3 pb-2 border-bottom">
-                  <div className="admin-avatar-mini">
-                    <i className="bi bi-app-indicator text-forest" />
+                <div key={n.id} className="admin-feed-item">
+                  <div className="admin-feed-icon">
+                    <i className="bi bi-app-indicator" />
                   </div>
-                  <div className="flex-fill min-w-0">
-                    <div className="d-flex align-items-center justify-content-between">
-                      <strong className="text-dark small">{n.title}</strong>
-                      <small className="text-muted" style={{ fontSize: "0.72rem" }}>
-                        {formatDate(n.created_at)}
-                      </small>
+                  <div className="admin-feed-body">
+                    <div className="admin-feed-header">
+                      <strong className="admin-feed-title">{n.title}</strong>
+                      <span className="admin-feed-time">
+                        {formatDateTime(n.created_at)}
+                      </span>
                     </div>
-                    <p className="text-muted small mb-0 text-truncate">{n.message}</p>
+                    <p className="admin-feed-message">{n.message}</p>
                   </div>
                 </div>
               ))
             ) : (
-              <p className="text-muted small py-3 mb-0 text-center">
-                No recent system activity events recorded in this time range.
-              </p>
+              <div className="admin-feed-empty">
+                <i className="bi bi-activity" />
+                <p className="mb-0">No recent system activity events recorded in this time range.</p>
+              </div>
             )}
           </div>
         </section>

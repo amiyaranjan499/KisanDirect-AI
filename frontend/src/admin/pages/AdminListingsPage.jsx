@@ -15,7 +15,7 @@ export default function AdminListingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("CURRENT");
 
   const [selectedListing, setSelectedListing] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -45,8 +45,13 @@ export default function AdminListingsPage() {
         `${item.crop_name || ""} ${item.farmer_name || ""} ${item.crop_category || ""} ${item.id || ""}`
           .toLowerCase()
           .includes(q);
-      const matchesStatus =
-        statusFilter === "ALL" || (item.availability_status || "").toUpperCase() === statusFilter;
+      const statusUpper = (item.availability_status || "").toUpperCase();
+      let matchesStatus = true;
+      if (statusFilter === "CURRENT") {
+        matchesStatus = statusUpper !== "UNAVAILABLE";
+      } else if (statusFilter !== "ALL") {
+        matchesStatus = statusUpper === statusFilter;
+      }
       return matchesSearch && matchesStatus;
     });
   }, [listings, search, statusFilter]);
@@ -130,7 +135,11 @@ export default function AdminListingsPage() {
   ];
 
   const statusTabs = [
-    { key: "ALL", label: "All Listings", count: listings.length },
+    {
+      key: "CURRENT",
+      label: "Current Listings",
+      count: listings.filter((l) => (l.availability_status || "").toUpperCase() !== "UNAVAILABLE").length,
+    },
     {
       key: "AVAILABLE",
       label: "Available",
@@ -140,6 +149,11 @@ export default function AdminListingsPage() {
       key: "SOLD_OUT",
       label: "Sold Out",
       count: listings.filter((l) => (l.availability_status || "").toUpperCase() === "SOLD_OUT").length,
+    },
+    {
+      key: "UNAVAILABLE",
+      label: "Deleted / Inactive",
+      count: listings.filter((l) => (l.availability_status || "").toUpperCase() === "UNAVAILABLE").length,
     },
   ];
 

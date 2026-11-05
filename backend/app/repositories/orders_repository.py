@@ -24,9 +24,9 @@ from backend.app.models import (
     OrderEvent,
     OrderItem,
     Payment,
+    ReservationStatus,
     Rider,
     RiderLocation,
-    ReservationStatus,
     Shipment,
     StockReservation,
 )

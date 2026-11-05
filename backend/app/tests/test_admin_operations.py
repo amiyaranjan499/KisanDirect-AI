@@ -2,8 +2,7 @@ import asyncio
 import sys
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from uuid import uuid4
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
@@ -381,7 +380,10 @@ def test_admin_phase7_comprehensive_operations_and_edge_cases():
 
     async def seed_deliveries_and_locked_shipment():
         from backend.app.models import HubStock, HubStockDelivery
-        from backend.app.tests.test_order_lifecycle import _create_out_for_delivery_shipment, _get_delivery_otp_notifications
+        from backend.app.tests.test_order_lifecycle import (
+            _create_out_for_delivery_shipment,
+            _get_delivery_otp_notifications,
+        )
 
         settings = Settings(otp_ttl_minutes=120, otp_max_attempts=2)
         async with factory() as session:

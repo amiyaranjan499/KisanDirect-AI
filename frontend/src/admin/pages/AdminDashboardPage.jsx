@@ -92,6 +92,10 @@ export default function AdminDashboardPage() {
     [summary],
   );
 
+  const totalFarmers = summary?.total_farmers ?? farmers.length;
+  const totalConsumers = summary?.total_consumers ?? 0;
+  const totalUsers = summary?.total_genuine_users ?? (totalFarmers + totalConsumers);
+
   const pendingPaymentsCount = useMemo(() => {
     return payments.filter((p) => p.status === "PENDING").length;
   }, [payments]);
@@ -136,8 +140,8 @@ export default function AdminDashboardPage() {
             <span className="admin-kpi-title">Total Users</span>
             <div className="admin-kpi-icon"><i className="bi bi-people" /></div>
           </div>
-          <div className="admin-kpi-value">{loading ? "—" : summary?.total_users ?? 0}</div>
-          <span className="admin-kpi-subtext">Active: {summary?.active_users ?? 0}</span>
+          <div className="admin-kpi-value">{loading ? "—" : totalUsers}</div>
+          <span className="admin-kpi-subtext">Active: {totalUsers}</span>
         </div>
 
         <div className="admin-kpi-card">
@@ -145,7 +149,7 @@ export default function AdminDashboardPage() {
             <span className="admin-kpi-title">Farmers</span>
             <div className="admin-kpi-icon"><i className="bi bi-person-lines-fill" /></div>
           </div>
-          <div className="admin-kpi-value">{loading ? "—" : summary?.total_farmers ?? 0}</div>
+          <div className="admin-kpi-value">{loading ? "—" : totalFarmers}</div>
           <span className="admin-kpi-subtext">Verified supply partners</span>
         </div>
 
@@ -154,7 +158,7 @@ export default function AdminDashboardPage() {
             <span className="admin-kpi-title">Consumers</span>
             <div className="admin-kpi-icon"><i className="bi bi-cart-check" /></div>
           </div>
-          <div className="admin-kpi-value">{loading ? "—" : summary?.total_consumers ?? 0}</div>
+          <div className="admin-kpi-value">{loading ? "—" : totalConsumers}</div>
           <span className="admin-kpi-subtext">Registered buyers</span>
         </div>
 

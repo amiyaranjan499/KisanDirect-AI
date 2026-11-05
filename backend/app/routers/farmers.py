@@ -9,7 +9,6 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.database.session import get_db_session
 from backend.app.dependencies import get_current_user
 from backend.app.models import User, UserRole
-from backend.app.services.order_lifecycle_service import LifecycleConflict
 from backend.app.repositories.farmer_repository import FarmerRepository
 from backend.app.schemas.farmer import (
     CropImageResponse,
@@ -25,18 +24,20 @@ from backend.app.schemas.farmer import (
     FarmerFacilityCreate,
     FarmerFacilityResponse,
     FarmerFacilityUpdate,
+    FarmerOrderAssignStaffRequest,
+    FarmerOrderDeliverRequest,
+    FarmerOrderPreparePersonallyRequest,
     FarmerProfileResponse,
     FarmerProfileUpdate,
     FarmerStaffCreate,
     FarmerStaffResponse,
-    FarmerOrderAssignStaffRequest,
-    FarmerOrderPreparePersonallyRequest,
-    FarmerOrderDeliverRequest,
     FarmerWalletResponse,
     FarmerWalletWithdrawalRequest,
     FarmerWithdrawalResponse,
+    PaginatedCropListingResponse,
 )
 from backend.app.services.farmer_service import FarmerService
+from backend.app.services.order_lifecycle_service import LifecycleConflict
 
 router = APIRouter(prefix="/farmers", tags=["farmers"])
 
@@ -107,12 +108,24 @@ async def upload_cover_image(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.get("/me/listings", response_model=list[CropListingResponse])
+@router.get("/me/listings", response_model=list[CropListingResponse] | PaginatedCropListingResponse)
 async def list_my_listings(
     current_user: Annotated[User, Depends(get_authenticated_farmer)],
     service: Annotated[FarmerService, Depends(get_farmer_service)],
-) -> list[CropListingResponse]:
-    return await service.list_listings(current_user.id)
+    limit: int | None = Query(default=None),
+    offset: int | None = Query(default=None),
+    exclude_unavailable: bool = Query(default=False),
+    search: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+) -> list[CropListingResponse] | PaginatedCropListingResponse:
+    return await service.list_listings(
+        current_user.id,
+        limit=limit,
+        offset=offset,
+        exclude_unavailable=exclude_unavailable,
+        search=search,
+        status=status,
+    )
 
 
 @router.get("/me/listings/{listing_id}", response_model=CropListingResponse)
@@ -264,6 +277,8 @@ async def reverse_geocode(
             state = data.get("principalSubdivision") or ""
             locality = data.get("locality") or ""
             if postcode:
+                addr_str = ", ".join(p for p in [locality, city, state] if p)
+                formatted = f"{addr_str} - {postcode}".strip(" -") if postcode else addr_str
                 return {
                     "latitude": latitude,
                     "longitude": longitude,
@@ -271,7 +286,7 @@ async def reverse_geocode(
                     "locality": locality,
                     "city": city,
                     "state": state,
-                    "formatted": f"{locality}, {city}, {state} - {postcode}".strip(", - "),
+                    "formatted": formatted,
                 }
     except Exception:
         pass
@@ -287,6 +302,8 @@ async def reverse_geocode(
             locality = addr.get("suburb") or addr.get("village") or addr.get("neighbourhood") or ""
             city = addr.get("city") or addr.get("county") or addr.get("state_district") or ""
             state = addr.get("state") or ""
+            addr_str = ", ".join(p for p in [locality, city, state] if p)
+            formatted = f"{addr_str} - {postcode}".strip(" -") if postcode else addr_str
             return {
                 "latitude": latitude,
                 "longitude": longitude,
@@ -294,7 +311,7 @@ async def reverse_geocode(
                 "locality": locality,
                 "city": city,
                 "state": state,
-                "formatted": f"{locality}, {city}, {state} - {postcode}".strip(", - "),
+                "formatted": formatted,
             }
     except Exception:
         pass
@@ -352,6 +369,20 @@ async def update_facility(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.delete("/me/facilities/{facility_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_facility(
+    facility_id: UUID,
+    current_user: Annotated[User, Depends(get_authenticated_farmer)],
+    service: Annotated[FarmerService, Depends(get_farmer_service)],
+) -> None:
+    try:
+        await service.delete_facility(current_user.id, facility_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/me/staff", response_model=list[FarmerStaffResponse])

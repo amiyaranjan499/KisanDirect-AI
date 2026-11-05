@@ -291,3 +291,241 @@ def test_farmer_dashboard_empty_state() -> None:
             assert empty_orders.json() == []
     finally:
         cleanup_dashboard_data(data)
+
+
+def test_farmer_dashboard_statistics_after_crop_deletion() -> None:
+    data = seed_dashboard_data()
+    farmer_user, other_farmer_user, consumer_user, consumer_profile, farmer_profile, other_farmer_profile, crop, listing_one, listing_two, order_one, order_two, order_three, order_four = data
+    try:
+        with TestClient(create_app()) as client:
+            # 1. Verify initial dashboard statistics reflect real database state (1 AVAILABLE, 1 SOLD_OUT)
+            summary_before = client.get("/api/v1/farmers/dashboard/summary", headers=auth_header(farmer_user))
+            assert summary_before.status_code == 200
+            assert summary_before.json()["total_listings"] == 2
+            assert summary_before.json()["active_listings"] == 1
+            assert summary_before.json()["inactive_listings"] == 1
+
+            listings_before = client.get("/api/v1/farmers/dashboard/listings", headers=auth_header(farmer_user))
+            assert listings_before.status_code == 200
+            assert len(listings_before.json()) == 2
+
+            # 2. Delete the active listing (sets availability_status to UNAVAILABLE)
+            delete_response = client.delete(
+                f"/api/v1/farmers/me/listings/{listing_one.id}",
+                headers=auth_header(farmer_user),
+            )
+            assert delete_response.status_code == 204
+
+            # 3. Verify dashboard statistics immediately reflect deletion (1 total, 0 active, 1 inactive)
+            summary_after = client.get("/api/v1/farmers/dashboard/summary", headers=auth_header(farmer_user))
+            assert summary_after.status_code == 200
+            summary_payload = summary_after.json()
+            assert summary_payload["total_listings"] == 1
+            assert summary_payload["active_listings"] == 0
+            assert summary_payload["inactive_listings"] == 1
+
+            # 4. Verify dashboard listings exclude the deleted listing
+            listings_after = client.get("/api/v1/farmers/dashboard/listings", headers=auth_header(farmer_user))
+            assert listings_after.status_code == 200
+            listing_items = listings_after.json()
+            assert len(listing_items) == 1
+            assert listing_items[0]["id"] == str(listing_two.id)
+
+            # 5. Delete the remaining sold listing
+            delete_sold_response = client.delete(
+                f"/api/v1/farmers/me/listings/{listing_two.id}",
+                headers=auth_header(farmer_user),
+            )
+            assert delete_sold_response.status_code == 204
+
+            # 6. Verify dashboard statistics reflect zero listings
+            summary_empty = client.get("/api/v1/farmers/dashboard/summary", headers=auth_header(farmer_user))
+            assert summary_empty.status_code == 200
+            assert summary_empty.json()["total_listings"] == 0
+            assert summary_empty.json()["active_listings"] == 0
+            assert summary_empty.json()["inactive_listings"] == 0
+
+            listings_empty = client.get("/api/v1/farmers/dashboard/listings", headers=auth_header(farmer_user))
+            assert listings_empty.status_code == 200
+            assert listings_empty.json() == []
+    finally:
+        cleanup_dashboard_data(data)
+
+
+def test_farmer_listings_pagination_and_quality() -> None:
+    async def setup_data():
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            farmer_user = User(
+                email=f"pagination-farmer-{uuid4()}@example.com",
+                hashed_password=hash_password("Test-password-123"),
+                role=UserRole.FARMER,
+            )
+            empty_farmer_user = User(
+                email=f"empty-farmer-{uuid4()}@example.com",
+                hashed_password=hash_password("Test-password-123"),
+                role=UserRole.FARMER,
+            )
+            session.add_all([farmer_user, empty_farmer_user])
+            await session.flush()
+
+            farmer_profile = Farmer(user_id=farmer_user.id, name="Pagination Farmer")
+            empty_farmer_profile = Farmer(user_id=empty_farmer_user.id, name="Empty Farmer")
+            session.add_all([farmer_profile, empty_farmer_profile])
+            await session.flush()
+
+            crop = Crop(name=f"Paginated Crop {uuid4()}", category="Vegetable")
+            session.add(crop)
+            await session.flush()
+
+            # Create 12 listings (> 10 records)
+            listings = []
+            base_time = datetime.now(timezone.utc)
+            for i in range(12):
+                cl = CropListing(
+                    crop_id=crop.id,
+                    farmer_id=farmer_profile.id,
+                    quantity=Decimal(str(10 + i)),
+                    minimum_order_quantity=Decimal("1"),
+                    unit="kg",
+                    asking_price=Decimal(str(20 + i)),
+                    availability_status=AvailabilityStatus.AVAILABLE,
+                    created_at=base_time + timedelta(minutes=i),
+                )
+                listings.append(cl)
+            session.add_all(listings)
+            await session.flush()
+            await session.commit()
+            return farmer_user, empty_farmer_user, farmer_profile, empty_farmer_profile, crop, listings
+
+    farmer_user, empty_farmer_user, farmer_profile, empty_farmer_profile, crop, listings = asyncio.run(setup_data())
+
+    try:
+        with TestClient(create_app()) as client:
+            # 1. Page 1: Limit 5, Offset 0 -> returns first 5 records of 12
+            p1 = client.get(
+                "/api/v1/farmers/me/listings?limit=5&offset=0&exclude_unavailable=true",
+                headers=auth_header(farmer_user),
+            )
+            assert p1.status_code == 200, p1.text
+            data1 = p1.json()
+            assert data1["total"] == 12
+            assert data1["limit"] == 5
+            assert data1["offset"] == 0
+            assert len(data1["items"]) == 5
+            assert data1["stats"]["total"] == 12
+            assert data1["stats"]["active"] == 12
+            assert data1["stats"]["sold"] == 0
+
+            # 2. Page 2: Limit 5, Offset 5 -> returns next 5 records
+            p2 = client.get(
+                "/api/v1/farmers/me/listings?limit=5&offset=5&exclude_unavailable=true",
+                headers=auth_header(farmer_user),
+            )
+            assert p2.status_code == 200
+            data2 = p2.json()
+            assert data2["total"] == 12
+            assert data2["limit"] == 5
+            assert data2["offset"] == 5
+            assert len(data2["items"]) == 5
+            # Ensure items on page 2 differ from page 1
+            p1_ids = {item["id"] for item in data1["items"]}
+            p2_ids = {item["id"] for item in data2["items"]}
+            assert p1_ids.isdisjoint(p2_ids)
+
+            # 3. Page 3: Limit 5, Offset 10 -> returns remaining 2 records
+            p3 = client.get(
+                "/api/v1/farmers/me/listings?limit=5&offset=10&exclude_unavailable=true",
+                headers=auth_header(farmer_user),
+            )
+            assert p3.status_code == 200
+            data3 = p3.json()
+            assert data3["total"] == 12
+            assert len(data3["items"]) == 2
+
+            # 4. Filters & Search:
+            # Search matching crop name
+            search_res = client.get(
+                "/api/v1/farmers/me/listings?limit=5&offset=0&exclude_unavailable=true&search=Paginated",
+                headers=auth_header(farmer_user),
+            )
+            assert search_res.status_code == 200
+            assert search_res.json()["total"] == 12
+
+            # Search non-matching crop name
+            nonmatch_res = client.get(
+                "/api/v1/farmers/me/listings?limit=5&offset=0&exclude_unavailable=true&search=NonExistentCrop123",
+                headers=auth_header(farmer_user),
+            )
+            assert nonmatch_res.status_code == 200
+            assert nonmatch_res.json()["total"] == 0
+            assert nonmatch_res.json()["items"] == []
+
+            # Update one listing to SOLD_OUT
+            sold_item_id = data1["items"][0]["id"]
+            patch_res = client.patch(
+                f"/api/v1/farmers/me/listings/{sold_item_id}",
+                headers=auth_header(farmer_user),
+                json={"availability_status": "SOLD_OUT"},
+            )
+            assert patch_res.status_code == 200
+
+            # Filter by active (should be 11)
+            active_res = client.get(
+                "/api/v1/farmers/me/listings?limit=5&offset=0&exclude_unavailable=true&status=active",
+                headers=auth_header(farmer_user),
+            )
+            assert active_res.status_code == 200
+            active_data = active_res.json()
+            assert active_data["total"] == 11
+            assert active_data["stats"]["total"] == 12
+            assert active_data["stats"]["active"] == 11
+            assert active_data["stats"]["sold"] == 1
+
+            # Filter by sold (should be 1)
+            sold_res = client.get(
+                "/api/v1/farmers/me/listings?limit=5&offset=0&exclude_unavailable=true&status=sold",
+                headers=auth_header(farmer_user),
+            )
+            assert sold_res.status_code == 200
+            assert sold_res.json()["total"] == 1
+            assert len(sold_res.json()["items"]) == 1
+
+            # 5. Deletion: Delete the sold listing -> total drops to 11
+            del_res = client.delete(f"/api/v1/farmers/me/listings/{sold_item_id}", headers=auth_header(farmer_user))
+            assert del_res.status_code == 204
+
+            p1_after_del = client.get(
+                "/api/v1/farmers/me/listings?limit=5&offset=0&exclude_unavailable=true",
+                headers=auth_header(farmer_user),
+            )
+            assert p1_after_del.status_code == 200
+            assert p1_after_del.json()["total"] == 11
+            assert p1_after_del.json()["stats"]["total"] == 11
+            assert p1_after_del.json()["stats"]["active"] == 11
+            assert p1_after_del.json()["stats"]["sold"] == 0
+            # Deleted item no longer present
+            assert sold_item_id not in [item["id"] for item in p1_after_del.json()["items"]]
+
+            # 6. Empty state: Empty farmer has 0 records
+            empty_res = client.get(
+                "/api/v1/farmers/me/listings?limit=5&offset=0&exclude_unavailable=true",
+                headers=auth_header(empty_farmer_user),
+            )
+            assert empty_res.status_code == 200
+            assert empty_res.json()["total"] == 0
+            assert empty_res.json()["items"] == []
+    finally:
+        async def cleanup():
+            engine = build_engine(Settings())
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                await session.execute(delete(CropListing).where(CropListing.farmer_id == farmer_profile.id))
+                await session.execute(delete(Crop).where(Crop.id == crop.id))
+                await session.execute(delete(Farmer).where(Farmer.id.in_([farmer_profile.id, empty_farmer_profile.id])))
+                await session.execute(delete(User).where(User.id.in_([farmer_user.id, empty_farmer_user.id])))
+                await session.commit()
+            await engine.dispose()
+
+        asyncio.run(cleanup())

@@ -3,6 +3,10 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -10,17 +14,19 @@ from fastapi.staticfiles import StaticFiles
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-from backend.app.core.config import get_settings
 from backend.app.core.auth_rate_limit import AuthRateLimiter
+from backend.app.core.config import get_settings
 from backend.app.database.session import dispose_engine
 from backend.app.routers import (
     admin,
     auth,
     consumers,
+    crop_classifier,
     farmers,
     fulfillment,
     health,
     hub_operations,
+    market_prices,
     marketplace,
     notifications,
     orders,
@@ -36,6 +42,25 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        # Pre-warm AI inference engines & APMC data feeds once at startup
+        try:
+            crop_classifier.get_crop_inference()
+        except Exception:
+            pass
+        try:
+            quality.get_quality_inference()
+        except Exception:
+            pass
+        try:
+            market_prices.get_market_price_service()
+        except Exception:
+            pass
+        try:
+            from ml.price_prediction.inference import FairPriceInference
+            FairPriceInference()
+        except Exception:
+            pass
+
         yield
         await dispose_engine(settings)
 
@@ -58,6 +83,8 @@ def create_app() -> FastAPI:
     app.include_router(consumers.router, prefix=settings.api_v1_prefix)
     app.include_router(marketplace.router, prefix=settings.api_v1_prefix)
     app.include_router(quality.router, prefix=settings.api_v1_prefix)
+    app.include_router(crop_classifier.router, prefix=settings.api_v1_prefix)
+    app.include_router(market_prices.router, prefix=settings.api_v1_prefix)
     app.include_router(price.router, prefix=settings.api_v1_prefix)
     app.include_router(orders.router, prefix=settings.api_v1_prefix)
     app.include_router(fulfillment.router, prefix=settings.api_v1_prefix)

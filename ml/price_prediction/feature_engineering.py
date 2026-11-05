@@ -4,7 +4,6 @@ from ml.price_prediction.preprocessing import PriceFeatures
 
 
 def build_price_features(listing, quality_grade: str | None = None) -> PriceFeatures:
-    location = getattr(listing, "location", None)
     return PriceFeatures(
         crop_name=listing.crop.name,
         category=listing.crop.category,

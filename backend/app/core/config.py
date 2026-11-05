@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     database_url: str = ""
     test_database_url: str = ""
     jwt_secret_key: str = ""
+    gemini_api_key: str = ""
     enable_sandbox_payments: bool | None = None
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = Field(default=30, gt=0)

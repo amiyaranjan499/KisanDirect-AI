@@ -116,12 +116,12 @@ export default function ConsumerHome({ user: propUser }) {
         style={{
           background: "linear-gradient(135deg, #0F4926 0%, #176837 55%, #228448 100%)",
           borderRadius: "18px",
-          padding: "36px 30px",
+          padding: "34px 28px",
           color: "#FFFFFF",
-          marginBottom: "28px",
+          marginBottom: "24px",
           position: "relative",
           overflow: "hidden",
-          boxShadow: "0 8px 28px -6px rgba(15, 73, 38, 0.28)",
+          boxShadow: "0 8px 24px -4px rgba(15, 73, 38, 0.24)",
         }}
       >
         {/* Subtle ambient light rings */}
@@ -190,7 +190,7 @@ export default function ConsumerHome({ user: propUser }) {
               margin: "0 0 8px 0",
               color: "#FFFFFF",
               letterSpacing: "-0.4px",
-              fontFamily: "Fraunces, Georgia, serif",
+              fontFamily: "'Fraunces', Georgia, serif",
               lineHeight: 1.25,
             }}
           >
@@ -240,69 +240,48 @@ export default function ConsumerHome({ user: propUser }) {
         </div>
       </section>
 
-      {/* 2. Categories Row (horizontal scroll on mobile, flex row on desktop) */}
-      <section style={{ marginBottom: "32px" }}>
-        <div className="section-title" style={{ marginBottom: "14px" }}>
-          <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--forest, #1B6B34)", margin: 0, fontFamily: "Fraunces, Georgia, serif" }}>
+      {/* 2. Categories Row in Visual Card Container */}
+      <section className="consumer-dashboard-card-section">
+        <div className="consumer-section-header-row">
+          <h2 className="consumer-section-heading">
             Categories
           </h2>
         </div>
 
-        <div
-          className="scrollx"
-          style={{
-            display: "flex",
-            gap: "12px",
-            overflowX: "auto",
-            paddingBottom: "6px",
-            WebkitOverflowScrolling: "touch",
-          }}
-        >
+        <div className="consumer-categories-wrapper scrollx">
           {categories.map((c) => (
             <button
               key={c.name}
               type="button"
+              className="consumer-category-pill-card"
               onClick={() => navigate(`/marketplace?category=${encodeURIComponent(c.name)}`)}
-              style={{
-                flex: "0 0 auto",
-                width: "104px",
-                textAlign: "center",
-                background: "var(--paper, #FFFFFF)",
-                border: "1px solid var(--line, #E4DFD1)",
-                borderRadius: "14px",
-                padding: "14px 6px",
-                cursor: "pointer",
-                transition: "transform 0.12s ease, border-color 0.12s ease",
-              }}
             >
-              <div style={{ fontSize: "26px", lineHeight: 1 }}>{c.emoji}</div>
-              <div style={{ fontSize: "11.5px", fontWeight: 600, marginTop: "6px", color: "var(--ink, #1C1C16)", whiteSpace: "nowrap" }}>
-                {c.name}
-              </div>
+              <div className="category-emoji">{c.emoji}</div>
+              <div className="category-name">{c.name}</div>
             </button>
           ))}
         </div>
       </section>
 
-      {/* 3. Fresh Crops Near You (2 cols on mobile, 4 cols on desktop) */}
-      <section style={{ marginBottom: "36px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-          <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--forest, #1B6B34)", margin: 0, fontFamily: "Fraunces, Georgia, serif" }}>
+      {/* 3. Fresh Crops Near You in Visual Card Container */}
+      <section className="consumer-dashboard-card-section">
+        <div className="consumer-section-header-row">
+          <h2 className="consumer-section-heading">
             Fresh crops near you
           </h2>
           <Link
             to="/marketplace"
-            className="link-more"
-            style={{ fontSize: "13px", fontWeight: 600, color: "var(--ochre, #C68A3D)", textDecoration: "none", display: "flex", alignItems: "center", gap: "3px" }}
+            className="consumer-section-see-all"
           >
-            See all &gt;
+            <span>See all</span>
+            <i className="bi bi-chevron-right" />
           </Link>
         </div>
 
         {loadingListings ? (
           <div className="loading" style={{ padding: "30px 0", textAlign: "center" }}>Loading fresh crops...</div>
         ) : listings.length > 0 ? (
-          <div className="consumer-marketplace-grid">
+          <div className="consumer-marketplace-grid" style={{ marginBottom: 0 }}>
             {listings.map((item) => (
               <ConsumerProductCard
                 key={item.id}
@@ -313,25 +292,25 @@ export default function ConsumerHome({ user: propUser }) {
             ))}
           </div>
         ) : (
-          <div className="empty" style={{ padding: "30px", background: "#FFFFFF", borderRadius: "12px", border: "1px solid var(--line, #E4DFD1)", textAlign: "center" }}>
-            <h3 style={{ color: "var(--forest, #1B6B34)" }}>No crops listed near you right now</h3>
-            <p style={{ color: "var(--clay, #79705F)" }}>Check back soon as local farmers add their new harvest.</p>
+          <div className="empty" style={{ padding: "30px", background: "#FAF7EF", borderRadius: "12px", border: "1px dashed var(--line, #E4DFD1)", textAlign: "center" }}>
+            <h3 style={{ color: "var(--forest, #1B6B34)", fontFamily: "'Fraunces', Georgia, serif" }}>No crops listed near you right now</h3>
+            <p style={{ color: "var(--clay, #79705F)", marginBottom: 0 }}>Check back soon as local farmers add their new harvest.</p>
           </div>
         )}
       </section>
 
-      {/* 4. Nearby Farmers (exact match to reference home2.png and screenshot 3) */}
-      <section>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-          <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--forest, #1B6B34)", margin: 0, fontFamily: "Fraunces, Georgia, serif" }}>
+      {/* 4. Nearby Farmers in Visual Card Container */}
+      <section className="consumer-dashboard-card-section" style={{ marginBottom: 0 }}>
+        <div className="consumer-section-header-row">
+          <h2 className="consumer-section-heading">
             Nearby farmers
           </h2>
           <Link
             to="/farmers"
-            className="link-more"
-            style={{ fontSize: "13px", fontWeight: 600, color: "var(--ochre, #C68A3D)", textDecoration: "none", display: "flex", alignItems: "center", gap: "3px" }}
+            className="consumer-section-see-all"
           >
-            See all &gt;
+            <span>See all</span>
+            <i className="bi bi-chevron-right" />
           </Link>
         </div>
 
@@ -342,8 +321,9 @@ export default function ConsumerHome({ user: propUser }) {
             className="farmer-row-grid"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
               gap: "16px",
+              maxWidth: farmers.length === 1 ? "320px" : farmers.length === 2 ? "680px" : "100%",
             }}
           >
             {farmers.map((farmer) => {
@@ -367,17 +347,8 @@ export default function ConsumerHome({ user: propUser }) {
               return (
                 <div
                   key={farmer.id}
-                  className="card"
+                  className="consumer-farmer-card"
                   onClick={() => navigate(`/c/${farmer.id}`)}
-                  style={{
-                    borderRadius: "14px",
-                    overflow: "hidden",
-                    cursor: "pointer",
-                    border: "1px solid var(--line, #E4DFD1)",
-                    background: "#FFFFFF",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-                    transition: "transform 0.15s ease, box-shadow 0.15s ease",
-                  }}
                 >
                   {/* Farmer Banner / Background Cover */}
                   {cover ? (
@@ -492,9 +463,9 @@ export default function ConsumerHome({ user: propUser }) {
             })}
           </div>
         ) : (
-          <div className="empty" style={{ padding: "30px", background: "#FFFFFF", borderRadius: "12px", border: "1px solid var(--line, #E4DFD1)", textAlign: "center" }}>
-            <h3 style={{ color: "var(--forest, #1B6B34)" }}>No local farmers found within 25 km</h3>
-            <p style={{ color: "var(--clay, #79705F)" }}>Farmers in neighboring districts will appear here as they register.</p>
+          <div className="empty" style={{ padding: "30px", background: "#FAF7EF", borderRadius: "12px", border: "1px dashed var(--line, #E4DFD1)", textAlign: "center" }}>
+            <h3 style={{ color: "var(--forest, #1B6B34)", fontFamily: "'Fraunces', Georgia, serif" }}>No local farmers found within 25 km</h3>
+            <p style={{ color: "var(--clay, #79705F)", marginBottom: 0 }}>Farmers in neighboring districts will appear here as they register.</p>
           </div>
         )}
       </section>

@@ -1,8 +1,8 @@
 import asyncio
-from datetime import datetime, timedelta, timezone
 import sys
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from geoalchemy2.elements import WKTElement
@@ -24,8 +24,8 @@ from backend.app.models import (
     FarmerHiddenOrder,
     Hub,
     HubStaff,
-    HubStock,
     HubStatus,
+    HubStock,
     Notification,
     Order,
     OrderEvent,
@@ -1304,6 +1304,215 @@ def test_farmer_delete_old_order_from_history():
                     await session.execute(delete(Crop).where(Crop.id == cid))
                 for uid in created_user_ids:
                     await session.execute(delete(Consumer).where(Consumer.user_id == uid))
+                    await session.execute(delete(Farmer).where(Farmer.user_id == uid))
+                    await session.execute(delete(User).where(User.id == uid))
+                await session.commit()
+            await engine.dispose()
+
+    return asyncio.run(run_test())
+
+
+def test_farmer_facility_deletion_and_dependency_protection():
+    async def run_test():
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        created_user_ids = []
+        created_hub_ids = []
+        created_crop_ids = []
+
+        try:
+            # Seed 2 farmers
+            async with factory() as session:
+                farmer1_user = User(
+                    email=f"del-farmer1-{uuid4()}@example.com",
+                    hashed_password=hash_password("Password123!"),
+                    role=UserRole.FARMER,
+                )
+                farmer2_user = User(
+                    email=f"del-farmer2-{uuid4()}@example.com",
+                    hashed_password=hash_password("Password123!"),
+                    role=UserRole.FARMER,
+                )
+                session.add_all([farmer1_user, farmer2_user])
+                await session.flush()
+                created_user_ids.extend([farmer1_user.id, farmer2_user.id])
+
+                farmer1_profile = Farmer(
+                    user_id=farmer1_user.id,
+                    name="Deletion Farmer 1",
+                    location=WKTElement("POINT(85.82 20.29)", srid=4326),
+                    pin_code="751001",
+                )
+                farmer2_profile = Farmer(
+                    user_id=farmer2_user.id,
+                    name="Deletion Farmer 2",
+                    location=WKTElement("POINT(85.80 20.28)", srid=4326),
+                    pin_code="751002",
+                )
+                session.add_all([farmer1_profile, farmer2_profile])
+                await session.commit()
+
+            app = create_app()
+            client = TestClient(app)
+
+            # 1. Farmer 1 creates Hub A (clean, no dependencies)
+            res_a = client.post(
+                "/api/v1/farmers/me/facilities",
+                headers=auth_header(farmer1_user),
+                json={
+                    "name": "Clean Hub A",
+                    "address": "Village A, District B",
+                    "pincode": "751001",
+                    "service_radius_km": 10.0,
+                },
+            )
+            assert res_a.status_code == 201
+            hub_a_id = res_a.json()["id"]
+            created_hub_ids.append(hub_a_id)
+
+            # 2. Farmer 1 creates Hub B (with staff)
+            res_b = client.post(
+                "/api/v1/farmers/me/facilities",
+                headers=auth_header(farmer1_user),
+                json={
+                    "name": "Staffed Hub B",
+                    "address": "Village B, District B",
+                    "pincode": "751001",
+                    "service_radius_km": 8.0,
+                },
+            )
+            assert res_b.status_code == 201
+            hub_b_id = res_b.json()["id"]
+            created_hub_ids.append(hub_b_id)
+
+            # Assign staff to Hub B
+            staff_res = client.post(
+                f"/api/v1/farmers/me/facilities/{hub_b_id}/staff",
+                headers=auth_header(farmer1_user),
+                json={
+                    "email": f"staff-b-{uuid4()}@example.com",
+                    "initial_password": "Password123!",
+                    "display_name": "Hub B Staff",
+                },
+            )
+            assert staff_res.status_code == 201
+            staff_user_id = staff_res.json()["user_id"]
+            created_user_ids.append(staff_user_id)
+
+            # Attempt deletion of Hub B while staff assigned -> blocked with 400
+            del_b_blocked = client.delete(
+                f"/api/v1/farmers/me/facilities/{hub_b_id}",
+                headers=auth_header(farmer1_user),
+            )
+            assert del_b_blocked.status_code == 400
+            assert "staff member" in del_b_blocked.json()["detail"].lower()
+
+            # Remove staff from Hub B
+            unassign_res = client.delete(
+                f"/api/v1/farmers/me/facilities/{hub_b_id}/staff/{staff_user_id}",
+                headers=auth_header(farmer1_user),
+            )
+            assert unassign_res.status_code == 204
+
+            # Now Hub B can be safely deleted -> 204
+            del_b_ok = client.delete(
+                f"/api/v1/farmers/me/facilities/{hub_b_id}",
+                headers=auth_header(farmer1_user),
+            )
+            assert del_b_ok.status_code == 204
+
+            # Verify Hub B no longer appears in farmer facilities list
+            list_res = client.get("/api/v1/farmers/me/facilities", headers=auth_header(farmer1_user))
+            assert list_res.status_code == 200
+            fac_ids = [f["id"] for f in list_res.json()]
+            assert hub_b_id not in fac_ids
+            assert hub_a_id in fac_ids
+
+            # 3. Farmer 2 attempts to delete Farmer 1's Hub A -> 404 forbidden/not found
+            del_unauth = client.delete(
+                f"/api/v1/farmers/me/facilities/{hub_a_id}",
+                headers=auth_header(farmer2_user),
+            )
+            assert del_unauth.status_code == 404
+
+            # 4. Farmer 1 creates Hub C with stock inventory -> deletion blocked
+            res_c = client.post(
+                "/api/v1/farmers/me/facilities",
+                headers=auth_header(farmer1_user),
+                json={
+                    "name": "Stocked Hub C",
+                    "address": "Village C, District B",
+                    "pincode": "751001",
+                    "service_radius_km": 12.0,
+                },
+            )
+            assert res_c.status_code == 201
+            hub_c_id = res_c.json()["id"]
+            created_hub_ids.append(hub_c_id)
+
+            # Add crop, listing, and stock to Hub C
+            async with factory() as session:
+                crop = Crop(name=f"Test Potato {uuid4()}", category="Vegetables")
+                session.add(crop)
+                await session.flush()
+                created_crop_ids.append(crop.id)
+
+                listing = CropListing(
+                    farmer_id=farmer1_profile.id,
+                    crop_id=crop.id,
+                    quantity=Decimal("100.00"),
+                    unit="kg",
+                    asking_price=Decimal("40.00"),
+                    availability_status=AvailabilityStatus.AVAILABLE,
+                )
+                session.add(listing)
+                await session.flush()
+
+                stock = HubStock(
+                    hub_id=UUID(hub_c_id),
+                    listing_id=listing.id,
+                    available_quantity=Decimal("50.00"),
+                )
+                session.add(stock)
+                await session.commit()
+
+            # Attempt deletion of Hub C with stock -> blocked with 400
+            del_c_blocked = client.delete(
+                f"/api/v1/farmers/me/facilities/{hub_c_id}",
+                headers=auth_header(farmer1_user),
+            )
+            assert del_c_blocked.status_code == 400
+            assert "inventory stock" in del_c_blocked.json()["detail"].lower()
+
+            # Clean stock and delete Hub C
+            async with factory() as session:
+                await session.execute(delete(HubStock).where(HubStock.hub_id == UUID(hub_c_id)))
+                await session.commit()
+
+            del_c_ok = client.delete(
+                f"/api/v1/farmers/me/facilities/{hub_c_id}",
+                headers=auth_header(farmer1_user),
+            )
+            assert del_c_ok.status_code == 204
+
+            # Finally delete Hub A
+            del_a_ok = client.delete(
+                f"/api/v1/farmers/me/facilities/{hub_a_id}",
+                headers=auth_header(farmer1_user),
+            )
+            assert del_a_ok.status_code == 204
+
+        finally:
+            async with factory() as session:
+                for hid in created_hub_ids:
+                    await session.execute(delete(HubStock).where(HubStock.hub_id == UUID(str(hid))))
+                    await session.execute(delete(HubStaff).where(HubStaff.hub_id == UUID(str(hid))))
+                    await session.execute(delete(Hub).where(Hub.id == UUID(str(hid))))
+                for cid in created_crop_ids:
+                    await session.execute(delete(CropListing).where(CropListing.crop_id == cid))
+                    await session.execute(delete(Crop).where(Crop.id == cid))
+                for uid in created_user_ids:
+                    await session.execute(delete(Notification).where(Notification.user_id == uid))
                     await session.execute(delete(Farmer).where(Farmer.user_id == uid))
                     await session.execute(delete(User).where(User.id == uid))
                 await session.commit()

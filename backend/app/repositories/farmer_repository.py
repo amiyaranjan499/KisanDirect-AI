@@ -1,5 +1,5 @@
-from uuid import UUID
 from decimal import Decimal
+from uuid import UUID
 
 from geoalchemy2 import Geometry
 from geoalchemy2.elements import WKTElement
@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.models import (
+    AvailabilityStatus,
     Crop,
     CropImage,
     CropListing,
@@ -21,7 +22,10 @@ from backend.app.models import (
     Notification,
     Order,
     OrderItem,
+    OrderStatus,
     Review,
+    Shipment,
+    ShipmentStatus,
     User,
     UserRole,
 )
@@ -83,10 +87,44 @@ class FarmerRepository:
         )
         return result.scalar_one_or_none()
 
-    async def list_listings(self, farmer_id: UUID) -> list[CropListing]:
-        result = await self.session.execute(
+    def _apply_listing_filters(
+        self,
+        stmt,
+        farmer_id: UUID,
+        exclude_unavailable: bool = False,
+        search: str | None = None,
+        status: str | None = None,
+    ):
+        stmt = stmt.join(CropListing.crop).where(CropListing.farmer_id == farmer_id)
+        if status:
+            st = status.strip().upper()
+            if st in ("AVAILABLE", "ACTIVE"):
+                stmt = stmt.where(CropListing.availability_status == AvailabilityStatus.AVAILABLE)
+            elif st in ("SOLD_OUT", "SOLD"):
+                stmt = stmt.where(CropListing.availability_status == AvailabilityStatus.SOLD_OUT)
+            elif st in ("UNAVAILABLE",):
+                stmt = stmt.where(CropListing.availability_status == AvailabilityStatus.UNAVAILABLE)
+            elif exclude_unavailable:
+                stmt = stmt.where(CropListing.availability_status != AvailabilityStatus.UNAVAILABLE)
+        elif exclude_unavailable:
+            stmt = stmt.where(CropListing.availability_status != AvailabilityStatus.UNAVAILABLE)
+
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            stmt = stmt.where(or_(Crop.name.ilike(term), Crop.category.ilike(term)))
+        return stmt
+
+    async def list_listings(
+        self,
+        farmer_id: UUID,
+        limit: int | None = None,
+        offset: int | None = None,
+        exclude_unavailable: bool = False,
+        search: str | None = None,
+        status: str | None = None,
+    ) -> list[CropListing]:
+        stmt = (
             select(CropListing)
-            .where(CropListing.farmer_id == farmer_id)
             .order_by(CropListing.created_at.desc())
             .options(
                 selectinload(CropListing.crop),
@@ -95,12 +133,65 @@ class FarmerRepository:
                 selectinload(CropListing.price_predictions),
             )
         )
+        stmt = self._apply_listing_filters(
+            stmt,
+            farmer_id,
+            exclude_unavailable=exclude_unavailable,
+            search=search,
+            status=status,
+        )
+        if offset is not None:
+            stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        result = await self.session.execute(stmt)
         return list(result.scalars().unique().all())
+
+    async def count_listings(
+        self,
+        farmer_id: UUID,
+        exclude_unavailable: bool = False,
+        search: str | None = None,
+        status: str | None = None,
+    ) -> int:
+        stmt = select(func.count(CropListing.id))
+        stmt = self._apply_listing_filters(
+            stmt,
+            farmer_id,
+            exclude_unavailable=exclude_unavailable,
+            search=search,
+            status=status,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
+
+    async def get_listing_stats(self, farmer_id: UUID) -> dict[str, int]:
+        stmt = (
+            select(
+                CropListing.availability_status,
+                func.count(CropListing.id),
+            )
+            .where(
+                CropListing.farmer_id == farmer_id,
+                CropListing.availability_status != AvailabilityStatus.UNAVAILABLE,
+            )
+            .group_by(CropListing.availability_status)
+        )
+        result = await self.session.execute(stmt)
+        counts = {status: count for status, count in result.all()}
+        active = counts.get(AvailabilityStatus.AVAILABLE, 0)
+        sold = counts.get(AvailabilityStatus.SOLD_OUT, 0)
+        total = active + sold
+        return {"total": total, "active": active, "sold": sold}
 
     async def list_listings_for_dashboard(self, farmer_id: UUID) -> list[CropListing]:
         result = await self.session.execute(
             select(CropListing)
-            .where(CropListing.farmer_id == farmer_id)
+            .where(
+                CropListing.farmer_id == farmer_id,
+                CropListing.availability_status != AvailabilityStatus.UNAVAILABLE,
+                CropListing.availability_status != "UNAVAILABLE",
+            )
             .order_by(CropListing.created_at.desc())
             .options(
                 selectinload(CropListing.crop),
@@ -354,6 +445,52 @@ class FarmerRepository:
         lat = float(row[0]) if row and row[0] is not None else None
         lng = float(row[1]) if row and row[1] is not None else None
         return (facility, lat, lng)
+
+    async def get_facility_dependencies(self, facility_id: UUID) -> dict[str, int]:
+        staff_res = await self.session.execute(
+            select(func.count(HubStaff.user_id)).where(HubStaff.hub_id == facility_id)
+        )
+        staff_count = int(staff_res.scalar() or 0)
+
+        stock_res = await self.session.execute(
+            select(func.count(HubStock.id)).where(
+                HubStock.hub_id == facility_id,
+                HubStock.available_quantity > 0,
+            )
+        )
+        stock_count = int(stock_res.scalar() or 0)
+
+        active_orders_res = await self.session.execute(
+            select(func.count(Order.id)).where(
+                Order.hub_id == facility_id,
+                Order.status.notin_([OrderStatus.DELIVERED, OrderStatus.CANCELLED]),
+            )
+        )
+        active_orders_count = int(active_orders_res.scalar() or 0)
+
+        active_shipments_res = await self.session.execute(
+            select(func.count(Shipment.id)).where(
+                Shipment.hub_id == facility_id,
+                Shipment.status.notin_([
+                    ShipmentStatus.DELIVERED,
+                    ShipmentStatus.CANCELLED,
+                    ShipmentStatus.FAILED_DELIVERY,
+                    ShipmentStatus.RETURNED,
+                ]),
+            )
+        )
+        active_shipments_count = int(active_shipments_res.scalar() or 0)
+
+        return {
+            "staff_count": staff_count,
+            "stock_count": stock_count,
+            "active_orders_count": active_orders_count,
+            "active_shipments_count": active_shipments_count,
+        }
+
+    async def delete_facility(self, facility: Hub) -> None:
+        await self.session.delete(facility)
+        await self.session.flush()
 
     async def list_facility_staff(self, farmer_id: UUID) -> list[tuple[User, Hub]]:
         result = await self.session.execute(

@@ -3,10 +3,10 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 from geoalchemy2.elements import WKTElement
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from fastapi.testclient import TestClient
 
 from backend.app.core.config import Settings
 from backend.app.database.session import build_engine

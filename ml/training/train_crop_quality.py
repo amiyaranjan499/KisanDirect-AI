@@ -124,7 +124,7 @@ def build_model() -> nn.Module:
 def compute_metrics(y_true: list[int], y_pred: list[int]) -> dict[str, Any]:
     """Compute accuracy, per-class precision, recall, and macro-F1."""
     confusion = np.zeros((NUM_CLASSES, NUM_CLASSES), dtype=int)
-    for t, p in zip(y_true, y_pred):
+    for t, p in zip(y_true, y_pred, strict=True):
         confusion[t, p] += 1
 
     total = len(y_true)

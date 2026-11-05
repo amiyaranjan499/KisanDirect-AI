@@ -114,6 +114,20 @@ class CropListingResponse(BaseModel):
     updated_at: datetime
 
 
+class CropListingStatsResponse(BaseModel):
+    total: int
+    active: int
+    sold: int
+
+
+class PaginatedCropListingResponse(BaseModel):
+    items: list[CropListingResponse]
+    total: int
+    limit: int
+    offset: int
+    stats: CropListingStatsResponse | None = None
+
+
 class DashboardListingResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -154,6 +168,7 @@ class DashboardOrderResponse(BaseModel):
     id: UUID
     consumer_id: UUID
     consumer_name: str | None = None
+    hub_id: UUID | None = None
     hub_name: str | None = None
     status: str
     total_amount: Decimal
@@ -312,6 +327,12 @@ class FarmerStaffResponse(BaseModel):
 class FarmerOrderAssignStaffRequest(BaseModel):
     facility_id: UUID | None = None
     staff_user_id: UUID | None = None
+    notes: str | None = None
+
+
+class FarmerOrderSendToHubRequest(BaseModel):
+    hub_id: UUID | None = None
+    facility_id: UUID | None = None
     notes: str | None = None
 
 

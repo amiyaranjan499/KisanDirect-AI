@@ -158,7 +158,7 @@ export default function ProductDetail({ item, consumerProfile, orders, onFarmer,
 
           {/* Subtitle / Unit / Rating */}
           <div className="product-detail-meta-line">
-            <span>{item.variety || "Fresh Harvest"}</span>
+            <span>{item.crop_category || "Farm Fresh"}</span>
             <span>·</span>
             <span>{Number(item.quantity).toFixed(0)} {item.unit} in stock</span>
             <span>·</span>

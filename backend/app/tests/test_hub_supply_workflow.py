@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from geoalchemy2.elements import WKTElement
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.app.core.config import Settings
@@ -23,7 +23,6 @@ from backend.app.models import (
     HubStatus,
     HubStock,
     HubStockDelivery,
-    Rider,
     User,
     UserRole,
 )

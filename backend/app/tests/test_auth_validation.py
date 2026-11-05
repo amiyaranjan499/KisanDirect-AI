@@ -7,8 +7,8 @@ from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from backend.app.core.config import Settings
 from backend.app.core.auth_rate_limit import AuthRateLimiter
+from backend.app.core.config import Settings
 from backend.app.database.session import build_engine
 from backend.app.main import create_app
 from backend.app.models import User

@@ -4,16 +4,19 @@
 
 KisanDirect AI connects farmers, Kisan Hubs, and consumers through a database-backed farm produce marketplace and delivery workflow. It provides authenticated role-specific workflows for farmer listings, consumer purchasing and tracking, rider delivery, hub operations, administration, notifications, and reviews.
 
-The system addresses the gap between farm production and consumer access by giving farmers a direct listing and order workflow. Consumers can browse real listings, search by location, manage a cart, place orders, use the deterministic sandbox payment flow, choose fulfillment, and review eligible purchases. AI integration is represented by explicit crop-quality and fair-price inference boundaries; when trained model artifacts are unavailable, the API reports `MODEL_UNAVAILABLE` rather than fabricating predictions.
+The system addresses the gap between farm production and consumer access by giving farmers a direct listing and order workflow. Consumers can browse real listings, search by location, manage a cart, place orders, use the deterministic sandbox payment flow, choose fulfillment, and review eligible purchases. AI integration includes authentic deep learning species classification (MobileNetV2), visual crop quality assessment (MobileNetV2 ONNX), official APMC mandi benchmark pricing (Agmarknet / DMI), and machine learning fair-price regression (RandomForestRegressor); when trained model artifacts or data feeds are unavailable, the API reports explicit unsupported or unavailable states rather than fabricating predictions.
 
 ## Implemented Features
 
 - JWT authentication for FARMER/CONSUMER/RIDER/ADMIN workflows, with public ADMIN and HUB_STAFF registration disabled; rider accounts begin pending approval
 - Password-based login and registration with configurable per-IP throttling; OTP login is not implemented
 - Farmer registration, profile, listings, images, orders, fulfillment, notifications, and dashboard
+- AI-first crop listing flow: upload photo -> real deep learning species classification -> real visual quality grading -> authentic APMC mandi rates -> AI fair-price estimation -> farmer enters available quantity -> one-click publish
 - Consumer registration, profile, marketplace, nearby farmer search, cart, orders, reviews, notifications, and dashboard
-- AI crop quality assessment boundary with image validation and prediction history
-- AI fair-price recommendation boundary with persisted prediction history
+- AI crop species identification (MobileNetV2) trained on produce datasets with confidence threshold gating
+- AI crop quality assessment (MobileNetV2 ONNX) evaluating visual grade and defect level
+- Authentic APMC mandi benchmark pricing feed (Agmarknet / DMI, MoA&FW, Govt of India)
+- AI fair-price recommendation & batch valuation model (RandomForestRegressor) combining quality grades, volume brackets, and APMC rates
 - PostgreSQL/PostGIS marketplace and location-aware search
 - Server-priced, PostGIS hub-aware checkout with row-locked hub-stock reservations, capacity-backed delivery slots, and calculated ETA windows
 - Farmer-to-hub stock delivery submissions with idempotent, hub-staff-confirmed inventory receipt and audited hub packing/readiness operations

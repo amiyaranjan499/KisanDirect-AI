@@ -3,8 +3,8 @@ from uuid import UUID
 from backend.app.models import DeliveryStatus, FulfillmentMethod, UserRole
 from backend.app.repositories.consumer_repository import ConsumerRepository
 from backend.app.repositories.fulfillment_repository import FulfillmentRepository
-from backend.app.services.order_lifecycle_service import LifecycleActor, OrderLifecycleService
 from backend.app.schemas.fulfillment import FulfillmentCreate, FulfillmentResponse, FulfillmentStatusUpdate
+from backend.app.services.order_lifecycle_service import LifecycleActor, OrderLifecycleService
 
 
 class FulfillmentService:
