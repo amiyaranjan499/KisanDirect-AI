@@ -1,8 +1,10 @@
+import json
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,9 +34,33 @@ class Settings(BaseSettings):
     platform_fee: Decimal = Field(default=Decimal("0.00"), ge=0)
     auth_rate_limit_requests: int = Field(default=5, gt=0)
     auth_rate_limit_window_seconds: int = Field(default=60, gt=0)
-    cors_origins: list[str] = Field(
+    cors_origins: list[str] | str = Field(
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
     )
+    cors_origin_regex: str | None = Field(default=r"^https://.*\.onrender\.com$")
+
+    @field_validator("cors_origins", mode="after")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [i.strip() for i in v.split(",") if i.strip()]
+        return v
+
+    @field_validator("database_url", "test_database_url", mode="after")
+    @classmethod
+    def assemble_database_url(cls, v: str) -> str:
+        if v:
+            if v.startswith("postgres://"):
+                v = "postgresql+psycopg://" + v[len("postgres://"):]
+            elif v.startswith("postgresql://") and not v.startswith("postgresql+"):
+                v = "postgresql+psycopg://" + v[len("postgresql://"):]
+        return v
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
