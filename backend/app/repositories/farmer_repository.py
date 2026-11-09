@@ -3,7 +3,7 @@ from uuid import UUID
 
 from geoalchemy2 import Geometry
 from geoalchemy2.elements import WKTElement
-from sqlalchemy import and_, cast, delete, func, or_, select, text, update
+from sqlalchemy import cast, delete, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 

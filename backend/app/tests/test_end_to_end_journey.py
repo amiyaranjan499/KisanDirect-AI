@@ -488,6 +488,16 @@ def test_full_farmer_to_consumer_delivery_end_to_end_journey():
                 for n in staff_items
             )
 
+            # Capture baseline admin shipment metrics before order packing begins
+            initial_admin_dash = client.get(
+                "/api/v1/admins/dashboard/summary",
+                headers=auth_header(admin_user),
+            )
+            assert initial_admin_dash.status_code == 200, initial_admin_dash.text
+            initial_admin_summary = initial_admin_dash.json()
+            initial_active_shipments = initial_admin_summary["active_shipments"]
+            initial_failed_deliveries = initial_admin_summary["failed_deliveries"]
+
             # Hub staff starts packing order
             pack_resp = client.post(
                 f"/api/v1/hub-operations/hub-staff/hubs/{hub.id}/orders/{order_id}/start-packing",
@@ -688,8 +698,8 @@ def test_full_farmer_to_consumer_delivery_end_to_end_journey():
             assert admin_data["completed_orders"] >= 1
             assert Decimal(str(admin_data["total_payment_volume"])) >= Decimal("425.00")
             assert admin_data["total_reviews"] >= 1
-            assert admin_data["active_shipments"] == 0
-            assert admin_data["failed_deliveries"] == 0
+            assert admin_data["active_shipments"] == initial_active_shipments
+            assert admin_data["failed_deliveries"] == initial_failed_deliveries
 
             # Admin analytics metrics reflect sales volume and order states
             analytics_resp = client.get(
@@ -701,8 +711,8 @@ def test_full_farmer_to_consumer_delivery_end_to_end_journey():
             assert analytics_data["total_orders"] >= 1
             assert analytics_data["completed_orders"] >= 1
             assert Decimal(str(analytics_data["total_sales"])) >= Decimal("425.00")
-            assert analytics_data["active_shipments"] == 0
-            assert analytics_data["failed_deliveries"] == 0
+            assert analytics_data["active_shipments"] == initial_active_shipments
+            assert analytics_data["failed_deliveries"] == initial_failed_deliveries
 
             # Admin shipment operational delivery metrics
             shipments_resp = client.get(

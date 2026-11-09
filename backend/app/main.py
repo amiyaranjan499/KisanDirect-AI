@@ -7,17 +7,17 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-from backend.app.core.auth_rate_limit import AuthRateLimiter
-from backend.app.core.config import get_settings
-from backend.app.database.session import dispose_engine
-from backend.app.routers import (
+from backend.app.core.auth_rate_limit import AuthRateLimiter  # noqa: E402
+from backend.app.core.config import get_settings  # noqa: E402
+from backend.app.database.session import dispose_engine  # noqa: E402
+from backend.app.routers import (  # noqa: E402
     admin,
     auth,
     consumers,

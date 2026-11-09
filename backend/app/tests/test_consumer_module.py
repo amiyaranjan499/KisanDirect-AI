@@ -140,34 +140,58 @@ def test_consumer_profile_browse_search_filters_and_authorization() -> None:
 
             listings_response = client.get("/api/v1/marketplace/listings", headers=auth_header(consumer))
             assert listings_response.status_code == 200
-            visible = listings_response.json()
-            assert listings_response.json()["total"] == 1
-            visible = listings_response.json()["items"]
-            assert visible[0]["crop_name"] == crop_names[0]
-            assert visible[0]["farmer_name"] == "Public Farm Name"
-            assert "phone" not in visible[0]
+            visible_data = listings_response.json()
+            assert visible_data["total"] >= 1
+            visible_items = visible_data["items"]
+            test_listing = next((item for item in visible_items if item["id"] == str(listings[0].id)), None)
+            assert test_listing is not None
+            assert test_listing["crop_name"] == crop_names[0]
+            assert test_listing["farmer_name"] == "Public Farm Name"
+            assert "phone" not in test_listing
+            assert not any(item["id"] == str(listings[1].id) for item in visible_items)
 
             search = client.get(
                 "/api/v1/marketplace/listings",
                 headers=auth_header(consumer),
-                params={"search": "Rice"},
+                params={"search": crop_names[0]},
             )
+            assert search.status_code == 200
             assert len(search.json()["items"]) == 1
+            assert search.json()["items"][0]["crop_name"] == crop_names[0]
 
             category = client.get(
                 "/api/v1/marketplace/listings",
                 headers=auth_header(consumer),
-                params={"category": "Grain"},
+                params={"category": "Grain", "search": crop_names[0]},
             )
+            assert category.status_code == 200
             assert len(category.json()["items"]) == 1
+            assert category.json()["items"][0]["crop_name"] == crop_names[0]
+
+            unmatched_category = client.get(
+                "/api/v1/marketplace/listings",
+                headers=auth_header(consumer),
+                params={"category": "Vegetables", "search": crop_names[0]},
+            )
+            assert unmatched_category.status_code == 200
+            assert len(unmatched_category.json()["items"]) == 0
 
             price = client.get(
                 "/api/v1/marketplace/listings",
                 headers=auth_header(consumer),
-                params={"max_price": "100", "sort": "price_asc"},
+                params={"max_price": "100", "search": crop_names[0], "sort": "price_asc"},
             )
+            assert price.status_code == 200
             assert len(price.json()["items"]) == 1
             assert Decimal(price.json()["items"][0]["asking_price"]) <= Decimal("100")
+
+            unmatched_price = client.get(
+                "/api/v1/marketplace/listings",
+                headers=auth_header(consumer),
+                params={"max_price": "50", "search": crop_names[0]},
+            )
+            assert unmatched_price.status_code == 200
+            assert len(unmatched_price.json()["items"]) == 0
 
             paged = client.get(
                 "/api/v1/marketplace/listings",

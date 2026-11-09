@@ -1,19 +1,19 @@
 import asyncio
-from pathlib import Path
 import sys
 from logging.config import fileConfig
+from pathlib import Path
 
 root_dir = str(Path(__file__).resolve().parents[2])
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from alembic import context
-from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from alembic import context  # noqa: E402
+from sqlalchemy import pool  # noqa: E402
+from sqlalchemy.ext.asyncio import async_engine_from_config  # noqa: E402
 
-from backend.app.core.config import Settings
-from backend.app.models import domain  # noqa: F401
-from backend.app.models.base import Base
+from backend.app.core.config import Settings  # noqa: E402
+from backend.app.models import domain  # noqa: E402, F401
+from backend.app.models.base import Base  # noqa: E402
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())

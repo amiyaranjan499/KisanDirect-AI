@@ -14,10 +14,8 @@ from backend.app.models import (
     Crop,
     CropListing,
     FarmerWithdrawal,
-    Hub,
     HubStaff,
     HubStatus,
-    HubStock,
     NotificationType,
     Order,
     OrderItem,
@@ -61,7 +59,6 @@ from backend.app.schemas.farmer import (
 )
 from backend.app.services.order_lifecycle_service import (
     LifecycleActor,
-    LifecycleConflict,
     OrderLifecycleService,
 )
 from backend.app.services.rider_service import RiderService
@@ -183,6 +180,7 @@ class FarmerService:
 
         # Double-click / rapid duplicate submission protection
         from datetime import datetime, timedelta, timezone
+
         from sqlalchemy import select
         recent_cutoff = datetime.now(timezone.utc) - timedelta(seconds=5)
         dup_stmt = (

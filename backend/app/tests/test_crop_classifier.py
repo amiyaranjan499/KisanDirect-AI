@@ -1,12 +1,10 @@
 import asyncio
-import io
-from pathlib import Path
 import sys
+from pathlib import Path
 from uuid import uuid4
-from PIL import Image
 
-import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 

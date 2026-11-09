@@ -1,12 +1,9 @@
 import asyncio
-from decimal import Decimal
-import io
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 from uuid import uuid4
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -15,7 +12,7 @@ from backend.app.core.config import Settings
 from backend.app.core.security import create_access_token, hash_password
 from backend.app.database.session import build_engine
 from backend.app.main import create_app
-from backend.app.models import Crop, CropListing, Farmer, User, UserRole
+from backend.app.models import CropListing, Farmer, User, UserRole
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -229,7 +226,7 @@ def test_critical_potato_accuracy_and_apple_non_confusion():
             assert res.status_code == 200
             data = res.json()
             assert data["crop_name"] == "Potato", f"Image {img_path.name} was misclassified as {data['crop_name']}"
-            assert data["crop_name"] != "Apple", f"Critical regression: potato identified as Apple!"
+            assert data["crop_name"] != "Apple", "Critical regression: potato identified as Apple!"
             assert data["prediction_status"] == "COMPLETED"
             assert data["source"] == "local"
             # Verify total removal of confidence and variety

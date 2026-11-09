@@ -5,7 +5,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.app.core.config import Settings
@@ -19,14 +19,10 @@ from backend.app.models import (
     Consumer,
     Crop,
     CropListing,
-    Delivery,
-    DeliveryStatus,
     Farmer,
     Hub,
     HubStaff,
     HubStatus,
-    Notification,
-    NotificationType,
     Order,
     OrderItem,
     OrderStatus,
@@ -273,7 +269,6 @@ def test_admin_portal_data_sync_and_deletions() -> None:
             assert del_rider_resp.status_code == 204
 
             # 8. Delete Farmer
-            farmer_email = farmer_user.email
             del_farmer_resp = client.delete(f"/api/v1/admins/farmers/{farmer_profile.id}", headers=headers)
             assert del_farmer_resp.status_code == 204
 

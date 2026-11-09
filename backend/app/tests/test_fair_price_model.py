@@ -1,7 +1,6 @@
 import asyncio
-from decimal import Decimal
-from pathlib import Path
 import sys
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest

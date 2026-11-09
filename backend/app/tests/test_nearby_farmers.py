@@ -87,14 +87,24 @@ def test_nearby_farmers_radius_sort_pagination_and_authorization():
             result = client.get("/api/v1/marketplace/farmers/nearby", headers=auth_header(consumer), params={"latitude": 20.3, "longitude": 85.8, "radius_km": 200, "page_size": 1})
             assert result.status_code == 200
             body = result.json()
-            assert body["total"] == 2
+            assert body["total"] >= 2
             assert body["items"][0]["name"] == "Near Farmer"
             assert body["items"][0]["distance_km"] >= 0
-            assert body["pages"] == 2
+            assert body["pages"] == body["total"]
             assert body["items"][0]["active_listing_count"] == 1
 
+            # Fetch all within 200km to verify both test farmers with locations are included and no-location farmer is excluded
+            all_nearby = client.get("/api/v1/marketplace/farmers/nearby", headers=auth_header(consumer), params={"latitude": 20.3, "longitude": 85.8, "radius_km": 200, "page_size": 50})
+            assert all_nearby.status_code == 200
+            nearby_ids = {item["id"] for item in all_nearby.json()["items"]}
+            assert str(farmers[0].id) in nearby_ids
+            assert str(farmers[1].id) in nearby_ids
+            assert str(farmers[2].id) not in nearby_ids
+
             narrow = client.get("/api/v1/marketplace/farmers/nearby", headers=auth_header(consumer), params={"latitude": 20.3, "longitude": 85.8, "radius_km": 1})
+            assert narrow.status_code == 200
             assert narrow.json()["total"] == 1
             assert narrow.json()["items"][0]["name"] == "Near Farmer"
+            assert narrow.json()["items"][0]["id"] == str(farmers[0].id)
     finally:
         cleanup(data)
