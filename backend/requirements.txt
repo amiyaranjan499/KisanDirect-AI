@@ -16,3 +16,5 @@ Pillow>=10,<13
 onnxruntime>=1.18,<2
 numpy>=1.24,<3
 joblib>=1.4,<2
+pandas>=2.0,<3
+scikit-learn>=1.4,<2
