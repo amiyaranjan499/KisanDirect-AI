@@ -98,7 +98,7 @@ class OrderLifecycleService:
         self,
         actor: LifecycleActor,
         *,
-        hub_id: UUID,
+        hub_id: UUID | None,
         delivery_slot_id: UUID | None,
         latitude: float,
         longitude: float,
@@ -135,27 +135,38 @@ class OrderLifecycleService:
             point = func.ST_SetSRID(
                 func.ST_MakePoint(longitude, latitude), 4326
             ).cast(Geography(geometry_type="POINT", srid=4326))
-            hub_result = await self.session.execute(
-                select(Hub)
-                .where(
-                    Hub.id == hub_id,
-                    Hub.status == HubStatus.ACTIVE,
-                    func.ST_DWithin(
-                        Hub.location,
-                        point,
-                        float(settings.hub_service_radius_km * 1000),
-                    ),
+
+            # ------------------------------------------------------------------
+            # Hub is optional. When hub_id is None (no hub in the system yet),
+            # we skip hub lookup, distance calculation, and hub-stock validation.
+            # The order is fulfilled directly from the farmer's farm.
+            # ------------------------------------------------------------------
+            hub: Hub | None = None
+            distance_km = Decimal("0")
+            stock_by_listing: dict = {}
+
+            if hub_id is not None:
+                hub_result = await self.session.execute(
+                    select(Hub)
+                    .where(
+                        Hub.id == hub_id,
+                        Hub.status == HubStatus.ACTIVE,
+                        func.ST_DWithin(
+                            Hub.location,
+                            point,
+                            float(settings.hub_service_radius_km * 1000),
+                        ),
+                    )
                 )
-            )
-            hub = hub_result.scalar_one_or_none()
-            if hub is None:
-                raise LifecycleConflict(
-                    "Delivery address is not serviceable by the selected hub."
+                hub = hub_result.scalar_one_or_none()
+                if hub is None:
+                    raise LifecycleConflict(
+                        "Delivery address is not serviceable by the selected hub."
+                    )
+                distance_meters = await self.session.scalar(
+                    select(func.ST_Distance(Hub.location, point)).where(Hub.id == hub.id)
                 )
-            distance_meters = await self.session.scalar(
-                select(func.ST_Distance(Hub.location, point)).where(Hub.id == hub.id)
-            )
-            distance_km = Decimal(str(distance_meters)) / Decimal("1000")
+                distance_km = Decimal(str(distance_meters)) / Decimal("1000")
 
             listing_ids = [item.listing_id for item in cart.items]
             await self.session.execute(
@@ -169,66 +180,88 @@ class OrderLifecycleService:
                 .with_for_update()
                 .execution_options(populate_existing=True)
             )
-            stock_result = await self.session.execute(
-                select(HubStock)
-                .where(
-                    HubStock.hub_id == hub.id,
-                    HubStock.listing_id.in_(listing_ids),
-                )
-                .order_by(HubStock.listing_id)
-                .with_for_update()
-            )
-            stock_by_listing = {
-                row.listing_id: row for row in stock_result.scalars().all()
-            }
-            stock_ids = [row.id for row in stock_by_listing.values()]
+
+            # Hub-stock validation only when a hub is selected
             active_holds: dict[UUID, Decimal] = {}
-            if stock_ids:
-                holds_result = await self.session.execute(
-                    select(
-                        StockReservation.hub_stock_id,
-                        func.sum(StockReservation.quantity),
-                    )
+            if hub is not None:
+                stock_result = await self.session.execute(
+                    select(HubStock)
                     .where(
-                        StockReservation.hub_stock_id.in_(stock_ids),
-                        StockReservation.status == ReservationStatus.HOLD,
-                        StockReservation.expires_at > datetime.now(timezone.utc),
+                        HubStock.hub_id == hub.id,
+                        HubStock.listing_id.in_(listing_ids),
                     )
-                    .group_by(StockReservation.hub_stock_id)
+                    .order_by(HubStock.listing_id)
+                    .with_for_update()
                 )
-                active_holds = {
-                    stock_id: Decimal(quantity) for stock_id, quantity in holds_result
+                stock_by_listing = {
+                    row.listing_id: row for row in stock_result.scalars().all()
                 }
+                stock_ids = [row.id for row in stock_by_listing.values()]
+                if stock_ids:
+                    holds_result = await self.session.execute(
+                        select(
+                            StockReservation.hub_stock_id,
+                            func.sum(StockReservation.quantity),
+                        )
+                        .where(
+                            StockReservation.hub_stock_id.in_(stock_ids),
+                            StockReservation.status == ReservationStatus.HOLD,
+                            StockReservation.expires_at > datetime.now(timezone.utc),
+                        )
+                        .group_by(StockReservation.hub_stock_id)
+                    )
+                    active_holds = {
+                        stock_id: Decimal(quantity)
+                        for stock_id, quantity in holds_result
+                    }
 
             unavailable: list[str] = []
             for cart_item in cart.items:
                 listing = cart_item.listing
-                stock = stock_by_listing.get(cart_item.listing_id)
-                free_quantity = (
-                    max(
-                        Decimal("0"),
-                        stock.available_quantity
-                        - active_holds.get(stock.id, Decimal("0")),
+                if hub is not None:
+                    # Hub mode: check hub stock quantity
+                    stock = stock_by_listing.get(cart_item.listing_id)
+                    free_quantity = (
+                        max(
+                            Decimal("0"),
+                            stock.available_quantity
+                            - active_holds.get(stock.id, Decimal("0")),
+                        )
+                        if stock is not None
+                        else Decimal("0")
                     )
-                    if stock is not None
-                    else Decimal("0")
-                )
-                if (
-                    listing.availability_status is not AvailabilityStatus.AVAILABLE
-                    or stock is None
-                    or free_quantity < cart_item.quantity
-                ):
-                    unavailable.append(
-                        f"{listing.crop.name} (requested {cart_item.quantity} "
-                        f"{listing.unit}, available {free_quantity} {listing.unit})"
-                    )
+                    if (
+                        listing.availability_status is not AvailabilityStatus.AVAILABLE
+                        or stock is None
+                        or free_quantity < cart_item.quantity
+                    ):
+                        unavailable.append(
+                            f"{listing.crop.name} (requested {cart_item.quantity} "
+                            f"{listing.unit}, available {free_quantity} {listing.unit})"
+                        )
+                else:
+                    # No-hub (farm-direct) mode: check listing availability and
+                    # farmer's declared quantity only
+                    if listing.availability_status is not AvailabilityStatus.AVAILABLE:
+                        unavailable.append(
+                            f"{listing.crop.name} is currently unavailable"
+                        )
+                    elif Decimal(str(listing.quantity)) < cart_item.quantity:
+                        unavailable.append(
+                            f"{listing.crop.name} (requested {cart_item.quantity} "
+                            f"{listing.unit}, available {listing.quantity} {listing.unit})"
+                        )
             if unavailable:
+                if hub is not None:
+                    raise LifecycleConflict(
+                        "Items unavailable at the selected hub: " + "; ".join(unavailable)
+                    )
                 raise LifecycleConflict(
-                    "Items unavailable at the selected hub: " + "; ".join(unavailable)
+                    "Items unavailable: " + "; ".join(unavailable)
                 )
 
             slot: DeliverySlot | None = None
-            if delivery_slot_id is not None:
+            if delivery_slot_id is not None and hub is not None:
                 slot = await self.session.scalar(
                     select(DeliverySlot)
                     .where(
@@ -248,13 +281,21 @@ class OrderLifecycleService:
 
             subtotal = sum(
                 (
-                    Decimal(item.listing.asking_price) * item.quantity
+                    Decimal(item.listing.asking_price).quantize(Decimal("0.01")) * Decimal(item.quantity)
                 ).quantize(Decimal("0.01"))
                 for item in cart.items
+            ).quantize(Decimal("0.01")) if cart.items else Decimal("0.00")
+            delivery_fee = (
+                settings.delivery_fee.quantize(Decimal("0.01"))
+                if subtotal > 0
+                else Decimal("0.00")
             )
-            delivery_fee = settings.delivery_fee.quantize(Decimal("0.01"))
-            platform_fee = settings.platform_fee.quantize(Decimal("0.01"))
-            total = subtotal + delivery_fee + platform_fee
+            platform_fee = (
+                settings.platform_fee.quantize(Decimal("0.01"))
+                if subtotal > 0
+                else Decimal("0.00")
+            )
+            total = (subtotal + delivery_fee + platform_fee).quantize(Decimal("0.01"))
             travel_minutes = int(
                 (distance_km / settings.rider_speed_kmph * Decimal("60")).to_integral_value(
                     rounding=ROUND_CEILING
@@ -293,12 +334,12 @@ class OrderLifecycleService:
                 actor,
                 None,
                 OrderStatus.PENDING.value,
-                "Order placed; stock reservation held",
+                "Order placed" + (" via hub" if hub else " direct from farm"),
             )
             for cart_item in cart.items:
                 listing = cart_item.listing
-                unit_price = Decimal(listing.asking_price)
-                line_subtotal = (unit_price * cart_item.quantity).quantize(
+                unit_price = Decimal(listing.asking_price).quantize(Decimal("0.01"))
+                line_subtotal = (unit_price * Decimal(cart_item.quantity)).quantize(
                     Decimal("0.01")
                 )
                 self.session.add(
@@ -310,22 +351,24 @@ class OrderLifecycleService:
                         subtotal=line_subtotal,
                     )
                 )
-                stock = stock_by_listing[cart_item.listing_id]
-                reservation = StockReservation(
-                    order_id=order.id,
-                    hub_stock_id=stock.id,
-                    quantity=cart_item.quantity,
-                    status=ReservationStatus.HOLD,
-                    expires_at=expires_at,
-                )
-                self.session.add(reservation)
-                await self._record_event(
-                    order,
-                    actor,
-                    None,
-                    ReservationStatus.HOLD.value,
-                    f"Stock held until {expires_at.isoformat()}",
-                )
+                # Stock reservation only applies when a hub is managing stock
+                if hub is not None and cart_item.listing_id in stock_by_listing:
+                    stock = stock_by_listing[cart_item.listing_id]
+                    reservation = StockReservation(
+                        order_id=order.id,
+                        hub_stock_id=stock.id,
+                        quantity=cart_item.quantity,
+                        status=ReservationStatus.HOLD,
+                        expires_at=expires_at,
+                    )
+                    self.session.add(reservation)
+                    await self._record_event(
+                        order,
+                        actor,
+                        None,
+                        ReservationStatus.HOLD.value,
+                        f"Stock held until {expires_at.isoformat()}",
+                    )
                 await self.session.delete(cart_item)
         return order.id
 
@@ -497,20 +540,6 @@ class OrderLifecycleService:
             )
             if shipment is None:
                 hub_id = order.hub_id
-                if hub_id is None:
-                    farmer_id = await self.session.scalar(
-                        select(Farmer.id).where(Farmer.user_id == actor.user_id)
-                    )
-                    if farmer_id:
-                        hub_id = await self.session.scalar(
-                            select(Hub.id).where(Hub.farmer_id == farmer_id).order_by(Hub.created_at)
-                        )
-                if hub_id is None:
-                    hub_id = await self.session.scalar(
-                        select(Hub.id).where(Hub.status == HubStatus.ACTIVE).order_by(Hub.created_at)
-                    )
-                if hub_id is None:
-                    raise LifecycleConflict("No active hub found for delivery")
 
                 if not order.delivery_address:
                     order.delivery_address = (
@@ -607,7 +636,7 @@ class OrderLifecycleService:
         order_id: UUID,
         actor: LifecycleActor,
         *,
-        hub_id: UUID,
+        hub_id: UUID | None = None,
         promised_window_start: datetime | None = None,
         promised_window_end: datetime | None = None,
         pickup_address_snapshot: str | None = None,
@@ -617,7 +646,7 @@ class OrderLifecycleService:
         async with self._transaction():
             order = await self._lock_order(order_id)
             await self._authorize_hub_operation(order, actor, hub_id)
-            if order.hub_id is not None and order.hub_id != hub_id:
+            if order.hub_id is not None and hub_id is not None and order.hub_id != hub_id:
                 raise LifecyclePermissionError(
                     "Shipment hub must match the hub selected at checkout"
                 )
@@ -634,25 +663,38 @@ class OrderLifecycleService:
                 or pickup_address_snapshot is None
                 or dropoff_address_snapshot is None
             ):
-                hub = await self.session.get(Hub, hub_id)
-                if hub is None:
-                    raise LifecycleNotFound("Hub not found")
+                if hub_id is not None:
+                    hub = await self.session.get(Hub, hub_id)
+                    if hub is None:
+                        raise LifecycleNotFound("Hub not found")
+                    pickup_address_snapshot = pickup_address_snapshot or hub.address
+                else:
+                    farmer_res = await self.session.execute(
+                        select(Farmer)
+                        .join(CropListing, CropListing.farmer_id == Farmer.id)
+                        .join(OrderItem, OrderItem.listing_id == CropListing.id)
+                        .where(OrderItem.order_id == order.id)
+                        .limit(1)
+                    )
+                    farmer = farmer_res.scalar_one_or_none()
+                    farm_addr = None
+                    if farmer is not None:
+                        farm_addr = (
+                            farmer.address_line
+                            or farmer.address
+                            or f"{farmer.village or farmer.city or 'Farmer Farm'}, PIN {farmer.pin_code or '751001'}"
+                        )
+                    pickup_address_snapshot = pickup_address_snapshot or farm_addr or "Direct Farm Handover"
+
                 promised_window_start = (
-                    promised_window_start or order.promised_window_start
+                    promised_window_start or order.promised_window_start or datetime.now(timezone.utc)
                 )
-                promised_window_end = promised_window_end or order.promised_window_end
-                pickup_address_snapshot = pickup_address_snapshot or hub.address
+                promised_window_end = (
+                    promised_window_end or order.promised_window_end or (datetime.now(timezone.utc) + timedelta(minutes=60))
+                )
                 dropoff_address_snapshot = (
-                    dropoff_address_snapshot or order.delivery_address
+                    dropoff_address_snapshot or order.delivery_address or "Customer Delivery Address"
                 )
-                if promised_window_start is None or promised_window_end is None:
-                    raise LifecycleConflict(
-                        "Order has no promised delivery window for shipment preparation"
-                    )
-                if not dropoff_address_snapshot:
-                    raise LifecycleConflict(
-                        "Order has no delivery address for shipment preparation"
-                    )
 
             shipment = Shipment(
                 order_id=order.id,
@@ -1192,7 +1234,7 @@ class OrderLifecycleService:
             if payment is None:
                 payment = Payment(
                     order_id=order.id,
-                    amount=order.total_amount,
+                    amount=Decimal(order.total_amount).quantize(Decimal("0.01")),
                     provider_reference=f"TEST-{uuid4()}",
                     payment_method="TEST_SANDBOX",
                     is_test=True,
@@ -1719,7 +1761,7 @@ class OrderLifecycleService:
         *,
         assigned_rider_user_id: UUID | None,
     ) -> None:
-        if order.hub_id is not None and order.hub_id != shipment.hub_id:
+        if order.hub_id is not None and shipment.hub_id is not None and order.hub_id != shipment.hub_id:
             raise LifecyclePermissionError(
                 "Shipment hub must match the hub selected at checkout"
             )
@@ -1751,12 +1793,12 @@ class OrderLifecycleService:
                     await self._farmer_supplies_hub_order(
                         order.id, shipment.hub_id, actor.user_id
                     )
-                    if order.hub_id is not None
+                    if (order.hub_id is not None and shipment.hub_id is not None)
                     else await self._farmer_owns_order(order.id, actor.user_id)
                 )
                 if owns_hub_supply:
                     return
-            if role is UserRole.HUB_STAFF and await self._hub_staff_for_hub(
+            if shipment.hub_id is not None and role is UserRole.HUB_STAFF and await self._hub_staff_for_hub(
                 shipment.hub_id, actor.user_id
             ):
                 return
@@ -1787,7 +1829,7 @@ class OrderLifecycleService:
         if target is ShipmentStatus.RETURNED:
             if role is UserRole.ADMIN:
                 return
-            if role is UserRole.HUB_STAFF and await self._hub_staff_for_hub(shipment.hub_id, actor.user_id):
+            if shipment.hub_id is not None and role is UserRole.HUB_STAFF and await self._hub_staff_for_hub(shipment.hub_id, actor.user_id):
                 return
             raise LifecyclePermissionError("Only assigned hub staff or admin may return a shipment")
         if target is ShipmentStatus.CANCELLED:
@@ -1795,7 +1837,7 @@ class OrderLifecycleService:
                 return
             if role is UserRole.FARMER and await self._farmer_owns_order(order.id, actor.user_id):
                 return
-            if role is UserRole.HUB_STAFF and await self._hub_staff_for_hub(shipment.hub_id, actor.user_id):
+            if shipment.hub_id is not None and role is UserRole.HUB_STAFF and await self._hub_staff_for_hub(shipment.hub_id, actor.user_id):
                 return
         raise LifecyclePermissionError("Actor is not permitted to update this shipment")
 
@@ -1803,16 +1845,16 @@ class OrderLifecycleService:
         self,
         order: Order,
         actor: LifecycleActor,
-        hub_id: UUID,
+        hub_id: UUID | None,
     ) -> None:
         await self._validate_actor(actor)
         if actor.role is UserRole.ADMIN:
             return
         if actor.role is UserRole.FARMER and await self._farmer_owns_order(order.id, actor.user_id):
             return
-        if actor.role is UserRole.HUB_STAFF and await self._hub_staff_for_hub(hub_id, actor.user_id):
+        if hub_id is not None and actor.role is UserRole.HUB_STAFF and await self._hub_staff_for_hub(hub_id, actor.user_id):
             return
-        raise LifecyclePermissionError("Actor cannot prepare a shipment for this hub")
+        raise LifecyclePermissionError("Actor cannot prepare a shipment for this order")
 
     async def _refund_on_cancellation(self, order: Order) -> None:
         payment = await self.session.scalar(

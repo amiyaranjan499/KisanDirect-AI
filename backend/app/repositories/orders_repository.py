@@ -3,16 +3,18 @@ from decimal import Decimal
 from uuid import UUID
 
 from geoalchemy2 import Geography, Geometry
-from sqlalchemy import cast, func, select
+from sqlalchemy import cast, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.core.config import Settings
 from backend.app.models import (
+    AdminAuditEvent,
     AvailabilityStatus,
     Cart,
     CartItem,
     CropListing,
+    Delivery,
     DeliverySlot,
     Farmer,
     FarmerHiddenOrder,
@@ -25,8 +27,10 @@ from backend.app.models import (
     OrderItem,
     Payment,
     ReservationStatus,
+    Review,
     Rider,
     RiderLocation,
+    RiderOffer,
     Shipment,
     StockReservation,
 )
@@ -374,3 +378,63 @@ class OrdersRepository:
         if row is None or row[0] is None or row[1] is None:
             return None
         return float(row[0]), float(row[1]), row[2]
+
+    async def delete_consumer_order(self, consumer_id: UUID, order_id: UUID) -> bool:
+        async with self.session.begin_nested():
+            order_res = await self.session.execute(
+                select(Order)
+                .where(Order.id == order_id, Order.consumer_id == consumer_id)
+                .with_for_update()
+            )
+            order = order_res.scalar_one_or_none()
+            if order is None:
+                return False
+
+            shipments_res = await self.session.execute(
+                select(Shipment.id).where(Shipment.order_id == order_id)
+            )
+            shipment_ids = list(shipments_res.scalars().all())
+            if shipment_ids:
+                await self.session.execute(
+                    delete(RiderOffer).where(RiderOffer.shipment_id.in_(shipment_ids))
+                )
+                await self.session.execute(
+                    update(OrderEvent)
+                    .where(OrderEvent.shipment_id.in_(shipment_ids))
+                    .values(shipment_id=None)
+                )
+                await self.session.execute(
+                    delete(Shipment).where(Shipment.id.in_(shipment_ids))
+                )
+
+            await self.session.execute(
+                delete(StockReservation).where(StockReservation.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(OrderItem).where(OrderItem.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(Payment).where(Payment.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(Delivery).where(Delivery.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(Review).where(Review.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(FarmerHiddenOrder).where(FarmerHiddenOrder.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(OrderEvent).where(OrderEvent.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(AdminAuditEvent).where(
+                    AdminAuditEvent.entity_type == "order",
+                    AdminAuditEvent.entity_id == order_id,
+                )
+            )
+
+            await self.session.delete(order)
+            await self.session.flush()
+            return True

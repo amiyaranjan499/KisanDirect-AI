@@ -474,7 +474,7 @@
    Crop Card Size Fix & Quick-Commerce Marketplace Grid
    ========================================================================== */
 
-/* Multi-column Grid (solves large screen-wide card bug) */
+/* Multi-column Grid (solves large screen-wide card bug; desktop 4-column) */
 .consumer-marketplace-grid {
   display: grid !important;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)) !important;
@@ -483,10 +483,33 @@
   width: 100% !important;
 }
 
+@media (min-width: 992px) {
+  .consumer-marketplace-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+}
+
 @media (max-width: 540px) {
   .consumer-marketplace-grid {
     grid-template-columns: repeat(2, 1fr) !important;
     gap: 10px !important;
+  }
+}
+
+/* Consumer Farmers Grid (3 columns on desktop) */
+.consumer-farmers-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
+  gap: 18px !important;
+  width: 100% !important;
+}
+
+@media (min-width: 900px) {
+  .consumer-farmers-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+  .farmer-row-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
   }
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { listNotifications, markNotificationRead } from "../services/api";
+import { deleteNotification, listNotifications, markNotificationRead } from "../services/api";
 
 function formatTimeAgo(dateStr) {
   if (!dateStr) return "Just now";
@@ -17,12 +17,13 @@ export default function ConsumerNotifications() {
   const [selectedFilter, setSelectedFilter] = useState("All");
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
 
   const filters = ["All", "Orders", "Updates"];
 
   const loadNotifications = () => {
     setLoading(true);
-    listNotifications()
+    listNotifications({ pageSize: 50 })
       .then((res) => {
         const items = res?.items || (Array.isArray(res) ? res : []);
         setNotifications(items);
@@ -47,6 +48,20 @@ export default function ConsumerNotifications() {
       );
     } catch {
       // Ignore background read error
+    }
+  };
+
+  const handleDelete = async (e, id) => {
+    e.stopPropagation();
+    if (!id || deletingId) return;
+    try {
+      setDeletingId(id);
+      await deleteNotification(id);
+      setNotifications((prev) => prev.filter((item) => String(item.id) !== String(id)));
+    } catch (err) {
+      setErrorMsg(err.message || "Failed to delete notification.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -198,6 +213,44 @@ export default function ConsumerNotifications() {
                     }}
                   />
                 )}
+
+                {/* Delete trash button */}
+                <button
+                  type="button"
+                  onClick={(e) => handleDelete(e, item.id)}
+                  disabled={deletingId === item.id}
+                  title="Delete notification"
+                  style={{
+                    background: "none",
+                    border: "none",
+                    padding: "4px 6px",
+                    cursor: deletingId === item.id ? "not-allowed" : "pointer",
+                    color: deletingId === item.id ? "#C53929" : "#9A9080",
+                    fontSize: "14px",
+                    lineHeight: 1,
+                    borderRadius: "4px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    opacity: deletingId === item.id ? 0.6 : 1,
+                    transition: "color 0.15s ease, opacity 0.15s ease",
+                    marginLeft: "8px",
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (deletingId !== item.id) e.currentTarget.style.color = "#C53929";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (deletingId !== item.id) e.currentTarget.style.color = "#9A9080";
+                  }}
+                  aria-label="Delete notification"
+                >
+                  {deletingId === item.id ? (
+                    <span className="spinner-border spinner-border-sm" style={{ width: "12px", height: "12px", borderWidth: "1.5px" }} />
+                  ) : (
+                    <i className="bi bi-trash" />
+                  )}
+                </button>
               </div>
             );
           })}

@@ -18,6 +18,7 @@ async function request(path, options = {}) {
 
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
+      cache: "no-store",
       ...options,
       headers: {
         ...(options.body && !isFormData ? { "Content-Type": "application/json" } : {}),
@@ -71,10 +72,17 @@ export function mediaUrl(path) {
   if (!path) return "";
   const storagePath = typeof path === "string" ? path : path.storage_url;
   if (!storagePath) return "";
-  if (storagePath.startsWith("http://") || storagePath.startsWith("https://") || storagePath.startsWith("data:") || storagePath.startsWith("/assets/")) {
+  if (
+    storagePath.startsWith("blob:") ||
+    storagePath.startsWith("http://") ||
+    storagePath.startsWith("https://") ||
+    storagePath.startsWith("data:") ||
+    storagePath.startsWith("/assets/")
+  ) {
     return storagePath;
   }
-  return `${API_BASE_URL}/media/${storagePath.replace(/^\/+/, "")}`;
+  const cleanPath = storagePath.replace(/\\/g, "/").replace(/^\/+/, "");
+  return `${API_BASE_URL}/media/${cleanPath}`;
 }
 
 export function registerUser(payload) {
@@ -503,6 +511,48 @@ export function resetAdminDeliveryOtp(shipmentId, payload) {
   });
 }
 
+export function deleteAdminOrder(orderId) {
+  return request(`/api/v1/admins/orders/${orderId}`, {
+    method: "DELETE",
+  });
+}
+
+export function deleteAdminFarmer(farmerId) {
+  return request(`/api/v1/admins/farmers/${farmerId}`, {
+    method: "DELETE",
+  });
+}
+
+export function deleteAdminListing(listingId) {
+  return request(`/api/v1/admins/listings/${listingId}`, {
+    method: "DELETE",
+  });
+}
+
+export function deleteAdminHubStaff(userId) {
+  return request(`/api/v1/admins/hub-staff/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+export function deleteAdminRider(riderId) {
+  return request(`/api/v1/admins/riders/${riderId}`, {
+    method: "DELETE",
+  });
+}
+
+export function deleteAdminShipment(shipmentId) {
+  return request(`/api/v1/admins/shipments/${shipmentId}`, {
+    method: "DELETE",
+  });
+}
+
+export function deleteAdminPayment(paymentId) {
+  return request(`/api/v1/admins/payments/${paymentId}`, {
+    method: "DELETE",
+  });
+}
+
 export function createReview(payload) {
   return request("/api/v1/reviews", {
     method: "POST",
@@ -560,8 +610,12 @@ export function fulfillmentRequest(path, options = {}) {
 
 export function listNotifications(params = {}) {
   const query = new URLSearchParams();
+  // Normalize camelCase to snake_case for backend compatibility
+  const keyMap = { pageSize: "page_size", unreadOnly: "unread_only" };
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== "" && value !== null && value !== undefined) query.set(key, value);
+    if (value !== "" && value !== null && value !== undefined) {
+      query.set(keyMap[key] ?? key, value);
+    }
   });
   return request(`/api/v1/notifications?${query}`);
 }
@@ -576,6 +630,10 @@ export function markNotificationRead(id) {
 
 export function markAllNotificationsRead() {
   return request("/api/v1/notifications/read-all", { method: "POST" });
+}
+
+export function deleteNotification(id) {
+  return request(`/api/v1/notifications/${id}`, { method: "DELETE" });
 }
 
 export function getAdminAnalytics(range = "30d") {

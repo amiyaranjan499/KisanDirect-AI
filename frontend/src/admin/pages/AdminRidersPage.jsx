@@ -3,7 +3,7 @@ import AdminDataTable from "../components/AdminDataTable";
 import AdminFilterTabs from "../components/AdminFilterTabs";
 import AdminDetailDrawer from "../components/AdminDetailDrawer";
 import AdminConfirmDialog from "../components/AdminConfirmDialog";
-import { listAdminRiders, updateAdminRiderApproval } from "../../services/adminApi";
+import { listAdminRiders, updateAdminRiderApproval, deleteAdminRider } from "../../services/adminApi";
 
 export default function AdminRidersPage() {
   const [riders, setRiders] = useState([]);
@@ -22,6 +22,11 @@ export default function AdminRidersPage() {
   const [targetStatus, setTargetStatus] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState("");
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [riderToDelete, setRiderToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -58,6 +63,30 @@ export default function AdminRidersPage() {
     setTargetStatus(nextStatus);
     setActionError("");
     setConfirmModalOpen(true);
+  };
+
+  const handleOpenDelete = (rider, e) => {
+    if (e) e.stopPropagation();
+    setRiderToDelete(rider);
+    setDeleteError("");
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!riderToDelete) return;
+    setDeleteLoading(true);
+    setDeleteError("");
+    try {
+      await deleteAdminRider(riderToDelete.id);
+      setRiders((prev) => prev.filter((r) => r.id !== riderToDelete.id));
+      setDeleteModalOpen(false);
+      setRiderToDelete(null);
+      setNotice(`Rider ${riderToDelete.display_name || riderToDelete.email} permanently deleted.`);
+    } catch (err) {
+      setDeleteError(err.message || "Failed to permanently delete rider account.");
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const handleConfirmAction = async (reason) => {
@@ -150,7 +179,7 @@ export default function AdminRidersPage() {
     {
       key: "actions",
       label: "Actions",
-      width: "180px",
+      width: "220px",
       align: "right",
       render: (r) => (
         <div className="d-flex align-items-center justify-content-end gap-1">
@@ -188,6 +217,14 @@ export default function AdminRidersPage() {
               <i className="bi bi-play-circle" /> Reinstate
             </button>
           )}
+          <button
+            type="button"
+            className="admin-table-action-btn text-danger"
+            onClick={(e) => handleOpenDelete(r, e)}
+            title="Permanently delete rider"
+          >
+            <i className="bi bi-trash" />
+          </button>
         </div>
       ),
     },
@@ -323,6 +360,25 @@ export default function AdminRidersPage() {
         reasonPlaceholder="Specify the administrative audit reason for this action..."
         loading={actionLoading}
         error={actionError}
+      />
+
+      {/* Rider Delete Confirm Modal */}
+      <AdminConfirmDialog
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          if (!deleteLoading) {
+            setDeleteModalOpen(false);
+            setRiderToDelete(null);
+          }
+        }}
+        onConfirm={handleConfirmDelete}
+        title="Permanently Delete Rider Account"
+        message={`Are you sure you want to permanently delete rider ${riderToDelete?.display_name || ""} (${riderToDelete?.email || ""})? All location history, offers, and profile records will be permanently removed from the database, and the email will be freed. (Note: Riders with active deliveries cannot be deleted until trips finish).`}
+        confirmLabel="Delete Rider"
+        confirmVariant="danger"
+        requireReason={false}
+        loading={deleteLoading}
+        error={deleteError}
       />
     </div>
   );

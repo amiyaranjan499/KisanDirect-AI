@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { listNotifications, markAllNotificationsRead, markNotificationRead } from "../services/api";
+import {
+  deleteNotification,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from "../services/api";
 
 const typeGroups = {
   All: () => true,
@@ -22,9 +27,32 @@ export default function FarmerNotifications() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("All");
+  const [deletingId, setDeletingId] = useState(null);
 
   const load = () => {
-    listNotifications().then(setData).catch((requestError) => setError(requestError.message || "Unable to load notifications."));
+    listNotifications({ pageSize: 50 })
+      .then(setData)
+      .catch((requestError) => setError(requestError.message || "Unable to load notifications."));
+  };
+
+  const handleDelete = async (id) => {
+    if (!id || deletingId) return;
+    try {
+      setDeletingId(id);
+      await deleteNotification(id);
+      setData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          items: (prev.items || []).filter((item) => String(item.id) !== String(id)),
+          total: Math.max(0, (prev.total || 1) - 1),
+        };
+      });
+    } catch (requestError) {
+      setError(requestError.message || "Failed to delete notification.");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   useEffect(() => {
@@ -119,9 +147,45 @@ export default function FarmerNotifications() {
                   <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: "#1C1C16" }}>
                     {item.title}
                   </h3>
-                  <span style={{ fontSize: "12px", color: "#79705F" }}>
-                    {item.created_at ? formatRelativeTime(item.created_at) : "recently"}
-                  </span>
+                  <div className="d-flex align-items-center gap-2">
+                    <span style={{ fontSize: "12px", color: "#79705F" }}>
+                      {item.created_at ? formatRelativeTime(item.created_at) : "recently"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(item.id)}
+                      disabled={deletingId === item.id}
+                      title="Delete notification"
+                      style={{
+                        background: "none",
+                        border: "none",
+                        padding: "2px 5px",
+                        cursor: deletingId === item.id ? "not-allowed" : "pointer",
+                        color: deletingId === item.id ? "#C53929" : "#9A9080",
+                        fontSize: "14px",
+                        lineHeight: 1,
+                        borderRadius: "4px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        opacity: deletingId === item.id ? 0.6 : 1,
+                        transition: "color 0.15s ease, opacity 0.15s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (deletingId !== item.id) e.currentTarget.style.color = "#C53929";
+                      }}
+                      onMouseLeave={(e) => {
+                        if (deletingId !== item.id) e.currentTarget.style.color = "#9A9080";
+                      }}
+                      aria-label="Delete notification"
+                    >
+                      {deletingId === item.id ? (
+                        <span className="spinner-border spinner-border-sm" style={{ width: "12px", height: "12px", borderWidth: "1.5px" }} />
+                      ) : (
+                        <i className="bi bi-trash" />
+                      )}
+                    </button>
+                  </div>
                 </div>
                 <p style={{ margin: "0 0 8px", fontSize: "13.5px", color: "#4A453A", lineHeight: 1.5 }}>
                   {item.message}

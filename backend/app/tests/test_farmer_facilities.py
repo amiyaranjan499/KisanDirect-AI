@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from geoalchemy2.elements import WKTElement
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.app.core.config import Settings
@@ -1514,6 +1514,180 @@ def test_farmer_facility_deletion_and_dependency_protection():
                 for uid in created_user_ids:
                     await session.execute(delete(Notification).where(Notification.user_id == uid))
                     await session.execute(delete(Farmer).where(Farmer.user_id == uid))
+                    await session.execute(delete(User).where(User.id == uid))
+                await session.commit()
+            await engine.dispose()
+
+    return asyncio.run(run_test())
+
+
+def test_hub_staff_revoke_permanently_deletes_account_and_allows_recreation():
+    """Verify that revoking a hub staff member permanently deletes their account from the DB,
+    reduces staff count to 0, and allows a new staff account to be created using the same email."""
+    async def run_test():
+        engine = build_engine(Settings())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        created_user_ids = []
+        created_hub_ids = []
+
+        try:
+            async with factory() as session:
+                farmer_user = User(
+                    email=f"farmer-revoke-{uuid4()}@example.com",
+                    hashed_password=hash_password("Password123!"),
+                    role=UserRole.FARMER,
+                    is_active=True,
+                )
+                session.add(farmer_user)
+                await session.flush()
+                created_user_ids.append(farmer_user.id)
+
+                farmer_profile = Farmer(
+                    user_id=farmer_user.id,
+                    name="Farmer Ramesh",
+                    phone="9988776655",
+                    location=WKTElement("POINT(85.82 20.29)", srid=4326),
+                )
+                session.add(farmer_profile)
+                await session.flush()
+
+                hub = Hub(
+                    farmer_id=farmer_profile.id,
+                    name="Ramesh Agro Facility",
+                    address="Plot 55, Bhubaneswar",
+                    location=WKTElement("POINT(85.82 20.29)", srid=4326),
+                    pincode="751001",
+                    service_radius_km=Decimal("10.0"),
+                    status=HubStatus.ACTIVE,
+                )
+                session.add(hub)
+                await session.commit()
+                created_hub_ids.append(hub.id)
+
+            app = create_app()
+            client = TestClient(app)
+
+            staff_email = f"k-{uuid4().hex[:6]}@gmail.com"
+
+            # 1. Create Hub Staff with email
+            create_res1 = client.post(
+                f"/api/v1/farmers/me/facilities/{hub.id}/staff",
+                json={
+                    "email": staff_email,
+                    "initial_password": "StaffPassword123!",
+                    "display_name": "Hub Operator 1",
+                },
+                headers=auth_header(farmer_user),
+            )
+            assert create_res1.status_code == 201, create_res1.text
+            staff1_data = create_res1.json()
+            staff1_user_id = staff1_data["user_id"]
+            created_user_ids.append(staff1_user_id)
+
+            # 2. Verify staff appears in list and DB
+            staff_list_res = client.get(
+                "/api/v1/farmers/me/staff",
+                headers=auth_header(farmer_user),
+            )
+            assert staff_list_res.status_code == 200
+            staff_list = staff_list_res.json()
+            assert len(staff_list) == 1
+            assert staff_list[0]["email"] == staff_email
+
+            fac_res = client.get(
+                "/api/v1/farmers/me/facilities",
+                headers=auth_header(farmer_user),
+            )
+            assert fac_res.status_code == 200
+            assert fac_res.json()[0]["staff_count"] == 1
+
+            async with factory() as session:
+                user_in_db = await session.scalar(
+                    select(User).where(User.id == UUID(staff1_user_id))
+                )
+                assert user_in_db is not None
+                assignment_in_db = await session.scalar(
+                    select(HubStaff).where(HubStaff.user_id == UUID(staff1_user_id))
+                )
+                assert assignment_in_db is not None
+
+            # 3. Farmer clicks Revoke
+            revoke_res = client.delete(
+                f"/api/v1/farmers/me/facilities/{hub.id}/staff/{staff1_user_id}",
+                headers=auth_header(farmer_user),
+            )
+            assert revoke_res.status_code == 204
+
+            # 4. Verify staff account is permanently deleted from the database
+            async with factory() as session:
+                deleted_user = await session.scalar(
+                    select(User).where(User.id == UUID(staff1_user_id))
+                )
+                assert deleted_user is None, "Hub Staff user must be permanently deleted from users table"
+
+                deleted_by_email = await session.scalar(
+                    select(User).where(func.lower(User.email) == staff_email.lower())
+                )
+                assert deleted_by_email is None, "Hub Staff email must be freed up in users table"
+
+                deleted_assignment = await session.scalar(
+                    select(HubStaff).where(HubStaff.user_id == UUID(staff1_user_id))
+                )
+                assert deleted_assignment is None, "HubStaff assignment must no longer exist"
+
+            # 5. Verify Total Staff becomes 0
+            staff_list_after = client.get(
+                "/api/v1/farmers/me/staff",
+                headers=auth_header(farmer_user),
+            )
+            assert staff_list_after.status_code == 200
+            assert len(staff_list_after.json()) == 0
+
+            fac_res_after = client.get(
+                "/api/v1/farmers/me/facilities",
+                headers=auth_header(farmer_user),
+            )
+            assert fac_res_after.status_code == 200
+            assert fac_res_after.json()[0]["staff_count"] == 0
+
+            # 6. Create another Hub Staff using the SAME email
+            create_res2 = client.post(
+                f"/api/v1/farmers/me/facilities/{hub.id}/staff",
+                json={
+                    "email": staff_email,
+                    "initial_password": "NewStaffPassword123!",
+                    "display_name": "Hub Operator Replacement",
+                },
+                headers=auth_header(farmer_user),
+            )
+            # 7. Account must be created successfully (NOT 409 'already exists')
+            assert create_res2.status_code == 201, create_res2.text
+            staff2_data = create_res2.json()
+            staff2_user_id = staff2_data["user_id"]
+            created_user_ids.append(staff2_user_id)
+            assert staff2_user_id != staff1_user_id, "New account must have a distinct user ID"
+
+            # 8. Verify the new staff appears as a new active account
+            staff_list_final = client.get(
+                "/api/v1/farmers/me/staff",
+                headers=auth_header(farmer_user),
+            )
+            assert staff_list_final.status_code == 200
+            final_list = staff_list_final.json()
+            assert len(final_list) == 1
+            assert final_list[0]["email"] == staff_email
+            assert final_list[0]["user_id"] == staff2_user_id
+            assert final_list[0]["is_active"] is True
+
+        finally:
+            async with factory() as session:
+                for hid in created_hub_ids:
+                    await session.execute(delete(HubStaff).where(HubStaff.hub_id == hid))
+                    await session.execute(delete(Hub).where(Hub.id == hid))
+                for uid in created_user_ids:
+                    await session.execute(delete(Notification).where(Notification.user_id == uid))
+                    await session.execute(delete(Farmer).where(Farmer.user_id == uid))
+                    await session.execute(delete(HubStaff).where(HubStaff.user_id == uid))
                     await session.execute(delete(User).where(User.id == uid))
                 await session.commit()
             await engine.dispose()

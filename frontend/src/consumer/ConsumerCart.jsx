@@ -65,9 +65,9 @@ export default function ConsumerCart() {
   };
 
   const subtotal = Number(cart?.subtotal || 0);
-  const deliveryFee = subtotal > 500 || subtotal === 0 ? 0 : 30;
-  const platformFee = subtotal > 0 ? 5 : 0;
-  const grandTotal = subtotal + deliveryFee + platformFee;
+  const deliveryFee = Number(cart?.delivery_fee ?? 0);
+  const platformFee = Number(cart?.platform_fee ?? 0);
+  const grandTotal = Number(cart?.total ?? (subtotal + deliveryFee + platformFee));
   const itemCount = cart?.items?.length || 0;
 
   return (
@@ -180,8 +180,8 @@ export default function ConsumerCart() {
             <div style={{ display: "flex", flexDirection: "column" }}>
               {cart.items.map((item) => {
                 const image = resolveCropHeroImage(item);
-                const price = Number(item.unit_price || 0).toFixed(0);
-                const itemTotal = Number(item.subtotal || item.quantity * item.unit_price || 0).toFixed(0);
+                const price = Number(item.unit_price || 0).toFixed(2);
+                const itemTotal = Number(item.subtotal || item.quantity * item.unit_price || 0).toFixed(2);
                 const qtyVal = Number(item.quantity);
 
                 return (
@@ -251,7 +251,7 @@ export default function ConsumerCart() {
 
             <div className="zepto-cart-bill-row">
               <span>Item Subtotal</span>
-              <b>₹{subtotal}</b>
+              <b>₹{subtotal.toFixed(2)}</b>
             </div>
 
             <div className="zepto-cart-bill-row">
@@ -259,13 +259,13 @@ export default function ConsumerCart() {
               {deliveryFee === 0 ? (
                 <b className="free">FREE</b>
               ) : (
-                <b>₹{deliveryFee}</b>
+                <b>₹{deliveryFee.toFixed(2)}</b>
               )}
             </div>
 
             <div className="zepto-cart-bill-row">
               <span>Platform & Handling Fee</span>
-              <b>₹{platformFee}</b>
+              <b>₹{platformFee.toFixed(2)}</b>
             </div>
 
             {deliveryFee === 0 && subtotal > 0 && (
@@ -275,15 +275,15 @@ export default function ConsumerCart() {
               </div>
             )}
 
-            {subtotal > 0 && subtotal < 500 && (
+            {deliveryFee > 0 && subtotal > 0 && subtotal < 500 && (
               <div style={{ background: "#FEF3C7", color: "#92400E", padding: "6px 10px", borderRadius: "8px", fontSize: "11.5px", margin: "6px 0", fontWeight: 600 }}>
-                Add ₹{500 - subtotal} more for FREE Delivery
+                Add ₹{(500 - subtotal).toFixed(2)} more for FREE Delivery
               </div>
             )}
 
             <div className="zepto-cart-total-row">
               <span>To Pay</span>
-              <span className="zepto-cart-total-price">₹{grandTotal}</span>
+              <span className="zepto-cart-total-price">₹{grandTotal.toFixed(2)}</span>
             </div>
 
             <button

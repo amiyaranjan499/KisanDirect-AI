@@ -142,8 +142,8 @@ export default function RiderHistoryPage() {
               <div className="d-flex align-items-center justify-content-between flex-wrap gap-2">
                 <div>
                   <div className="fw-bold fs-6 text-success d-flex align-items-center gap-2">
-                    <i className="bi bi-building" />
-                    {item.hub_name || "Kisan Hub"}
+                    <i className={item.pickup_type === "FARM" ? "bi bi-tree" : "bi bi-building"} />
+                    {item.hub_name || "Pickup Point"}
                   </div>
                   <div className="text-muted small mt-1">
                     Order Reference: <strong>#{item.order_id?.slice(0, 8).toUpperCase()}</strong>

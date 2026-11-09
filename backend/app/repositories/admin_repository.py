@@ -3,16 +3,24 @@ from decimal import Decimal
 from uuid import UUID
 
 from geoalchemy2 import Geometry
-from sqlalchemy import case, cast, func, select
+from sqlalchemy import case, cast, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.models import (
+    AdminAuditEvent,
+    AIPricePrediction,
+    AIQualityPrediction,
     AvailabilityStatus,
+    CartItem,
     Consumer,
     Crop,
+    CropImage,
     CropListing,
+    Delivery,
     Farmer,
+    FarmerHiddenOrder,
+    FarmerWithdrawal,
     Hub,
     HubStaff,
     HubStock,
@@ -25,11 +33,15 @@ from backend.app.models import (
     Payment,
     Review,
     Rider,
+    RiderLocation,
+    RiderOffer,
     Shipment,
     ShipmentStatus,
+    StockReservation,
     User,
     UserRole,
 )
+from backend.app.services.order_lifecycle_service import LifecycleConflict
 
 
 class AdminRepository:
@@ -65,12 +77,26 @@ class AdminRepository:
         return int(result.scalar_one() or 0)
 
     async def count_listings(self) -> int:
-        result = await self.session.execute(select(func.count(CropListing.id)))
+        result = await self.session.execute(
+            select(func.count(CropListing.id))
+            .join(Farmer, Farmer.id == CropListing.farmer_id)
+            .join(User, User.id == Farmer.user_id)
+            .where(
+                CropListing.availability_status != AvailabilityStatus.UNAVAILABLE,
+                User.is_active.is_(True),
+            )
+        )
         return int(result.scalar_one() or 0)
 
     async def count_listings_by_status(self, status: AvailabilityStatus) -> int:
         result = await self.session.execute(
-            select(func.count(CropListing.id)).where(CropListing.availability_status == status)
+            select(func.count(CropListing.id))
+            .join(Farmer, Farmer.id == CropListing.farmer_id)
+            .join(User, User.id == Farmer.user_id)
+            .where(
+                CropListing.availability_status == status,
+                User.is_active.is_(True),
+            )
         )
         return int(result.scalar_one() or 0)
 
@@ -476,3 +502,307 @@ class AdminRepository:
             select(User).where(User.id == user_id).with_for_update()
         )
         return result.scalar_one_or_none()
+
+    async def delete_order(self, order_id: UUID) -> bool:
+        async with self.session.begin_nested():
+            order = await self.session.get(Order, order_id, with_for_update=True)
+            if order is None:
+                return False
+
+            shipments_res = await self.session.execute(
+                select(Shipment.id).where(Shipment.order_id == order_id)
+            )
+            shipment_ids = list(shipments_res.scalars().all())
+            if shipment_ids:
+                await self.session.execute(
+                    delete(RiderOffer).where(RiderOffer.shipment_id.in_(shipment_ids))
+                )
+                await self.session.execute(
+                    update(OrderEvent)
+                    .where(OrderEvent.shipment_id.in_(shipment_ids))
+                    .values(shipment_id=None)
+                )
+                await self.session.execute(
+                    delete(Shipment).where(Shipment.id.in_(shipment_ids))
+                )
+
+            await self.session.execute(
+                delete(StockReservation).where(StockReservation.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(OrderItem).where(OrderItem.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(Payment).where(Payment.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(Delivery).where(Delivery.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(Review).where(Review.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(FarmerHiddenOrder).where(FarmerHiddenOrder.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(OrderEvent).where(OrderEvent.order_id == order_id)
+            )
+            await self.session.execute(
+                delete(AdminAuditEvent).where(
+                    AdminAuditEvent.entity_type == "order",
+                    AdminAuditEvent.entity_id == order_id,
+                )
+            )
+
+            await self.session.delete(order)
+            await self.session.flush()
+            return True
+
+    async def delete_listing(self, listing_id: UUID) -> bool:
+        async with self.session.begin_nested():
+            listing = await self.session.get(CropListing, listing_id, with_for_update=True)
+            if listing is None:
+                return False
+
+            stock_res = await self.session.execute(
+                select(HubStock.id).where(HubStock.listing_id == listing_id)
+            )
+            stock_ids = list(stock_res.scalars().all())
+            if stock_ids:
+                await self.session.execute(
+                    delete(StockReservation).where(StockReservation.hub_stock_id.in_(stock_ids))
+                )
+
+            await self.session.execute(
+                delete(CartItem).where(CartItem.listing_id == listing_id)
+            )
+            await self.session.execute(
+                delete(HubStockDelivery).where(HubStockDelivery.listing_id == listing_id)
+            )
+            await self.session.execute(
+                delete(HubStock).where(HubStock.listing_id == listing_id)
+            )
+            await self.session.execute(
+                delete(CropImage).where(CropImage.listing_id == listing_id)
+            )
+            await self.session.execute(
+                delete(AIQualityPrediction).where(AIQualityPrediction.listing_id == listing_id)
+            )
+            await self.session.execute(
+                delete(AIPricePrediction).where(AIPricePrediction.listing_id == listing_id)
+            )
+            await self.session.execute(
+                delete(Review).where(Review.listing_id == listing_id)
+            )
+            await self.session.execute(
+                delete(OrderItem).where(OrderItem.listing_id == listing_id)
+            )
+
+            await self.session.delete(listing)
+            await self.session.flush()
+            return True
+
+    async def delete_farmer(self, farmer_id: UUID) -> bool:
+        async with self.session.begin_nested():
+            farmer = await self.session.get(Farmer, farmer_id, with_for_update=True)
+            if farmer is None:
+                return False
+
+            user_id = farmer.user_id
+
+            listings_res = await self.session.execute(
+                select(CropListing.id).where(CropListing.farmer_id == farmer_id)
+            )
+            listing_ids = list(listings_res.scalars().all())
+            if listing_ids:
+                stock_res = await self.session.execute(
+                    select(HubStock.id).where(HubStock.listing_id.in_(listing_ids))
+                )
+                stock_ids = list(stock_res.scalars().all())
+                if stock_ids:
+                    await self.session.execute(
+                        delete(StockReservation).where(StockReservation.hub_stock_id.in_(stock_ids))
+                    )
+                await self.session.execute(
+                    delete(CartItem).where(CartItem.listing_id.in_(listing_ids))
+                )
+                await self.session.execute(
+                    delete(HubStockDelivery).where(HubStockDelivery.listing_id.in_(listing_ids))
+                )
+                await self.session.execute(
+                    delete(HubStock).where(HubStock.listing_id.in_(listing_ids))
+                )
+                await self.session.execute(
+                    delete(CropImage).where(CropImage.listing_id.in_(listing_ids))
+                )
+                await self.session.execute(
+                    delete(AIQualityPrediction).where(AIQualityPrediction.listing_id.in_(listing_ids))
+                )
+                await self.session.execute(
+                    delete(AIPricePrediction).where(AIPricePrediction.listing_id.in_(listing_ids))
+                )
+                await self.session.execute(
+                    delete(Review).where(Review.listing_id.in_(listing_ids))
+                )
+                await self.session.execute(
+                    delete(OrderItem).where(OrderItem.listing_id.in_(listing_ids))
+                )
+                await self.session.execute(
+                    delete(CropListing).where(CropListing.id.in_(listing_ids))
+                )
+
+            await self.session.execute(
+                delete(HubStockDelivery).where(HubStockDelivery.farmer_user_id == user_id)
+            )
+            await self.session.execute(
+                delete(FarmerWithdrawal).where(FarmerWithdrawal.farmer_id == farmer_id)
+            )
+            await self.session.execute(
+                delete(FarmerHiddenOrder).where(FarmerHiddenOrder.farmer_id == farmer_id)
+            )
+            await self.session.execute(
+                update(Hub).where(Hub.farmer_id == farmer_id).values(farmer_id=None)
+            )
+            await self.session.execute(
+                update(OrderEvent).where(OrderEvent.actor_user_id == user_id).values(actor_user_id=None)
+            )
+            await self.session.execute(
+                update(AdminAuditEvent).where(AdminAuditEvent.actor_user_id == user_id).values(actor_user_id=None)
+            )
+            await self.session.execute(
+                delete(Notification).where(Notification.user_id == user_id)
+            )
+
+            await self.session.delete(farmer)
+            await self.session.flush()
+
+            user = await self.session.get(User, user_id, with_for_update=True)
+            if user:
+                await self.session.delete(user)
+                await self.session.flush()
+
+            return True
+
+    async def delete_hub_staff(self, user_id: UUID) -> bool:
+        async with self.session.begin_nested():
+            user = await self.session.scalar(
+                select(User).where(User.id == user_id, User.role == UserRole.HUB_STAFF).with_for_update()
+            )
+            if user is None:
+                return False
+
+            await self.session.execute(
+                update(HubStockDelivery)
+                .where(HubStockDelivery.received_by_user_id == user_id)
+                .values(received_by_user_id=None)
+            )
+            await self.session.execute(
+                update(OrderEvent)
+                .where(OrderEvent.actor_user_id == user_id)
+                .values(actor_user_id=None)
+            )
+            await self.session.execute(
+                update(AdminAuditEvent)
+                .where(AdminAuditEvent.actor_user_id == user_id)
+                .values(actor_user_id=None)
+            )
+            await self.session.execute(
+                delete(Notification).where(Notification.user_id == user_id)
+            )
+            await self.session.execute(
+                delete(HubStaff).where(HubStaff.user_id == user_id)
+            )
+
+            await self.session.delete(user)
+            await self.session.flush()
+            return True
+
+    async def delete_rider(self, rider_id: UUID) -> bool:
+        async with self.session.begin_nested():
+            rider = await self.session.get(Rider, rider_id, with_for_update=True)
+            if rider is None:
+                return False
+
+            active_statuses = (
+                ShipmentStatus.PACKING,
+                ShipmentStatus.READY_FOR_PICKUP,
+                ShipmentStatus.RIDER_ASSIGNED,
+                ShipmentStatus.PICKED_UP,
+                ShipmentStatus.OUT_FOR_DELIVERY,
+                ShipmentStatus.ARRIVED,
+            )
+            active_count = await self.session.scalar(
+                select(func.count(Shipment.id)).where(
+                    Shipment.rider_id == rider_id,
+                    Shipment.status.in_(active_statuses),
+                )
+            )
+            if active_count and int(active_count) > 0:
+                raise LifecycleConflict(f"Cannot delete rider with {active_count} active deliveries in progress.")
+
+            await self.session.execute(
+                update(Shipment).where(Shipment.rider_id == rider_id).values(rider_id=None)
+            )
+            await self.session.execute(
+                delete(RiderOffer).where(RiderOffer.rider_id == rider_id)
+            )
+            await self.session.execute(
+                delete(RiderLocation).where(RiderLocation.rider_id == rider_id)
+            )
+
+            user_id = rider.user_id
+            await self.session.execute(
+                update(OrderEvent).where(OrderEvent.actor_user_id == user_id).values(actor_user_id=None)
+            )
+            await self.session.execute(
+                update(AdminAuditEvent).where(AdminAuditEvent.actor_user_id == user_id).values(actor_user_id=None)
+            )
+            await self.session.execute(
+                delete(Notification).where(Notification.user_id == user_id)
+            )
+
+            await self.session.delete(rider)
+            await self.session.flush()
+
+            user = await self.session.get(User, user_id, with_for_update=True)
+            if user:
+                await self.session.delete(user)
+                await self.session.flush()
+
+            return True
+
+    async def delete_shipment(self, shipment_id: UUID) -> bool:
+        async with self.session.begin_nested():
+            shipment = await self.session.get(Shipment, shipment_id, with_for_update=True)
+            if shipment is None:
+                return False
+
+            active_statuses = (
+                ShipmentStatus.RIDER_ASSIGNED,
+                ShipmentStatus.PICKED_UP,
+                ShipmentStatus.OUT_FOR_DELIVERY,
+                ShipmentStatus.ARRIVED,
+            )
+            if shipment.status in active_statuses:
+                raise LifecycleConflict(f"Cannot delete shipment while in {shipment.status.value} status.")
+
+            await self.session.execute(
+                delete(RiderOffer).where(RiderOffer.shipment_id == shipment_id)
+            )
+            await self.session.execute(
+                update(OrderEvent).where(OrderEvent.shipment_id == shipment_id).values(shipment_id=None)
+            )
+
+            await self.session.delete(shipment)
+            await self.session.flush()
+            return True
+
+    async def delete_payment(self, payment_id: UUID) -> bool:
+        async with self.session.begin_nested():
+            payment = await self.session.get(Payment, payment_id, with_for_update=True)
+            if payment is None:
+                return False
+
+            await self.session.delete(payment)
+            await self.session.flush()
+            return True

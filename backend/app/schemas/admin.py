@@ -266,8 +266,8 @@ class AdminShipmentResponse(BaseModel):
     status: str
     rider_id: UUID | None
     rider_name: str | None
-    hub_id: UUID
-    hub_name: str
+    hub_id: UUID | None = None
+    hub_name: str | None = None
     pickup_address: str
     delivery_address: str
     eta_start: datetime | None

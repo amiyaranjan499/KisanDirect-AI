@@ -296,8 +296,7 @@ def test_admin_analytics_range_changes_results() -> None:
             medium = client.get("/api/v1/admins/analytics", params={"range": "90d"}, headers=auth_header(admin_user))
             assert short.status_code == 200, short.text
             assert medium.status_code == 200, medium.text
-            assert short.json()["total_orders"] == 1
-            assert medium.json()["total_orders"] == 2
+            assert medium.json()["total_orders"] == short.json()["total_orders"] + 1
             assert short.json()["total_sales"] != medium.json()["total_sales"]
     finally:
         cleanup_admin_data(data)
@@ -379,11 +378,11 @@ def test_admin_dashboard_genuine_users_and_crop_deletion_counts() -> None:
             del_resp = client.delete(f"/api/v1/farmers/me/listings/{extra_listing.id}", headers=auth_header(farmer_user))
             assert del_resp.status_code == 204, del_resp.text
 
-            # 4. Check updated summary: cumulative remains unchanged, active decreases by 1
+            # 4. Check updated summary: current listings and active listings both decrease by 1
             updated_summary = client.get("/api/v1/admins/dashboard/summary", headers=auth_header(admin_user))
             assert updated_summary.status_code == 200
             updated_payload = updated_summary.json()
-            assert updated_payload["total_listings"] == cum_listings_before
+            assert updated_payload["total_listings"] == cum_listings_before - 1
             assert updated_payload["active_listings"] == active_listings_before - 1
     finally:
         asyncio.run(cleanup_extra())

@@ -100,6 +100,10 @@ export default function AdminDashboardPage() {
     return payments.filter((p) => p.status === "PENDING").length;
   }, [payments]);
 
+  const currentListings = useMemo(() => {
+    return listings.filter((l) => (l.availability_status || "").toUpperCase() !== "UNAVAILABLE");
+  }, [listings]);
+
   return (
     <div className="admin-page-container">
       {/* Page Header */}
@@ -167,7 +171,7 @@ export default function AdminDashboardPage() {
             <span className="admin-kpi-title">Crop Listings</span>
             <div className="admin-kpi-icon"><i className="bi bi-basket2" /></div>
           </div>
-          <div className="admin-kpi-value">{loading ? "—" : summary?.total_listings ?? 0}</div>
+          <div className="admin-kpi-value">{loading ? "—" : summary?.total_listings ?? currentListings.length}</div>
           <span className="admin-kpi-subtext">Active: {summary?.active_listings ?? 0}</span>
         </div>
 
@@ -236,7 +240,7 @@ export default function AdminDashboardPage() {
                     </td>
                   </tr>
                 ) : (
-                  orders.slice(0, 5).map((order) => (
+                  orders.slice(0, 3).map((order) => (
                     <tr key={order.id}>
                       <td>
                         <strong>{`ORD-${String(order.id).slice(0, 6).toUpperCase()}`}</strong>
@@ -282,7 +286,7 @@ export default function AdminDashboardPage() {
                     </td>
                   </tr>
                 ) : (
-                  farmers.slice(0, 5).map((farmer) => (
+                  farmers.slice(0, 3).map((farmer) => (
                     <tr key={farmer.id}>
                       <td>
                         <div className="admin-entity-cell">
@@ -308,7 +312,7 @@ export default function AdminDashboardPage() {
           <div className="admin-panel-header">
             <h2>Recent Crop Listings</h2>
             <Link to="/admin/listings" className="admin-btn-secondary admin-btn-sm">
-              View All ({listings.length})
+              View All ({currentListings.length})
             </Link>
           </div>
           <div className="admin-table-wrap">
@@ -324,14 +328,14 @@ export default function AdminDashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {listings.length === 0 ? (
+                {currentListings.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="text-center py-4 text-muted">
                       No crop listings found.
                     </td>
                   </tr>
                 ) : (
-                  listings.slice(0, 6).map((listing) => (
+                  currentListings.slice(0, 3).map((listing) => (
                     <tr key={listing.id}>
                       <td><strong>{listing.crop_name}</strong></td>
                       <td>{listing.farmer_name}</td>

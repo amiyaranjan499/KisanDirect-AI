@@ -9,6 +9,7 @@ import {
   listAdminShipments,
   reassignAdminShipment,
   resetAdminDeliveryOtp,
+  deleteAdminShipment,
 } from "../../services/adminApi";
 
 const formatDate = (value) =>
@@ -41,6 +42,11 @@ export default function AdminDeliveryPage() {
   const [selectedRiderId, setSelectedRiderId] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState("");
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [shipmentToDelete, setShipmentToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -129,6 +135,30 @@ export default function AdminDeliveryPage() {
     setDrawerOpen(true);
   };
 
+  const handleOpenDelete = (shipment, e) => {
+    if (e) e.stopPropagation();
+    setShipmentToDelete(shipment);
+    setDeleteError("");
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!shipmentToDelete) return;
+    setDeleteLoading(true);
+    setDeleteError("");
+    try {
+      await deleteAdminShipment(shipmentToDelete.id);
+      setShipments((prev) => prev.filter((s) => s.id !== shipmentToDelete.id));
+      setDeleteModalOpen(false);
+      setShipmentToDelete(null);
+      setNotice(`Shipment ${String(shipmentToDelete.id).slice(0, 8)} permanently deleted.`);
+    } catch (err) {
+      setDeleteError(err.message || "Failed to permanently delete shipment.");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   const columns = [
     {
       key: "id",
@@ -215,7 +245,7 @@ export default function AdminDeliveryPage() {
     {
       key: "actions",
       label: "Actions",
-      width: "220px",
+      width: "250px",
       align: "right",
       render: (s) => (
         <div className="d-flex align-items-center justify-content-end gap-1 flex-wrap">
@@ -254,6 +284,14 @@ export default function AdminDeliveryPage() {
               <i className="bi bi-key" /> Reset
             </button>
           )}
+          <button
+            type="button"
+            className="admin-table-action-btn text-danger"
+            onClick={(e) => handleOpenDelete(s, e)}
+            title="Permanently delete shipment"
+          >
+            <i className="bi bi-trash" />
+          </button>
         </div>
       ),
     },
@@ -497,6 +535,25 @@ export default function AdminDeliveryPage() {
         reasonPlaceholder="Specify why the OTP lockout is being reset..."
         loading={actionLoading}
         error={actionError}
+      />
+
+      {/* Delete Shipment Modal */}
+      <AdminConfirmDialog
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          if (!deleteLoading) {
+            setDeleteModalOpen(false);
+            setShipmentToDelete(null);
+          }
+        }}
+        onConfirm={handleConfirmDelete}
+        title="Permanently Delete Shipment"
+        message={`Are you sure you want to permanently delete shipment ${String(shipmentToDelete?.id || "").slice(0, 8).toUpperCase()}? This will permanently delete the shipment and rider offer records from the database. (Cannot be deleted while actively in transit).`}
+        confirmLabel="Delete Shipment"
+        confirmVariant="danger"
+        requireReason={false}
+        loading={deleteLoading}
+        error={deleteError}
       />
     </div>
   );

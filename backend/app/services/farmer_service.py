@@ -146,6 +146,20 @@ class FarmerService:
         if latest_quality is not None and latest_quality.quality_label:
             mapping = {"Good": "Grade A", "Average": "Grade B", "Poor": "Grade C"}
             quality_grade = mapping.get(latest_quality.quality_label, latest_quality.quality_label)
+        resolved_quality = latest_quality.quality_label if latest_quality is not None else None
+        if not resolved_quality and listing.quality_information:
+            info = listing.quality_information.strip()
+            for q_opt in ("Good", "Average", "Poor"):
+                if q_opt.lower() in info.lower():
+                    resolved_quality = q_opt
+                    break
+            if not resolved_quality:
+                if "grade a" in info.lower():
+                    resolved_quality = "Good"
+                elif "grade b" in info.lower():
+                    resolved_quality = "Average"
+                elif "grade c" in info.lower():
+                    resolved_quality = "Poor"
         return CropListingResponse.model_validate(
             {
                 **listing.__dict__,
@@ -154,10 +168,10 @@ class FarmerService:
                 "crop_category": listing.crop.category,
                 "availability_status": listing.availability_status.value,
                 "location": self._location(coordinates),
-                "ai_quality_label": latest_quality.quality_label if latest_quality is not None else None,
-                "ai_quality_status": latest_quality.prediction_status if latest_quality is not None else None,
+                "ai_quality_label": resolved_quality,
+                "ai_quality_status": latest_quality.prediction_status if latest_quality is not None else ("COMPLETED" if resolved_quality else None),
                 "ai_quality_confidence": float(latest_quality.confidence) if latest_quality and latest_quality.confidence is not None else None,
-                "quality_grade": quality_grade,
+                "quality_grade": quality_grade or resolved_quality,
                 "quality_information": listing.quality_information,
             }
         )
@@ -194,25 +208,6 @@ class FarmerService:
         values["location"] = self._point(payload.location)
         listing = await self.repository.create_listing(farmer.id, values)
         listing.crop = await self.repository.get_or_create_crop(payload.crop_name, payload.crop_category)
-        try:
-            from sqlalchemy import func
-            hub_result = await self.repository.session.execute(
-                select(Hub)
-                .where(Hub.status == HubStatus.ACTIVE)
-                .order_by(func.ST_Distance(Hub.location, listing.location))
-                .limit(1)
-            )
-            nearest_hub = hub_result.scalar_one_or_none()
-            if nearest_hub is not None:
-                stock_entry = HubStock(
-                    hub_id=nearest_hub.id,
-                    listing_id=listing.id,
-                    available_quantity=listing.quantity,
-                )
-                self.repository.session.add(stock_entry)
-                await self.repository.session.flush()
-        except Exception:
-            pass
         return await self._listing_response(listing)
 
     async def list_listings(
@@ -319,7 +314,8 @@ class FarmerService:
         target_dir.mkdir(parents=True, exist_ok=True)
         target = target_dir / f"{image_id}.{extension}"
         target.write_bytes(content)
-        return await self.repository.add_image(listing_id, str(target.relative_to(self.upload_root.parent)), content_type)
+        relative_path = str(target.relative_to(self.upload_root.parent)).replace("\\", "/")
+        return await self.repository.add_image(listing_id, relative_path, content_type)
 
     async def upload_profile_image(self, user_id: UUID, upload_file) -> str:
         farmer = await self.repository.get_profile(user_id)
@@ -515,6 +511,32 @@ class FarmerService:
                         created_at=latest_quality.created_at,
                     )
                 )
+            elif listing.quality_information:
+                info = listing.quality_information.strip()
+                label = None
+                for q_opt in ("Good", "Average", "Poor"):
+                    if q_opt.lower() in info.lower():
+                        label = q_opt
+                        break
+                if not label:
+                    if "grade a" in info.lower():
+                        label = "Good"
+                    elif "grade b" in info.lower():
+                        label = "Average"
+                    elif "grade c" in info.lower():
+                        label = "Poor"
+                if label:
+                    quality_assessments.append(
+                        DashboardAIQualityAssessmentResponse(
+                            id=listing.id,
+                            listing_id=listing.id,
+                            crop_name=listing.crop.name,
+                            quality_label=label,
+                            prediction_status="COMPLETED",
+                            confidence=None,
+                            created_at=listing.created_at,
+                        )
+                    )
             latest_price = max(listing.price_predictions, key=lambda item: item.created_at, default=None)
             if latest_price is not None:
                 price_predictions.append(
@@ -861,7 +883,7 @@ class FarmerService:
         if farmer is None:
             raise LookupError("Farmer profile not found")
 
-        lifecycle, _ = self._lifecycle_services()
+        lifecycle, rider_dispatch = self._lifecycle_services()
 
         async with self.repository.session.begin_nested():
             # 1. Lock and validate order
@@ -1010,7 +1032,7 @@ class FarmerService:
         if farmer is None:
             raise LookupError("Farmer profile not found")
 
-        lifecycle, _ = self._lifecycle_services()
+        lifecycle, rider_dispatch = self._lifecycle_services()
 
         async with self.repository.session.begin_nested():
             result = await self.repository.session.execute(
@@ -1071,7 +1093,7 @@ class FarmerService:
         if farmer is None:
             raise LookupError("Farmer profile not found")
 
-        lifecycle, _ = self._lifecycle_services()
+        lifecycle, rider_dispatch = self._lifecycle_services()
 
         async with self.repository.session.begin_nested():
             result = await self.repository.session.execute(
@@ -1115,18 +1137,6 @@ class FarmerService:
             shipment = order.shipment
             if shipment is None:
                 hub_id = order.hub_id
-                if hub_id is None:
-                    farmer_facility = await self.repository.session.scalar(
-                        select(Hub.id).where(Hub.farmer_id == farmer.id).order_by(Hub.created_at)
-                    )
-                    hub_id = farmer_facility
-                if hub_id is None:
-                    platform_hub = await self.repository.session.scalar(
-                        select(Hub.id).where(Hub.status == HubStatus.ACTIVE).order_by(Hub.created_at)
-                    )
-                    hub_id = platform_hub
-                if hub_id is None:
-                    raise LifecycleConflict("No active hub found for shipment pickup")
 
                 if not order.delivery_address:
                     order.delivery_address = (
@@ -1152,6 +1162,8 @@ class FarmerService:
                     ShipmentStatus.READY_FOR_PICKUP,
                     reason="Order packed and ready for rider pickup",
                 )
+            elif shipment.status == ShipmentStatus.READY_FOR_PICKUP:
+                await rider_dispatch.dispatch_ready_shipment(shipment.id)
 
             await lifecycle.notifications.stage(
                 user_id=user_id,
@@ -1177,7 +1189,7 @@ class FarmerService:
         if farmer is None:
             raise LookupError("Farmer profile not found")
 
-        lifecycle, _ = self._lifecycle_services()
+        lifecycle, rider_dispatch = self._lifecycle_services()
         actor = LifecycleActor(user_id, UserRole.FARMER)
 
         await lifecycle.deliver_farmer_order(

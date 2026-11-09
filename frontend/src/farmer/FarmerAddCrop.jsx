@@ -461,6 +461,17 @@ export default function FarmerAddCrop({ onBack }) {
     setError("");
     setSuccess("");
     setImageFiles([{ file, preview: previewUrl, name: file.name }]);
+    // Reset previous AI identification and pricing states immediately when image is changed
+    setCropClassification(null);
+    setQuality(null);
+    setMarket(null);
+    setPrice(null);
+    setForm((prev) => ({
+      ...prev,
+      crop_name: "",
+      crop_category: "",
+      asking_price: "0",
+    }));
     setIsAnalyzing(true);
     setAnalysisStep("Analyzing crop and assessing quality...");
 
@@ -655,27 +666,35 @@ export default function FarmerAddCrop({ onBack }) {
         asking_price: finalPriceNum,
       });
 
-      // 1. Upload harvest photo and store real quality prediction to the created listing
+      // 1. Save image and create permanent quality assessment in database
       let finalQualityLabel = quality?.quality_label || null;
+      let uploadedImageRecord = null;
       if (imageFiles.length > 0 && imageFiles[0].file) {
         try {
+          // createQualityPrediction saves harvest photo to crop_images AND persists AIQualityPrediction to DB
           const qualRes = await createQualityPrediction(listing.id, imageFiles[0].file);
           if (qualRes && qualRes.quality_label) {
             finalQualityLabel = qualRes.quality_label;
           }
-        } catch (qualErr) {
-          console.warn("Quality prediction direct attachment fallback:", qualErr);
-          try {
-            await uploadFarmerListingImage(listing.id, imageFiles[0].file);
-          } catch (uploadErr) {
-            console.warn("Listing image attachment warning:", uploadErr);
+          if (qualRes && qualRes.image_id) {
+            uploadedImageRecord = {
+              id: qualRes.image_id,
+              storage_url: qualRes.result_metadata?.storage_url || "",
+            };
           }
-          if (finalQualityLabel) {
-            try {
-              await updateFarmerListing(listing.id, { quality_information: finalQualityLabel });
-            } catch {
-              // ignore
-            }
+        } catch (qualErr) {
+          console.warn("Quality prediction direct call warning, falling back to direct upload:", qualErr);
+          try {
+            uploadedImageRecord = await uploadFarmerListingImage(listing.id, imageFiles[0].file);
+          } catch (uploadErr) {
+            console.warn("Listing image attachment fallback warning:", uploadErr);
+          }
+        }
+        if (finalQualityLabel) {
+          try {
+            await updateFarmerListing(listing.id, { quality_information: finalQualityLabel });
+          } catch {
+            // ignore
           }
         }
       }
@@ -711,9 +730,14 @@ export default function FarmerAddCrop({ onBack }) {
         const cachedList = cachedRaw ? JSON.parse(cachedRaw) : [];
         const listArray = Array.isArray(cachedList) ? cachedList : cachedList?.items || [];
         const primaryPreview = imageFiles.length > 0 && imageFiles[0].preview ? imageFiles[0].preview : null;
-        const imagesWithFallback = (freshListing.images && freshListing.images.length > 0)
-          ? freshListing.images
-          : (primaryPreview ? [primaryPreview] : []);
+        let imagesWithFallback = [];
+        if (freshListing.images && freshListing.images.length > 0) {
+          imagesWithFallback = freshListing.images;
+        } else if (uploadedImageRecord) {
+          imagesWithFallback = [uploadedImageRecord];
+        } else if (primaryPreview) {
+          imagesWithFallback = [primaryPreview];
+        }
         const enhancedListing = {
           ...freshListing,
           images: imagesWithFallback,

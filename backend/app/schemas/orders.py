@@ -34,6 +34,9 @@ class CartResponse(BaseModel):
     id: UUID
     items: list[CartItemResponse]
     subtotal: Decimal
+    delivery_fee: Decimal = Decimal("0.00")
+    platform_fee: Decimal = Decimal("0.00")
+    total: Decimal = Decimal("0.00")
     total_quantity: Decimal
 
 
@@ -68,7 +71,7 @@ class OrderResponse(BaseModel):
 
 
 class CheckoutRequest(BaseModel):
-    hub_id: UUID
+    hub_id: UUID | None = None
     delivery_slot_id: UUID | None = None
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)

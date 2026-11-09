@@ -142,6 +142,12 @@ def test_notification_creation_retrieval_and_read_states():
             read_all = client.post("/api/v1/notifications/read-all", headers=header(consumer))
             assert read_all.status_code == 200
             assert read_all.json()["marked"] == 0
+
+            del_res = client.delete(f"/api/v1/notifications/{payload['id']}", headers=header(consumer))
+            assert del_res.status_code == 204
+
+            not_found = client.get(f"/api/v1/notifications/{payload['id']}", headers=header(consumer))
+            assert not_found.status_code == 404
     finally:
         cleanup(data)
 

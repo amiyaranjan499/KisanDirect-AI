@@ -388,3 +388,101 @@ async def reset_delivery_otp(
             status_code=403 if isinstance(exc, LifecyclePermissionError) else 422,
             detail=str(exc),
         ) from exc
+
+
+@router.delete("/orders/{order_id}", status_code=204)
+async def delete_order(
+    order_id: UUID,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> None:
+    try:
+        await service.delete_order(order_id, LifecycleActor(current_user.id, current_user.role))
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete("/farmers/{farmer_id}", status_code=204)
+async def delete_farmer(
+    farmer_id: UUID,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> None:
+    try:
+        await service.delete_farmer(farmer_id, LifecycleActor(current_user.id, current_user.role))
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete("/listings/{listing_id}", status_code=204)
+async def delete_listing(
+    listing_id: UUID,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> None:
+    try:
+        await service.delete_listing(listing_id, LifecycleActor(current_user.id, current_user.role))
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete("/hub-staff/{user_id}", status_code=204)
+async def delete_hub_staff(
+    user_id: UUID,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> None:
+    try:
+        await service.delete_hub_staff(user_id, LifecycleActor(current_user.id, current_user.role))
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete("/riders/{rider_id}", status_code=204)
+async def delete_rider(
+    rider_id: UUID,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> None:
+    try:
+        await service.delete_rider(rider_id, LifecycleActor(current_user.id, current_user.role))
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete("/shipments/{shipment_id}", status_code=204)
+async def delete_shipment(
+    shipment_id: UUID,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> None:
+    try:
+        await service.delete_shipment(shipment_id, LifecycleActor(current_user.id, current_user.role))
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete("/payments/{payment_id}", status_code=204)
+async def delete_payment(
+    payment_id: UUID,
+    current_user: Annotated[User, Depends(get_authenticated_admin)],
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> None:
+    try:
+        await service.delete_payment(payment_id, LifecycleActor(current_user.id, current_user.role))
+    except LifecycleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LifecycleConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

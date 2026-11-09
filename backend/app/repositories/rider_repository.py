@@ -1,14 +1,19 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
 from backend.app.models import (
+    CropListing,
+    Farmer,
     Hub,
     Order,
+    OrderItem,
     Rider,
+    RiderApprovalStatus,
+    RiderAvailability,
     RiderLocation,
     RiderOffer,
     Shipment,
@@ -16,6 +21,17 @@ from backend.app.models import (
     User,
     UserRole,
 )
+
+
+def _shipment_eager_loads():
+    return (
+        selectinload(Shipment.hub),
+        selectinload(Shipment.order)
+        .selectinload(Order.items)
+        .selectinload(OrderItem.listing)
+        .selectinload(CropListing.farmer),
+        selectinload(Shipment.order).selectinload(Order.payment),
+    )
 
 
 class RiderRepository:
@@ -47,7 +63,13 @@ class RiderRepository:
     async def get_offer(
         self, offer_id: UUID, *, for_update: bool = False
     ) -> RiderOffer | None:
-        statement = select(RiderOffer).where(RiderOffer.id == offer_id)
+        statement = (
+            select(RiderOffer)
+            .where(RiderOffer.id == offer_id)
+            .options(
+                selectinload(RiderOffer.shipment).options(*_shipment_eager_loads()),
+            )
+        )
         if for_update:
             statement = statement.with_for_update().execution_options(
                 populate_existing=True
@@ -58,6 +80,7 @@ class RiderRepository:
         return await self.session.scalar(
             select(Shipment)
             .where(Shipment.id == shipment_id)
+            .options(*_shipment_eager_loads())
             .with_for_update()
         )
 
@@ -75,10 +98,7 @@ class RiderRepository:
                     ]
                 ),
             )
-            .options(
-                selectinload(Shipment.hub),
-                selectinload(Shipment.order).selectinload(Order.payment),
-            )
+            .options(*_shipment_eager_loads())
             .order_by(Shipment.rider_assigned_at.desc(), Shipment.id)
             .limit(1)
         )
@@ -90,10 +110,7 @@ class RiderRepository:
         return await self.session.scalar(
             select(Shipment)
             .where(Shipment.id == shipment_id, Shipment.rider_id == rider_id)
-            .options(
-                selectinload(Shipment.hub),
-                selectinload(Shipment.order).selectinload(Order.payment),
-            )
+            .options(*_shipment_eager_loads())
         )
 
     async def completed_shipments(
@@ -106,13 +123,13 @@ class RiderRepository:
                 Shipment.status == ShipmentStatus.DELIVERED,
                 Shipment.delivered_at.is_not(None),
             )
-            .options(selectinload(Shipment.hub))
+            .options(*_shipment_eager_loads())
             .order_by(Shipment.delivered_at.desc(), Shipment.id)
         )
         return list(result.scalars().all())
 
     async def nearest_eligible_rider(
-        self, shipment_id: UUID, hub_id: UUID
+        self, shipment_id: UUID, hub_id: UUID | None
     ) -> Rider | None:
         latest_rider_location = aliased(RiderLocation)
         latest_location = (
@@ -131,17 +148,51 @@ class RiderRepository:
             .where(RiderLocation.rider_id == Rider.id)
             .exists()
         )
+        if hub_id is not None:
+            hub = await self.session.get(Hub, hub_id)
+            hub_loc = hub.location if hub else None
+            result = await self.session.execute(
+                select(Rider)
+                .join(User, User.id == Rider.user_id)
+                .where(
+                    Rider.approval_status.in_(["APPROVED", RiderApprovalStatus.APPROVED]),
+                    Rider.availability.in_(["AVAILABLE", RiderAvailability.AVAILABLE]),
+                    User.is_active.is_(True),
+                    ~select(RiderOffer.id)
+                    .where(
+                        RiderOffer.shipment_id == shipment_id,
+                        RiderOffer.rider_id == Rider.id,
+                    )
+                    .exists(),
+                )
+                .order_by(
+                    case((has_location, 0), else_=1),
+                    func.coalesce(func.ST_Distance(hub_loc, latest_location), 9999999.0) if hub_loc is not None else Rider.id,
+                    Rider.id,
+                )
+                .limit(1)
+            )
+            return result.scalar_one_or_none()
+
+        # Direct farmer delivery without a hub
+        farmer_result = await self.session.execute(
+            select(Farmer)
+            .join(CropListing, CropListing.farmer_id == Farmer.id)
+            .join(OrderItem, OrderItem.listing_id == CropListing.id)
+            .join(Shipment, Shipment.order_id == OrderItem.order_id)
+            .where(Shipment.id == shipment_id)
+            .limit(1)
+        )
+        farmer = farmer_result.scalar_one_or_none()
+        farmer_loc = farmer.location if farmer else None
+
         result = await self.session.execute(
             select(Rider)
             .join(User, User.id == Rider.user_id)
-            .join(Shipment, Shipment.id == shipment_id)
-            .join(Hub, Hub.id == Shipment.hub_id)
             .where(
-                Hub.id == hub_id,
-                Rider.approval_status == "APPROVED",
-                Rider.availability == "AVAILABLE",
+                Rider.approval_status.in_(["APPROVED", RiderApprovalStatus.APPROVED]),
+                Rider.availability.in_(["AVAILABLE", RiderAvailability.AVAILABLE]),
                 User.is_active.is_(True),
-                has_location,
                 ~select(RiderOffer.id)
                 .where(
                     RiderOffer.shipment_id == shipment_id,
@@ -149,7 +200,11 @@ class RiderRepository:
                 )
                 .exists(),
             )
-            .order_by(func.ST_Distance(Hub.location, latest_location), Rider.id)
+            .order_by(
+                case((has_location, 0), else_=1),
+                func.coalesce(func.ST_Distance(farmer_loc, latest_location), 9999999.0) if farmer_loc is not None else Rider.id,
+                Rider.id,
+            )
             .limit(1)
         )
         return result.scalar_one_or_none()
@@ -184,7 +239,7 @@ class RiderRepository:
                 RiderOffer.expires_at > now,
             )
             .options(
-                selectinload(RiderOffer.shipment).selectinload(Shipment.hub),
+                selectinload(RiderOffer.shipment).options(*_shipment_eager_loads()),
             )
             .order_by(RiderOffer.offered_at, RiderOffer.id)
         )

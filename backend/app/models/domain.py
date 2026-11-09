@@ -499,8 +499,12 @@ class Hub(TimestampMixin, Base):
     )
 
     farmer: Mapped["Farmer | None"] = relationship(back_populates="hubs")
-    staff_assignments: Mapped[list["HubStaff"]] = relationship(back_populates="hub")
-    stock: Mapped[list["HubStock"]] = relationship(back_populates="hub")
+    staff_assignments: Mapped[list["HubStaff"]] = relationship(
+        back_populates="hub", cascade="all, delete-orphan", passive_deletes=True
+    )
+    stock: Mapped[list["HubStock"]] = relationship(
+        back_populates="hub", cascade="all, delete-orphan", passive_deletes=True
+    )
     orders: Mapped[list[Order]] = relationship(back_populates="hub")
     shipments: Mapped[list["Shipment"]] = relationship(back_populates="hub")
 
@@ -675,7 +679,7 @@ class Shipment(TimestampMixin, Base):
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     order_id: Mapped[UUID] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
-    hub_id: Mapped[UUID] = mapped_column(ForeignKey("hubs.id", ondelete="RESTRICT"), nullable=False)
+    hub_id: Mapped[UUID | None] = mapped_column(ForeignKey("hubs.id", ondelete="SET NULL"), nullable=True)
     rider_id: Mapped[UUID | None] = mapped_column(ForeignKey("riders.id", ondelete="SET NULL"))
     status: Mapped[ShipmentStatus] = mapped_column(
         enum_type(ShipmentStatus, "shipment_status"),
@@ -701,7 +705,7 @@ class Shipment(TimestampMixin, Base):
     otp_consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     order: Mapped[Order] = relationship(back_populates="shipment")
-    hub: Mapped[Hub] = relationship(back_populates="shipments")
+    hub: Mapped[Hub | None] = relationship(back_populates="shipments")
     rider: Mapped[Rider | None] = relationship(back_populates="shipments")
 
 

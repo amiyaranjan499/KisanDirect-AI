@@ -325,16 +325,20 @@ class RiderService:
         rider = await self._rider_for_actor(actor)
         self._require_approved(rider)
         shipments = await self.repository.completed_shipments(rider.id)
-        completed = [
-            RiderCompletedShipmentResponse(
-                id=shipment.id,
-                order_id=shipment.order_id,
-                hub_name=shipment.hub.name,
-                delivered_at=shipment.delivered_at,
-            )
-            for shipment in shipments
-            if shipment.delivered_at is not None
-        ]
+        completed = []
+        for shipment in shipments:
+            if shipment.delivered_at is not None:
+                origin_name, pickup_type, farm_name = self._extract_origin_name(shipment)
+                completed.append(
+                    RiderCompletedShipmentResponse(
+                        id=shipment.id,
+                        order_id=shipment.order_id,
+                        hub_name=origin_name,
+                        delivered_at=shipment.delivered_at,
+                        pickup_type=pickup_type,
+                        farm_name=farm_name,
+                    )
+                )
         return RiderHistoryResponse(
             completed_deliveries=completed,
             delivery_count=len(completed),
@@ -438,36 +442,70 @@ class RiderService:
             )
             self.session.add(offer)
             await self.session.flush()
+
+            origin_name, pickup_type, farm_name = self._extract_origin_name(shipment)
+            if pickup_type == "FARM":
+                title = f"New delivery offer - {origin_name}"
+                message = f"Order ORD-{str(shipment.order_id)[:8].upper()} is ready for direct pickup at {origin_name} ({shipment.pickup_address_snapshot})."
+            else:
+                title = f"New delivery offer - {origin_name}"
+                message = f"Order ORD-{str(shipment.order_id)[:8].upper()} is ready for pickup at {origin_name}."
+
             await self.notifications.stage(
                 user_id=rider.user_id,
                 notification_type=NotificationType.DELIVERY,
-                title="New delivery offer",
-                message="A nearby ready shipment is available for pickup.",
+                title=title,
+                message=message,
                 related_entity_type="rider_offer",
                 related_entity_id=offer.id,
             )
 
-    @staticmethod
-    def _offer_response(offer: RiderOffer) -> RiderOfferResponse:
+    @classmethod
+    def _extract_origin_name(cls, shipment: Shipment) -> tuple[str, str, str | None]:
+        if shipment.hub is not None and shipment.hub_id is not None:
+            return shipment.hub.name, "HUB", None
+        farmer_name = "Farmer Farm"
+        if shipment.order and shipment.order.items:
+            for item in shipment.order.items:
+                if item.listing and item.listing.farmer and item.listing.farmer.name:
+                    farmer_name = item.listing.farmer.name
+                    break
+        return farmer_name, "FARM", farmer_name
+
+    @classmethod
+    def _offer_response(cls, offer: RiderOffer) -> RiderOfferResponse:
         shipment = offer.shipment
+        origin_name, pickup_type, farm_name = cls._extract_origin_name(shipment)
         return RiderOfferResponse(
             id=offer.id,
             shipment_id=shipment.id,
             offered_at=offer.offered_at,
             expires_at=offer.expires_at,
-            hub_name=shipment.hub.name,
+            hub_name=origin_name,
             pickup_address=shipment.pickup_address_snapshot,
             dropoff_address=shipment.dropoff_address_snapshot,
+            pickup_type=pickup_type,
+            farm_name=farm_name,
         )
 
-    @staticmethod
-    def _shipment_response(shipment: Shipment) -> RiderShipmentResponse:
+    @classmethod
+    def _shipment_response(cls, shipment: Shipment) -> RiderShipmentResponse:
+        origin_name, pickup_type, farm_name = cls._extract_origin_name(shipment)
         address = shipment.pickup_address_snapshot
+        payment_method = None
+        payment_status = None
+        if shipment.order and shipment.order.payment is not None:
+            payment_method = shipment.order.payment.payment_method
+            payment_status = (
+                shipment.order.payment.status.value
+                if hasattr(shipment.order.payment.status, "value")
+                else str(shipment.order.payment.status)
+            )
         return RiderShipmentResponse(
             id=shipment.id,
             order_id=shipment.order_id,
             status=shipment.status.value,
-            hub_name=shipment.hub.name,
+            hub_name=origin_name,
             pickup_address=address,
             pickup_maps_url=(
                 "https://www.google.com/maps/search/?api=1&query="
@@ -476,16 +514,10 @@ class RiderService:
             dropoff_address=shipment.dropoff_address_snapshot,
             promised_window_start=shipment.promised_window_start,
             promised_window_end=shipment.promised_window_end,
-            payment_method=(
-                shipment.order.payment.payment_method
-                if shipment.order.payment is not None
-                else None
-            ),
-            payment_status=(
-                shipment.order.payment.status.value
-                if shipment.order.payment is not None
-                else None
-            ),
+            payment_method=payment_method,
+            payment_status=payment_status,
+            pickup_type=pickup_type,
+            farm_name=farm_name,
         )
 
     @asynccontextmanager

@@ -4,8 +4,27 @@ import {
   getFarmerDashboardAISummary,
   getLatestMarketPrice,
   listFarmerDashboardListings,
+  mediaUrl,
   updateFarmerListing,
 } from "../services/api";
+
+function CropsIcon({ size = 20, className = "" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z" />
+      <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12" />
+    </svg>
+  );
+}
+
+const resolveCropImage = (item, allListings = []) => {
+  if (item?.images?.[0]) return mediaUrl(item.images[0]);
+  const match = allListings.find(
+    (l) => l.crop_name?.toLowerCase() === item.crop_name?.toLowerCase() && l.images?.[0]
+  );
+  if (match?.images?.[0]) return mediaUrl(match.images[0]);
+  return "";
+};
 
 const formatMoney = (val) =>
   val != null && !isNaN(Number(val)) ? `₹${Number(val).toFixed(0)}` : "—";
@@ -24,6 +43,14 @@ export default function FarmerMarketPrices({ onBack }) {
   const [editingId, setEditingId] = useState(null);
   const [editPrice, setEditPrice] = useState("");
   const [savingId, setSavingId] = useState(null);
+
+  // Pagination state: 5 records per page
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 5;
+  const totalPages = Math.max(1, Math.ceil(listings.length / PAGE_SIZE));
+  const paginatedListings = listings.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const startRecord = listings.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const endRecord = Math.min(currentPage * PAGE_SIZE, listings.length);
 
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -261,25 +288,68 @@ export default function FarmerMarketPrices({ onBack }) {
                 </tr>
               </thead>
               <tbody>
-                {listings.length ? (
-                  listings.map((item) => {
+                {paginatedListings.length ? (
+                  paginatedListings.map((item) => {
                     const isAvailable = String(item.availability_status || "AVAILABLE").toUpperCase() === "AVAILABLE";
                     const isEditing = editingId === item.id;
                     const isSaving = savingId === item.id;
                     const marketRange = formatMarketPriceRange(item.crop_name);
+                    const cropImg = resolveCropImage(item, listings);
 
                     return (
                       <tr key={item.id} style={{ borderBottom: "1px solid #EFECE6", transition: "background 0.15s ease" }}>
-                        {/* 1. Crop */}
+                        {/* 1. Crop: Image thumbnail + Crop name + Category */}
                         <td style={{ padding: "14px 18px", verticalAlign: "middle" }}>
-                          <b style={{ color: "var(--ink, #1C1C16)", textTransform: "capitalize", fontSize: "14px" }}>
-                            {item.crop_name}
-                          </b>
-                          {item.crop_category ? (
-                            <div style={{ fontSize: "11px", color: "var(--farmer-muted, #65766e)", marginTop: "2px" }}>
-                              {item.crop_category}
+                          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                            <div
+                              style={{
+                                width: "46px",
+                                height: "46px",
+                                borderRadius: "8px",
+                                overflow: "hidden",
+                                border: "1px solid #E4DFD1",
+                                background: "#FAF7EF",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {cropImg ? (
+                                <img
+                                  src={cropImg}
+                                  alt={item.crop_name}
+                                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = "none";
+                                    if (e.currentTarget.nextSibling) {
+                                      e.currentTarget.nextSibling.style.display = "flex";
+                                    }
+                                  }}
+                                />
+                              ) : null}
+                              <div
+                                style={{
+                                  display: cropImg ? "none" : "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  width: "100%",
+                                  height: "100%",
+                                  color: "var(--forest, #1B6B34)",
+                                }}
+                              >
+                                <CropsIcon size={18} />
+                              </div>
                             </div>
-                          ) : null}
+                            <div>
+                              <b style={{ color: "var(--ink, #1C1C16)", textTransform: "capitalize", fontSize: "14px", display: "block", lineHeight: 1.3 }}>
+                                {item.crop_name}
+                              </b>
+                              <div style={{ fontSize: "12px", color: "var(--farmer-muted, #65766e)", marginTop: "2px" }}>
+                                {item.crop_category || "Produce"}
+                              </div>
+                            </div>
+                          </div>
                         </td>
 
                         {/* 2. AI Fair Price (Separate from Farmer Updated Price) */}
@@ -399,32 +469,74 @@ export default function FarmerMarketPrices({ onBack }) {
             </table>
           </div>
 
-          <div
-            className="card card-pad"
-            style={{
-              backgroundColor: "#FFFFFF",
-              borderRadius: "14px",
-              border: "1px solid #E4DFD1",
-              padding: "18px 20px",
-              marginTop: "18px",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.02)",
-            }}
-          >
-            <h3
+          {/* Clean Pagination Controls: Shown only when more than 5 records exist */}
+          {totalPages > 1 && (
+            <div
+              className="admin-pagination-bar"
               style={{
-                fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)",
-                color: "var(--forest, #1B6B34)",
-                fontSize: "16px",
-                marginBottom: "8px",
-                fontWeight: 700,
+                marginTop: "16px",
+                backgroundColor: "#FFFFFF",
+                borderRadius: "12px",
+                border: "1px solid #E4DFD1",
+                padding: "12px 18px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "10px",
               }}
             >
-              Price Intelligence Note
-            </h3>
-            <p style={{ margin: 0, fontSize: "13.5px", color: "var(--clay, #79705F)", lineHeight: 1.6 }}>
-              KisanDirect AI computes fair price guidance using real crop quality assessments, regional hub demand signals, and seasonal availability to maximize farmer earnings without intermediary commissions.
-            </p>
-          </div>
+              <div style={{ fontSize: "12.5px", color: "var(--clay, #79705F)" }}>
+                Showing <b>{startRecord}</b> to <b>{endRecord}</b> of <b>{listings.length}</b> records
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  disabled={currentPage <= 1 || loading}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  style={{
+                    padding: "5px 12px",
+                    fontSize: "12.5px",
+                    borderRadius: "6px",
+                    border: "1px solid #E4DFD1",
+                    background: "#FFFFFF",
+                    color: currentPage <= 1 ? "#A0988A" : "var(--forest, #1B6B34)",
+                    cursor: currentPage <= 1 ? "not-allowed" : "pointer",
+                    fontWeight: 600,
+                  }}
+                  aria-label="Previous page"
+                >
+                  <i className="bi bi-chevron-left" /> Previous
+                </button>
+
+                <span style={{ fontSize: "12.5px", color: "var(--ink, #1C1C16)", fontWeight: 600 }}>
+                  Page <b>{currentPage}</b> of <b>{totalPages}</b>
+                </span>
+
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  disabled={currentPage >= totalPages || loading}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  style={{
+                    padding: "5px 12px",
+                    fontSize: "12.5px",
+                    borderRadius: "6px",
+                    border: "1px solid #E4DFD1",
+                    background: "#FFFFFF",
+                    color: currentPage >= totalPages ? "#A0988A" : "var(--forest, #1B6B34)",
+                    cursor: currentPage >= totalPages ? "not-allowed" : "pointer",
+                    fontWeight: 600,
+                  }}
+                  aria-label="Next page"
+                >
+                  Next <i className="bi bi-chevron-right" />
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
     </section>

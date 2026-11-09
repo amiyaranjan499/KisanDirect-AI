@@ -122,6 +122,18 @@ async def consumer_orders(current_user: Annotated[User, Depends(require_consumer
     return await service.consumer_orders(current_user.id, page, page_size)
 
 
+@router.delete("/orders/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_consumer_order(
+    order_id: UUID,
+    current_user: Annotated[User, Depends(require_consumer)],
+    service: Annotated[OrdersService, Depends(get_orders_service)],
+) -> None:
+    try:
+        await service.delete_consumer_order(current_user.id, order_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/farmer/orders", response_model=OrderPage)
 async def farmer_orders(current_user: Annotated[User, Depends(require_farmer)], service: Annotated[OrdersService, Depends(get_orders_service)], page: int = Query(default=1, ge=1), page_size: int = Query(default=10, ge=1, le=50)) -> OrderPage:
     return await service.farmer_orders(current_user.id, page, page_size)

@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import get_settings
@@ -33,12 +33,16 @@ async def require_user(current_user: Annotated[User, Depends(get_current_user)])
 
 @router.get("/notifications", response_model=NotificationPage)
 async def list_notifications(
+    response: Response,
     current_user: Annotated[User, Depends(require_user)],
     service: Annotated[NotificationsService, Depends(get_notifications_service)],
     unread_only: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=50),
 ) -> NotificationPage:
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     result = await service.list_for_user(current_user.id, unread_only=unread_only, page=page, page_size=page_size)
     return NotificationPage(**result)
 

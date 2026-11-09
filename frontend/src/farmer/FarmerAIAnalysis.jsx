@@ -37,8 +37,10 @@ function CropsIcon({ size = 20, className = "" }) {
 const formatDate = (dateStr) => {
   if (!dateStr) return "—";
   try {
-    return new Date(dateStr).toLocaleDateString("en-IN", {
-      day: "numeric",
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-IN", {
+      day: "2-digit",
       month: "short",
       year: "numeric",
     });
@@ -49,18 +51,21 @@ const formatDate = (dateStr) => {
 
 const resolveCropImage = (item) => {
   if (item?.images?.[0]) return mediaUrl(item.images[0]);
-  const name = String(item?.crop_name || "").toLowerCase();
-  if (name.includes("tomato")) return "/assets/images/tomato.jpg";
-  if (name.includes("onion")) return "/assets/images/onion.png";
-  if (name.includes("potato") || name.includes("potao")) return "/assets/images/potato.png";
   return "";
 };
 
 function getCropQualityInfo(crop, assessment) {
-  const rawLabel = assessment?.quality_label || crop?.ai_quality_label || null;
+  const rawLabel =
+    assessment?.quality_label ||
+    crop?.ai_quality_label ||
+    crop?.quality_label ||
+    crop?.quality_information ||
+    crop?.quality_grade ||
+    crop?.quality ||
+    null;
   let quality = "Unassessed";
   if (rawLabel) {
-    const l = String(rawLabel).toLowerCase();
+    const l = String(rawLabel).toLowerCase().trim();
     if (l === "good" || l.includes("grade a")) quality = "Good";
     else if (l === "average" || l.includes("grade b")) quality = "Average";
     else if (l === "poor" || l.includes("grade c")) quality = "Poor";
@@ -686,10 +691,10 @@ export default function FarmerAIAnalysis({ onBack }) {
                     fontWeight: 700,
                   }}
                 >
-                  My Crops &amp; Quality Details
+                  Quality Details
                 </h3>
                 <div style={{ fontSize: "12.5px", color: "var(--clay, #79705F)", marginTop: "2px" }}>
-                  Showing 5 crops per page. Page {page} of {totalPages} ({totalCrops} total crops).
+                  Page {page} of {totalPages} ({totalCrops} total crops).
                 </div>
               </div>
               <span
@@ -743,12 +748,9 @@ export default function FarmerAIAnalysis({ onBack }) {
                   <table className="kisan-table">
                     <thead>
                       <tr>
-                        <th style={{ width: "80px", textAlign: "center" }}>Crop Image</th>
-                        <th style={{ minWidth: "150px" }}>Crop Name</th>
-                        <th>Category</th>
-                        <th>Quality</th>
-                        <th>Harvest Date</th>
-                        <th>Status</th>
+                        <th style={{ minWidth: "220px" }}>Crop</th>
+                        <th style={{ minWidth: "150px" }}>Harvest Date</th>
+                        <th style={{ width: "140px" }}>Quality</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -756,87 +758,91 @@ export default function FarmerAIAnalysis({ onBack }) {
                         const assessment = assessmentByListingId.get(String(crop.id));
                         const q = getCropQualityInfo(crop, assessment);
                         const imgUrl = resolveCropImage(crop);
-                        const isAvailable =
-                          String(crop.availability_status || "AVAILABLE").toUpperCase() === "AVAILABLE";
                         const isEvaluatingThis = evaluatingId === crop.id;
 
                         return (
                           <tr key={crop.id}>
-                            <td style={{ textAlign: "center" }}>
-                              <div
-                                onClick={() => handleCropClick(crop)}
-                                title="Click image to evaluate or view quality"
-                                style={{
-                                  width: "46px",
-                                  height: "46px",
-                                  borderRadius: "8px",
-                                  overflow: "hidden",
-                                  border: "1px solid #E4DFD1",
-                                  background: "#FAF7EF",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  cursor: "pointer",
-                                  position: "relative",
-                                  margin: "0 auto",
-                                }}
-                              >
-                                {imgUrl ? (
-                                  <img
-                                    src={imgUrl}
-                                    alt={crop.crop_name}
-                                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = "none";
-                                      if (e.currentTarget.nextSibling) {
-                                        e.currentTarget.nextSibling.style.display = "flex";
-                                      }
-                                    }}
-                                  />
-                                ) : null}
+                            <td>
+                              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                                 <div
+                                  onClick={() => handleCropClick(crop)}
+                                  title="Click image to evaluate or view quality"
                                   style={{
-                                    display: imgUrl ? "none" : "flex",
+                                    width: "46px",
+                                    height: "46px",
+                                    borderRadius: "8px",
+                                    overflow: "hidden",
+                                    border: "1px solid #E4DFD1",
+                                    background: "#FAF7EF",
+                                    display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
-                                    width: "100%",
-                                    height: "100%",
-                                    color: "var(--forest, #1B6B34)",
+                                    cursor: "pointer",
+                                    position: "relative",
+                                    flexShrink: 0,
                                   }}
                                 >
-                                  <CropsIcon size={18} />
-                                </div>
-                                {isEvaluatingThis && (
+                                  {imgUrl ? (
+                                    <img
+                                      src={imgUrl}
+                                      alt={crop.crop_name}
+                                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = "none";
+                                        if (e.currentTarget.nextSibling) {
+                                          e.currentTarget.nextSibling.style.display = "flex";
+                                        }
+                                      }}
+                                    />
+                                  ) : null}
                                   <div
                                     style={{
-                                      position: "absolute",
-                                      inset: 0,
-                                      background: "rgba(255,255,255,0.8)",
-                                      display: "flex",
+                                      display: imgUrl ? "none" : "flex",
                                       alignItems: "center",
                                       justifyContent: "center",
+                                      width: "100%",
+                                      height: "100%",
+                                      color: "var(--forest, #1B6B34)",
                                     }}
                                   >
-                                    <div className="spinner-border spinner-border-sm text-success" role="status" style={{ width: "16px", height: "16px" }} />
+                                    <CropsIcon size={18} />
                                   </div>
-                                )}
+                                  {isEvaluatingThis && (
+                                    <div
+                                      style={{
+                                        position: "absolute",
+                                        inset: 0,
+                                        background: "rgba(255,255,255,0.8)",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                      }}
+                                    >
+                                      <div className="spinner-border spinner-border-sm text-success" role="status" style={{ width: "16px", height: "16px" }} />
+                                    </div>
+                                  )}
+                                </div>
+                                <div>
+                                  <div
+                                    onClick={() => handleCropClick(crop)}
+                                    style={{ fontWeight: 600, color: "var(--ink, #1C1C16)", fontSize: "14px", cursor: "pointer", lineHeight: 1.3 }}
+                                    title="Click to evaluate or view quality"
+                                  >
+                                    {crop.crop_name}
+                                  </div>
+                                  <div style={{ fontSize: "12px", color: "var(--clay, #79705F)", marginTop: "2px" }}>
+                                    {crop.crop_category || "Produce"}
+                                  </div>
+                                </div>
                               </div>
                             </td>
                             <td>
-                              <div
-                                onClick={() => handleCropClick(crop)}
-                                style={{ fontWeight: 600, color: "var(--ink, #1C1C16)", fontSize: "14px", cursor: "pointer" }}
-                                title="Click to evaluate or view quality"
-                              >
-                                {crop.crop_name}
-                              </div>
-                              <div style={{ fontSize: "11px", color: "var(--clay, #79705F)" }}>
-                                {crop.quantity != null ? `${crop.quantity} ${crop.unit || "kg"}` : ""}
-                              </div>
-                            </td>
-                            <td>
-                              <span style={{ fontSize: "13px", color: "var(--ink, #1C1C16)" }}>
-                                {crop.crop_category || "Vegetables"}
+                              <span style={{ color: "var(--ink, #1C1C16)", fontSize: "13.5px", fontWeight: 500 }}>
+                                {crop.harvest_date
+                                  ? formatDate(crop.harvest_date)
+                                  : crop.created_at
+                                  ? formatDate(crop.created_at)
+                                  : "—"}
                               </span>
                             </td>
                             <td>
@@ -856,18 +862,6 @@ export default function FarmerAIAnalysis({ onBack }) {
                               >
                                 {isEvaluatingThis ? "Evaluating..." : q.quality}
                               </span>
-                            </td>
-                            <td>
-                              <span style={{ color: "var(--ink, #1C1C16)", fontSize: "13px" }}>
-                                {crop.harvest_date ? formatDate(crop.harvest_date) : "—"}
-                              </span>
-                            </td>
-                            <td>
-                              {isAvailable ? (
-                                <span className="kisan-badge kisan-badge-ok">Active</span>
-                              ) : (
-                                <span className="kisan-badge kisan-badge-neutral">Sold Out</span>
-                              )}
                             </td>
                           </tr>
                         );

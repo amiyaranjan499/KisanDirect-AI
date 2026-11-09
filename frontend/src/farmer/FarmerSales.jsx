@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { getFarmerDashboardAnalytics, listFarmerDashboardOrders } from "../services/api";
+import {
+  getFarmerDashboardAnalytics,
+  listFarmerDashboardListings,
+  listFarmerDashboardOrders,
+  mediaUrl,
+} from "../services/api";
 
 const formatMoney = (value) =>
   `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
@@ -21,19 +26,12 @@ const formatDate = (dateString) => {
   }
 };
 
-const getCropImage = (cropName) => {
-  const name = String(cropName || "").toLowerCase();
-  if (name.includes("tomato")) return "/assets/images/tomato.jpg";
-  if (name.includes("onion")) return "/assets/images/onion.png";
-  if (name.includes("potato")) return "/assets/images/potato.png";
-  return "/assets/images/image8.png";
-};
-
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export default function FarmerSales({ onBack }) {
   const [data, setData] = useState(null);
   const [orders, setOrders] = useState([]);
+  const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -42,11 +40,16 @@ export default function FarmerSales({ onBack }) {
     setLoading(true);
     setError("");
 
-    Promise.all([getFarmerDashboardAnalytics(), listFarmerDashboardOrders()])
-      .then(([analyticsData, ordersData]) => {
+    Promise.all([
+      getFarmerDashboardAnalytics(),
+      listFarmerDashboardOrders(),
+      listFarmerDashboardListings().catch(() => []),
+    ])
+      .then(([analyticsData, ordersData, listingsData]) => {
         if (!isMounted) return;
         setData(analyticsData);
         setOrders(Array.isArray(ordersData) ? ordersData : []);
+        setListings(Array.isArray(listingsData) ? listingsData : []);
       })
       .catch((requestError) => {
         if (!isMounted) return;
@@ -98,16 +101,30 @@ export default function FarmerSales({ onBack }) {
       };
     });
 
+    // Build a lookup map of cropName (lowercase) -> real image URL from listings
+    const cropImageMap = new Map();
+    (listings || []).forEach((item) => {
+      const cName = String(item.crop_name || "").toLowerCase().trim();
+      if (cName && !cropImageMap.has(cName) && item.images && item.images.length > 0) {
+        const url = mediaUrl(item.images[0]);
+        if (url) cropImageMap.set(cName, url);
+      }
+    });
+
     // Top selling crops
     const cropSalesEntries = Object.entries(data?.crop_wise_sales || {});
     const sortedCrops = cropSalesEntries
       .sort(([, left], [, right]) => Number(right) - Number(left))
       .slice(0, 3)
-      .map(([name, amount]) => ({
-        name,
-        amount: Number(amount || 0),
-        image: getCropImage(name),
-      }));
+      .map(([name, amount]) => {
+        const cleanName = String(name || "").toLowerCase().trim();
+        const realImg = cropImageMap.get(cleanName) || "";
+        return {
+          name,
+          amount: Number(amount || 0),
+          image: realImg,
+        };
+      });
 
     // Sales history from delivered/recent orders
     const history = orders.map((order) => {
@@ -132,7 +149,7 @@ export default function FarmerSales({ onBack }) {
       topCrops: sortedCrops,
       salesHistory: history,
     };
-  }, [data, orders]);
+  }, [data, orders, listings]);
 
   return (
     <section className="detail-view sales-page farmer-sales-page">
@@ -220,15 +237,39 @@ export default function FarmerSales({ onBack }) {
             <div className="grid-cards" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px" }}>
               {topCrops.map((c) => (
                 <div className="card card-pad" key={c.name} style={{ backgroundColor: "#FFFFFF", borderRadius: "14px", border: "1px solid #E4DFD1", padding: "12px 14px", display: "flex", gap: "12px", alignItems: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.02)" }}>
-                  <img
-                    src={c.image}
-                    alt={c.name}
-                    className="avatar"
-                    style={{ width: "48px", height: "48px", objectFit: "cover", borderRadius: "10px" }}
-                    onError={(e) => {
-                      e.currentTarget.src = "/assets/images/image8.png";
+                  {c.image ? (
+                    <img
+                      src={c.image}
+                      alt={c.name}
+                      className="avatar"
+                      style={{ width: "48px", height: "48px", objectFit: "cover", borderRadius: "10px" }}
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                        const fallback = e.currentTarget.parentElement?.querySelector(".farmer-sales-no-img");
+                        if (fallback) fallback.style.display = "flex";
+                      }}
+                    />
+                  ) : null}
+                  <div
+                    className="avatar farmer-sales-no-img"
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      borderRadius: "10px",
+                      backgroundColor: "#FAF7EF",
+                      border: "1px solid #E4DFD1",
+                      display: c.image ? "none" : "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--forest, #1B6B34)",
+                      fontSize: "10px",
+                      flexShrink: 0,
                     }}
-                  />
+                  >
+                    <i className="bi bi-camera" style={{ fontSize: "16px" }} />
+                    <span style={{ fontSize: "9px", color: "var(--clay, #79705F)" }}>No photo</span>
+                  </div>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: "13.5px", color: "var(--ink, #1C1C16)" }}>{c.name}</div>
                     <div style={{ fontSize: "12px", color: "var(--clay, #79705F)" }}>{formatMoney(c.amount)} total</div>

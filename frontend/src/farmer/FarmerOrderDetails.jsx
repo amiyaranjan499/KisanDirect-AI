@@ -36,6 +36,10 @@ export default function FarmerOrderDetails() {
   const [facilities, setFacilities] = useState([]);
   const [filter, setFilter] = useState("All");
 
+  // Pagination state: 2 orders per page
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 2;
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -114,6 +118,20 @@ export default function FarmerOrderDetails() {
       return true;
     });
   }, [filter, orders]);
+
+  // Reset page when filter tab changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter]);
+
+  // Pagination calculations: 2 orders per page
+  const totalOrders = filteredOrders.length;
+  const totalPages = Math.max(1, Math.ceil(totalOrders / PAGE_SIZE));
+  const paginatedOrders = useMemo(() => {
+    return filteredOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  }, [filteredOrders, currentPage]);
+  const startRecord = totalOrders === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const endRecord = Math.min(currentPage * PAGE_SIZE, totalOrders);
 
   // Workflow A: Accept Customer Order
   const handleAcceptOrder = async (order) => {
@@ -460,7 +478,8 @@ export default function FarmerOrderDetails() {
           <p style={{ marginTop: "12px", color: "var(--clay, #79705F)" }}>Loading customer orders...</p>
         </div>
       ) : (
-        <div className="kisan-table-wrap">
+        <>
+          <div className="kisan-table-wrap">
           <table className="kisan-table">
             <thead>
               <tr>
@@ -501,7 +520,7 @@ export default function FarmerOrderDetails() {
                   </td>
                 </tr>
               ) : (
-                filteredOrders.map((ord) => {
+                paginatedOrders.map((ord) => {
                   const s = (ord.status || "").toUpperCase();
                   const hasHub = Boolean(ord.hub_name || ord.hub_id);
                   const isNew = (s === "PENDING" || s === "NEW") && !hasHub;
@@ -734,7 +753,77 @@ export default function FarmerOrderDetails() {
             </tbody>
           </table>
         </div>
-      )}
+
+        {/* Pagination Controls: 2 orders per page - only show when there is more than 1 page (totalOrders > 2) */}
+        {totalPages > 1 && (
+          <div
+            className="admin-pagination-bar"
+            style={{
+              marginTop: "16px",
+              backgroundColor: "#FFFFFF",
+              borderRadius: "12px",
+              border: "1px solid #E4DFD1",
+              padding: "12px 18px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "10px",
+            }}
+          >
+            <div style={{ fontSize: "12.5px", color: "var(--clay, #79705F)" }}>
+              Showing <b>{startRecord}</b> to <b>{endRecord}</b> of <b>{totalOrders}</b> orders
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                disabled={currentPage <= 1 || loading}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                style={{
+                  padding: "5px 12px",
+                  fontSize: "12.5px",
+                  borderRadius: "6px",
+                  border: "1px solid #E4DFD1",
+                  background: "#FFFFFF",
+                  color: currentPage <= 1 ? "#A0988A" : "var(--forest, #1B6B34)",
+                  cursor: currentPage <= 1 ? "not-allowed" : "pointer",
+                  fontWeight: 600,
+                }}
+                aria-label="Previous page"
+              >
+                <i className="bi bi-chevron-left" /> Previous
+              </button>
+
+              <span style={{ fontSize: "12.5px", color: "var(--ink, #1C1C16)", fontWeight: 600 }}>
+                Page <b>{currentPage}</b> of <b>{totalPages}</b>
+              </span>
+
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                disabled={currentPage >= totalPages || loading}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                style={{
+                  padding: "5px 12px",
+                  fontSize: "12.5px",
+                  borderRadius: "6px",
+                  border: "1px solid #E4DFD1",
+                  background: "#FFFFFF",
+                  color: currentPage >= totalPages ? "#A0988A" : "var(--forest, #1B6B34)",
+                  cursor: currentPage >= totalPages ? "not-allowed" : "pointer",
+                  fontWeight: 600,
+                }}
+                aria-label="Next page"
+              >
+                Next <i className="bi bi-chevron-right" />
+              </button>
+            </div>
+          </div>
+        )}
+      </>
+    )}
 
 
 

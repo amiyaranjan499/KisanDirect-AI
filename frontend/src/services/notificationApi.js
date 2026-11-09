@@ -1,1 +1,2 @@
-export { listNotifications, getNotification, markNotificationRead, markAllNotificationsRead } from "./api";
+export { listNotifications, getNotification, markNotificationRead, markAllNotificationsRead, deleteNotification } from "./api";
+

@@ -23,4 +23,11 @@ export {
   reassignAdminShipment,
   cancelAdminShipment,
   resetAdminDeliveryOtp,
+  deleteAdminOrder,
+  deleteAdminFarmer,
+  deleteAdminListing,
+  deleteAdminHubStaff,
+  deleteAdminRider,
+  deleteAdminShipment,
+  deleteAdminPayment,
 } from "./api";

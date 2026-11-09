@@ -68,8 +68,7 @@ async def classify_crop_image(
         local_candidate = local_result.metadata.get("top_candidate") or local_crop or "Unknown"
 
         # Check if local prediction is reliable and completed.
-        # Note: If local predicts Mango, we verify with Gemini to prevent tropical OOD fruit confusion (e.g. Guava, Papaya)
-        if local_result.prediction_status == "COMPLETED" and local_crop and local_crop != "Mango":
+        if local_result.prediction_status == "COMPLETED" and local_crop:
             logger.info(
                 "LOCAL CLASSIFIER: Predicted: %s, Decision: SUPPORTED, Action: LOCAL INFERENCE",
                 local_crop,

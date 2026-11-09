@@ -730,7 +730,7 @@ export default function FarmerDashboard() {
                 </td>
               </tr>
             ) : (
-              orders.slice(0, 5).map((o) => {
+              orders.slice(0, 2).map((o) => {
                 const s = (o.status || "").toUpperCase();
                 let badgeClass = "kisan-badge-ok";
                 let displayStatus = "Delivered";

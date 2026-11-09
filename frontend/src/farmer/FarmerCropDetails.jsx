@@ -37,10 +37,6 @@ const formatMoney = (value) =>
 
 const resolveCropHeroImage = (item) => {
   if (item?.images?.[0]) return mediaUrl(item.images[0]);
-  const name = String(item?.crop_name || "").toLowerCase();
-  if (name.includes("tomato")) return "/assets/images/tomato.jpg";
-  if (name.includes("onion")) return "/assets/images/onion.png";
-  if (name.includes("potato") || name.includes("potao")) return "/assets/images/potato.png";
   return "";
 };
 
@@ -78,7 +74,7 @@ function resolveCropQuality(item) {
   };
 }
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 8;
 
 export default function FarmerCropDetails({ onBack }) {
   const navigate = useNavigate();
@@ -1254,7 +1250,7 @@ export default function FarmerCropDetails({ onBack }) {
       {/* 5. Compact Crop Cards Grid: At least 4 cards per row on desktop */}
       {loading && !listings.length ? (
         <div className="farmer-crops-desktop-grid">
-          {[1, 2, 3, 4, 5].map((idx) => (
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((idx) => (
             <div className="card farmer-crop-card farmer-skeleton-card" key={idx} style={{ background: "#FFFFFF", borderRadius: "12px", border: "1px solid #e0d8c8", overflow: "hidden" }}>
               <div className="farmer-skeleton-shimmer" style={{ height: "110px", width: "100%" }} />
               <div className="card-pad" style={{ padding: "10px 12px" }}>
@@ -1521,47 +1517,49 @@ export default function FarmerCropDetails({ onBack }) {
             })}
           </div>
 
-          {/* Pagination Footer matching Admin Listings design */}
-          <div
-            className="admin-pagination-bar"
-            style={{
-              marginTop: "20px",
-              background: "#FFFFFF",
-              border: "1px solid var(--farmer-border, #e0d8c8)",
-              borderRadius: "12px",
-              padding: "12px 18px",
-            }}
-          >
-            <div className="admin-pagination-info">
-              Showing <b>{startRecord}</b> to <b>{endRecord}</b> of <b>{totalRecords}</b> records
+          {/* Pagination Footer matching Admin Listings design - shown only when more than 1 page */}
+          {totalPages > 1 && (
+            <div
+              className="admin-pagination-bar"
+              style={{
+                marginTop: "20px",
+                background: "#FFFFFF",
+                border: "1px solid var(--farmer-border, #e0d8c8)",
+                borderRadius: "12px",
+                padding: "12px 18px",
+              }}
+            >
+              <div className="admin-pagination-info">
+                Showing <b>{startRecord}</b> to <b>{endRecord}</b> of <b>{totalRecords}</b> records
+              </div>
+
+              <div className="admin-pagination-controls">
+                <button
+                  type="button"
+                  className="admin-page-btn"
+                  disabled={currentPage <= 1 || loading}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  aria-label="Previous page"
+                >
+                  <i className="bi bi-chevron-left" /> Previous
+                </button>
+
+                <span className="admin-page-indicator">
+                  Page <b>{currentPage}</b> of <b>{totalPages}</b>
+                </span>
+
+                <button
+                  type="button"
+                  className="admin-page-btn"
+                  disabled={currentPage >= totalPages || loading}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  aria-label="Next page"
+                >
+                  Next <i className="bi bi-chevron-right" />
+                </button>
+              </div>
             </div>
-
-            <div className="admin-pagination-controls">
-              <button
-                type="button"
-                className="admin-page-btn"
-                disabled={currentPage <= 1 || loading}
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                aria-label="Previous page"
-              >
-                <i className="bi bi-chevron-left" /> Previous
-              </button>
-
-              <span className="admin-page-indicator">
-                Page <b>{currentPage}</b> of <b>{totalPages}</b>
-              </span>
-
-              <button
-                type="button"
-                className="admin-page-btn"
-                disabled={currentPage >= totalPages || loading}
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                aria-label="Next page"
-              >
-                Next <i className="bi bi-chevron-right" />
-              </button>
-            </div>
-          </div>
+          )}
         </>
       ) : (
         <div className="empty" style={{ background: "#FFFFFF", borderRadius: "14px", border: "1px solid var(--farmer-border, #e0d8c8)", padding: "40px 20px" }}>

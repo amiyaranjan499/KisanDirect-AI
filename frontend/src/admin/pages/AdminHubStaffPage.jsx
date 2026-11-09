@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AdminDataTable from "../components/AdminDataTable";
+import AdminConfirmDialog from "../components/AdminConfirmDialog";
 import {
   listAdminHubStaff,
+  deleteAdminHubStaff,
 } from "../../services/adminApi";
 
 export default function AdminHubStaffPage() {
@@ -9,6 +11,11 @@ export default function AdminHubStaffPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [staffToDelete, setStaffToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -60,6 +67,29 @@ export default function AdminHubStaffPage() {
   }, [groupedStaff, search]);
 
 
+  const handleOpenDelete = (s, e) => {
+    if (e) e.stopPropagation();
+    setStaffToDelete(s);
+    setDeleteError("");
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!staffToDelete) return;
+    setDeleteLoading(true);
+    setDeleteError("");
+    try {
+      await deleteAdminHubStaff(staffToDelete.user_id);
+      setStaff((prev) => prev.filter((item) => item.user_id !== staffToDelete.user_id));
+      setDeleteModalOpen(false);
+      setStaffToDelete(null);
+    } catch (err) {
+      setDeleteError(err.message || "Failed to permanently delete hub staff account.");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   const columns = [
     {
       key: "display_name",
@@ -98,6 +128,22 @@ export default function AdminHubStaffPage() {
         </div>
       ),
     },
+    {
+      key: "actions",
+      label: "Actions",
+      width: "110px",
+      align: "right",
+      render: (s) => (
+        <button
+          type="button"
+          className="admin-table-action-btn text-danger"
+          onClick={(e) => handleOpenDelete(s, e)}
+          title="Permanently delete hub staff account"
+        >
+          <i className="bi bi-trash" /> Delete
+        </button>
+      ),
+    },
   ];
 
   return (
@@ -128,6 +174,24 @@ export default function AdminHubStaffPage() {
         emptyTitle="No hub staff members found"
         emptyDescription="No hub staff members currently active."
         keyField="user_id"
+      />
+
+      <AdminConfirmDialog
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          if (!deleteLoading) {
+            setDeleteModalOpen(false);
+            setStaffToDelete(null);
+          }
+        }}
+        onConfirm={handleConfirmDelete}
+        title="Permanently Delete Hub Staff Account"
+        message={`Are you sure you want to permanently delete hub staff member ${staffToDelete?.display_name || ""} (${staffToDelete?.email || ""})? The account and its hub assignments will be permanently removed from the database, and the email address will be freed.`}
+        confirmLabel="Delete Staff"
+        confirmVariant="danger"
+        requireReason={false}
+        loading={deleteLoading}
+        error={deleteError}
       />
     </div>
   );

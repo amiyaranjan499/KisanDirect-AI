@@ -3,11 +3,12 @@ from uuid import UUID
 
 from geoalchemy2 import Geometry
 from geoalchemy2.elements import WKTElement
-from sqlalchemy import cast, func, or_, select, text
+from sqlalchemy import and_, cast, delete, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.models import (
+    AdminAuditEvent,
     AvailabilityStatus,
     Crop,
     CropImage,
@@ -19,13 +20,17 @@ from backend.app.models import (
     HubStaff,
     HubStatus,
     HubStock,
+    HubStockDelivery,
     Notification,
     Order,
+    OrderEvent,
     OrderItem,
     OrderStatus,
     Review,
+    RiderOffer,
     Shipment,
     ShipmentStatus,
+    StockReservation,
     User,
     UserRole,
 )
@@ -216,18 +221,6 @@ class FarmerRepository:
             .where(
                 Farmer.user_id == farmer_user_id,
                 ~Order.id.in_(hidden_subquery),
-                or_(
-                    Order.hub_id.is_(None),
-                    select(Hub.id)
-                    .where(Hub.id == Order.hub_id, Hub.farmer_id == Farmer.id)
-                    .exists(),
-                    select(HubStock.id)
-                    .where(
-                        HubStock.hub_id == Order.hub_id,
-                        HubStock.listing_id == CropListing.id,
-                    )
-                    .exists(),
-                ),
             )
             .distinct()
             .order_by(Order.created_at.desc())
@@ -489,6 +482,25 @@ class FarmerRepository:
         }
 
     async def delete_facility(self, facility: Hub) -> None:
+        # 1. Delete stock reservations referencing this hub's stock
+        hub_stock_ids = select(HubStock.id).where(HubStock.hub_id == facility.id)
+        await self.session.execute(
+            delete(StockReservation).where(StockReservation.hub_stock_id.in_(hub_stock_ids))
+        )
+        # 2. Delete hub stock rows for this hub (does not affect farmer's crop listings)
+        await self.session.execute(
+            delete(HubStock).where(HubStock.hub_id == facility.id)
+        )
+        # 3. For any inactive/completed historical shipments (DELIVERED, CANCELLED, etc.),
+        # clean up rider offers and shipments so RESTRICT FK constraint does not fail
+        shipment_ids = select(Shipment.id).where(Shipment.hub_id == facility.id)
+        await self.session.execute(
+            delete(RiderOffer).where(RiderOffer.shipment_id.in_(shipment_ids))
+        )
+        await self.session.execute(
+            delete(Shipment).where(Shipment.hub_id == facility.id)
+        )
+        # 4. Delete the hub facility itself
         await self.session.delete(facility)
         await self.session.flush()
 
@@ -513,7 +525,9 @@ class FarmerRepository:
         return list(result.all())
 
     async def get_user_by_email(self, email: str) -> User | None:
-        result = await self.session.execute(select(User).where(User.email == email))
+        result = await self.session.execute(
+            select(User).where(func.lower(User.email) == email.strip().lower())
+        )
         return result.scalar_one_or_none()
 
     async def create_facility_staff(
@@ -546,7 +560,48 @@ class FarmerRepository:
         assignment = result.scalar_one_or_none()
         if assignment is None:
             return False
-        await self.session.delete(assignment)
+
+        # Verify target user is a HUB_STAFF account
+        staff_user = await self.session.scalar(
+            select(User).where(User.id == staff_user_id, User.role == UserRole.HUB_STAFF)
+        )
+        if staff_user is None:
+            # Fallback if user row is already gone or another role: remove assignment only
+            await self.session.delete(assignment)
+            await self.session.flush()
+            return True
+
+        # 1. Nullify any historical references to avoid foreign key restrict conflicts
+        await self.session.execute(
+            update(HubStockDelivery)
+            .where(HubStockDelivery.received_by_user_id == staff_user_id)
+            .values(received_by_user_id=None)
+        )
+        await self.session.execute(
+            update(OrderEvent)
+            .where(OrderEvent.actor_user_id == staff_user_id)
+            .values(actor_user_id=None)
+        )
+        await self.session.execute(
+            update(AdminAuditEvent)
+            .where(AdminAuditEvent.actor_user_id == staff_user_id)
+            .values(actor_user_id=None)
+        )
+
+        # 2. Delete all notifications sent to this staff user
+        await self.session.execute(
+            delete(Notification).where(Notification.user_id == staff_user_id)
+        )
+
+        # 3. Delete any HubStaff assignments for this staff user
+        await self.session.execute(
+            delete(HubStaff).where(HubStaff.user_id == staff_user_id)
+        )
+
+        # 4. Permanently delete the User account from the database
+        await self.session.execute(
+            delete(User).where(User.id == staff_user_id, User.role == UserRole.HUB_STAFF)
+        )
         await self.session.flush()
         return True
 

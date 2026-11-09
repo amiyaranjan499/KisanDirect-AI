@@ -3,7 +3,7 @@ import AdminDataTable from "../components/AdminDataTable";
 import AdminFilterTabs from "../components/AdminFilterTabs";
 import AdminDetailDrawer from "../components/AdminDetailDrawer";
 import AdminConfirmDialog from "../components/AdminConfirmDialog";
-import { listAdminFarmers, updateAdminUserStatus } from "../../services/adminApi";
+import { listAdminFarmers, updateAdminUserStatus, deleteAdminFarmer } from "../../services/adminApi";
 
 const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const formatDate = (value) =>
@@ -25,6 +25,11 @@ export default function AdminFarmersPage() {
   const [farmerToToggle, setFarmerToToggle] = useState(null);
   const [toggleLoading, setToggleLoading] = useState(false);
   const [toggleError, setToggleError] = useState("");
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [farmerToDelete, setFarmerToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const loadFarmers = useCallback(async () => {
     setLoading(true);
@@ -83,6 +88,29 @@ export default function AdminFarmersPage() {
     if (e) e.stopPropagation();
     setSelectedFarmer(farmer);
     setDrawerOpen(true);
+  };
+
+  const handleOpenDelete = (farmer, e) => {
+    if (e) e.stopPropagation();
+    setFarmerToDelete(farmer);
+    setDeleteError("");
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!farmerToDelete) return;
+    setDeleteLoading(true);
+    setDeleteError("");
+    try {
+      await deleteAdminFarmer(farmerToDelete.id);
+      setFarmers((prev) => prev.filter((f) => f.id !== farmerToDelete.id));
+      setDeleteModalOpen(false);
+      setFarmerToDelete(null);
+    } catch (err) {
+      setDeleteError(err.message || "Failed to permanently delete farmer account.");
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const columns = [
@@ -152,7 +180,7 @@ export default function AdminFarmersPage() {
     {
       key: "actions",
       label: "Actions",
-      width: "170px",
+      width: "210px",
       align: "right",
       render: (f) => (
         <div className="d-flex align-items-center justify-content-end gap-2">
@@ -166,6 +194,14 @@ export default function AdminFarmersPage() {
           >
             <i className={`bi ${f.is_active ? "bi-slash-circle" : "bi-check-circle"}`} />
             {f.is_active ? "Deactivate" : "Activate"}
+          </button>
+          <button
+            type="button"
+            className="admin-table-action-btn text-danger"
+            onClick={(e) => handleOpenDelete(f, e)}
+            title="Permanently delete farmer account"
+          >
+            <i className="bi bi-trash" />
           </button>
         </div>
       ),
@@ -204,7 +240,7 @@ export default function AdminFarmersPage() {
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search farmers by name, email, or farm location..."
-        pageSize={12}
+        pageSize={5}
         emptyTitle="No farmers found"
         emptyDescription="No registered supply partners match your current filter criteria."
         onRowClick={handleViewFarmer}
@@ -294,6 +330,24 @@ export default function AdminFarmersPage() {
         requireReason={false}
         loading={toggleLoading}
         error={toggleError}
+      />
+
+      <AdminConfirmDialog
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          if (!deleteLoading) {
+            setDeleteModalOpen(false);
+            setFarmerToDelete(null);
+          }
+        }}
+        onConfirm={handleConfirmDelete}
+        title="Permanently Delete Farmer Account"
+        message={`Are you sure you want to permanently delete farmer ${farmerToDelete?.name || ""} (${farmerToDelete?.email || ""})? All associated crop listings, reservations, and profile records will be permanently removed from the database, and the email address will be freed.`}
+        confirmLabel="Delete Farmer"
+        confirmVariant="danger"
+        requireReason={false}
+        loading={deleteLoading}
+        error={deleteError}
       />
     </div>
   );

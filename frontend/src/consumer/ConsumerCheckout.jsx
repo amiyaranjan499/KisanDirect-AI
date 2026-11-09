@@ -126,12 +126,12 @@ export default function ConsumerCheckout() {
   };
 
   const checkout = async () => {
-    if (!location || !selectedHub || !selectedHub.available || address.trim().length < 5) return;
+    if (!location || address.trim().length < 5) return;
     setPlacingOrder(true);
     setOptionsError("");
     try {
       const placed = await placeCheckoutOrder({
-        hub_id: selectedHub.id,
+        hub_id: null,
         delivery_slot_id: slotId || null,
         latitude: location.latitude,
         longitude: location.longitude,
@@ -163,7 +163,7 @@ export default function ConsumerCheckout() {
             Order Placed Successfully! 🎉
           </h2>
           <p className="zepto-checkout-success-sub">
-            Your fresh farm produce has been reserved and is being prepped at the local Kisan Hub.
+            Your fresh farm produce has been reserved and is on its way from the farm to your door.
           </p>
 
           <div className="zepto-checkout-success-order-box">
@@ -181,7 +181,7 @@ export default function ConsumerCheckout() {
               <span className="label">Delivery Address:</span>
               <span className="val">{order.delivery_address || address}</span>
             </div>
-            {selectedHub && (
+            {order.hub_id && selectedHub && (
               <div className="zepto-checkout-success-row">
                 <span className="label">Servicing Hub:</span>
                 <span className="val">{selectedHub.name} ({selectedHub.distance_km.toFixed(1)} km away)</span>
@@ -206,7 +206,7 @@ export default function ConsumerCheckout() {
                     </span>
                   </div>
                   <div className="zepto-checkout-success-item-qty">
-                    {item.quantity} {item.unit} · ₹{Number(item.subtotal).toFixed(0)}
+                    {item.quantity} {item.unit} · ₹{Number(item.subtotal).toFixed(2)}
                   </div>
                 </div>
               ))}
@@ -246,10 +246,10 @@ export default function ConsumerCheckout() {
   // -------------------------------------------------------------
   const items = cart?.items || [];
   const itemCount = items.length;
-  const subtotal = Number(options?.subtotal || cart?.subtotal || 0);
-  const deliveryFee = Number(options?.delivery_fee ?? (subtotal >= 500 || subtotal === 0 ? 0 : 30));
-  const platformFee = Number(options?.platform_fee ?? (subtotal > 0 ? 5 : 0));
-  const grandTotal = Number(options?.total ?? (subtotal + deliveryFee + platformFee));
+  const subtotal = Number(options?.subtotal ?? cart?.subtotal ?? 0);
+  const deliveryFee = Number(options?.delivery_fee ?? cart?.delivery_fee ?? 0);
+  const platformFee = Number(options?.platform_fee ?? cart?.platform_fee ?? 0);
+  const grandTotal = Number(options?.total ?? cart?.total ?? (subtotal + deliveryFee + platformFee));
 
   return (
     <div className="zepto-checkout-page">
@@ -400,7 +400,7 @@ export default function ConsumerCheckout() {
                     <div className="zepto-checkout-speed-badge">⚡ 45–90 MINS</div>
                     <div className="zepto-checkout-speed-text">
                       <strong>Standard Quick Delivery</strong>
-                      <span>Packed hygienically at the local Kisan Hub and dispatched to your door.</span>
+                      <span>Packed fresh directly from certified farms and dispatched to your door.</span>
                     </div>
                   </div>
                   <i className="bi bi-check2-circle text-success fs-5" />
@@ -431,59 +431,6 @@ export default function ConsumerCheckout() {
               </div>
             </div>
 
-            {/* Card 3: Servicing Hub Info */}
-            <div className="zepto-checkout-card">
-              <div className="zepto-checkout-card-header">
-                <div className="zepto-checkout-card-title">
-                  <i className="bi bi-building-check text-primary" />
-                  <span>Kisan Fulfillment Hub</span>
-                </div>
-                {loadingOptions && (
-                  <span className="text-muted small">
-                    <i className="bi bi-arrow-repeat spin me-1" /> Checking stock...
-                  </span>
-                )}
-              </div>
-              <div className="zepto-checkout-card-body">
-                {selectedHub ? (
-                  <div>
-                    <div className="d-flex align-items-center justify-content-between">
-                      <strong className="text-dark fs-6">{selectedHub.name}</strong>
-                      <span className="badge bg-light text-dark border">
-                        {selectedHub.distance_km.toFixed(1)} km away
-                      </span>
-                    </div>
-                    <p className="text-muted small mb-2 mt-1">
-                      {selectedHub.address || "Local Kisan Direct Hub"}
-                    </p>
-                    <div className="zepto-checkout-hub-info-pill">
-                      <i className="bi bi-shield-check text-success" />
-                      <span>
-                        Produce supplied by farmers is inspected, quality-graded, and hygienically dispatched from this hub.
-                      </span>
-                    </div>
-
-                    {selectedHub.unavailable_items?.length > 0 && (
-                      <div className="alert alert-warning mt-3 mb-0 py-2 small" role="alert">
-                        <strong>Unavailable at this hub:</strong>
-                        <ul className="mb-0 ps-3 mt-1">
-                          {selectedHub.unavailable_items.map((u) => (
-                            <li key={u.listing_id}>
-                              {u.crop_name}: {u.available_quantity} / {u.requested_quantity} {u.unit}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-muted small mb-0">
-                    {loadingOptions ? "Finding nearest Kisan Hub..." : "No hub available for this location."}
-                  </p>
-                )}
-              </div>
-            </div>
-
             {/* Card 4: Items in Order with Farmer Farm Origin */}
             <div className="zepto-checkout-card">
               <div className="zepto-checkout-card-header">
@@ -504,8 +451,8 @@ export default function ConsumerCheckout() {
                 <div className="zepto-checkout-items-list">
                   {items.map((item) => {
                     const image = resolveCropHeroImage(item);
-                    const price = Number(item.unit_price || 0).toFixed(0);
-                    const itemTotal = Number(item.subtotal || item.quantity * item.unit_price || 0).toFixed(0);
+                    const price = Number(item.unit_price || 0).toFixed(2);
+                    const itemTotal = Number(item.subtotal || item.quantity * item.unit_price || 0).toFixed(2);
                     const farmName = item.farmer_name ? `${item.farmer_name}'s Farm` : "Local Certified Farm";
 
                     return (
@@ -593,8 +540,6 @@ export default function ConsumerCheckout() {
                   placingOrder ||
                   loadingOptions ||
                   itemCount === 0 ||
-                  !selectedHub ||
-                  !selectedHub.available ||
                   address.trim().length < 5
                 }
                 onClick={checkout}
@@ -603,7 +548,7 @@ export default function ConsumerCheckout() {
                   <span>Placing Order...</span>
                 ) : (
                   <>
-                    <span>Place Order · ₹{grandTotal.toFixed(0)}</span>
+                    <span>Place Order · ₹{grandTotal.toFixed(2)}</span>
                     <i className="bi bi-arrow-right" />
                   </>
                 )}
@@ -612,12 +557,6 @@ export default function ConsumerCheckout() {
               {address.trim().length < 5 && (
                 <div className="text-muted small text-center mt-2">
                   Please enter delivery address to enable Place Order
-                </div>
-              )}
-
-              {selectedHub && !selectedHub.available && (
-                <div className="text-danger small text-center mt-2">
-                  Some items are out of stock at this hub
                 </div>
               )}
 

@@ -13,8 +13,27 @@ export default function ConsumerOrders() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [cancellingId, setCancellingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const filters = ["All", "New", "Accepted", "Preparing", "Ready", "Delivered", "Cancelled"];
+
+  const handleDeleteOrder = async (order) => {
+    const shortCode = `ORD-${order.id.slice(0, 4).toUpperCase()}`;
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete order ${shortCode}? This will remove it completely.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setDeletingId(order.id);
+      await orderRequest(`/orders/${order.id}`, { method: "DELETE" });
+      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+    } catch (err) {
+      alert(err.message || "Failed to delete order.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const handleCancelOrder = async (order) => {
     const shortCode = `ORD-${order.id.slice(0, 4).toUpperCase()}`;
@@ -210,7 +229,7 @@ export default function ConsumerOrders() {
 
             const farmerNames = [...new Set((order.items || []).map((i) => i.farmer_name).filter(Boolean))].join(", ");
             const itemNames = (order.items || []).map((i) => i.crop_name).filter(Boolean).join(", ") || "Fresh Crops";
-            const total = Number(order.total_amount || 0).toFixed(0);
+            const total = Number(order.total_amount || 0).toFixed(2);
 
             return (
               <div
@@ -227,7 +246,7 @@ export default function ConsumerOrders() {
                   boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)",
                 }}
               >
-                {/* Top Row: Code + Farmer on left, Status Badge on right */}
+                {/* Top Row: Code + Farmer on left, Status Badge & Delete Icon on right */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -241,21 +260,50 @@ export default function ConsumerOrders() {
                     )}
                   </div>
 
-                  <span
-                    className="badge"
-                    style={{
-                      padding: "4px 12px",
-                      borderRadius: "99px",
-                      fontSize: "12px",
-                      fontWeight: 700,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "5px",
-                      ...badgeStyle,
-                    }}
-                  >
-                    <span className="badge-dot" /> {status}
-                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span
+                      className="badge"
+                      style={{
+                        padding: "4px 12px",
+                        borderRadius: "99px",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        ...badgeStyle,
+                      }}
+                    >
+                      <span className="badge-dot" /> {status}
+                    </span>
+                    <button
+                      type="button"
+                      className="consumer-order-del-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteOrder(order);
+                      }}
+                      disabled={deletingId === order.id}
+                      title="Delete order"
+                      style={{
+                        background: "#FFF1F2",
+                        border: "1px solid #FECDD3",
+                        color: "#E11D48",
+                        borderRadius: "8px",
+                        width: "28px",
+                        height: "28px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: deletingId === order.id ? "not-allowed" : "pointer",
+                        fontSize: "13px",
+                        padding: 0,
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <i className="bi bi-trash" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Hairline Divider */}

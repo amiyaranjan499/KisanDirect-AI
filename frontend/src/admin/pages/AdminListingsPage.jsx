@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AdminDataTable from "../components/AdminDataTable";
 import AdminFilterTabs from "../components/AdminFilterTabs";
 import AdminDetailDrawer from "../components/AdminDetailDrawer";
-import { listAdminListings } from "../../services/adminApi";
+import AdminConfirmDialog from "../components/AdminConfirmDialog";
+import { listAdminListings, deleteAdminListing } from "../../services/adminApi";
 
 const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const formatDate = (value) =>
@@ -19,6 +20,11 @@ export default function AdminListingsPage() {
 
   const [selectedListing, setSelectedListing] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [listingToDelete, setListingToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const loadListings = useCallback(async () => {
     setLoading(true);
@@ -60,6 +66,29 @@ export default function AdminListingsPage() {
     if (e) e.stopPropagation();
     setSelectedListing(listing);
     setDrawerOpen(true);
+  };
+
+  const handleOpenDelete = (listing, e) => {
+    if (e) e.stopPropagation();
+    setListingToDelete(listing);
+    setDeleteError("");
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!listingToDelete) return;
+    setDeleteLoading(true);
+    setDeleteError("");
+    try {
+      await deleteAdminListing(listingToDelete.id);
+      setListings((prev) => prev.filter((item) => item.id !== listingToDelete.id));
+      setDeleteModalOpen(false);
+      setListingToDelete(null);
+    } catch (err) {
+      setDeleteError(err.message || "Failed to permanently delete crop listing.");
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const columns = [
@@ -120,16 +149,26 @@ export default function AdminListingsPage() {
     {
       key: "actions",
       label: "Actions",
-      width: "110px",
+      width: "140px",
       align: "right",
       render: (item) => (
-        <button
-          type="button"
-          className="admin-table-action-btn"
-          onClick={(e) => handleView(item, e)}
-        >
-          <i className="bi bi-eye" /> View
-        </button>
+        <div className="d-flex align-items-center justify-content-end gap-1">
+          <button
+            type="button"
+            className="admin-table-action-btn"
+            onClick={(e) => handleView(item, e)}
+          >
+            <i className="bi bi-eye" /> View
+          </button>
+          <button
+            type="button"
+            className="admin-table-action-btn text-danger"
+            onClick={(e) => handleOpenDelete(item, e)}
+            title="Permanently delete crop listing"
+          >
+            <i className="bi bi-trash" />
+          </button>
+        </div>
       ),
     },
   ];
@@ -183,7 +222,7 @@ export default function AdminListingsPage() {
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search crop listings by produce, farmer, or category..."
-        pageSize={12}
+        pageSize={5}
         emptyTitle="No crop listings found"
         emptyDescription="There are no agricultural produce listings matching your current filter criteria."
         onRowClick={handleView}
@@ -261,6 +300,24 @@ export default function AdminListingsPage() {
           </>
         )}
       </AdminDetailDrawer>
+
+      <AdminConfirmDialog
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          if (!deleteLoading) {
+            setDeleteModalOpen(false);
+            setListingToDelete(null);
+          }
+        }}
+        onConfirm={handleConfirmDelete}
+        title="Permanently Delete Crop Listing"
+        message={`Are you sure you want to permanently delete "${listingToDelete?.crop_name || ""}" listing? All associated image records, stock reservations, predictions, and lot inventory will be permanently removed from the database.`}
+        confirmLabel="Delete Listing"
+        confirmVariant="danger"
+        requireReason={false}
+        loading={deleteLoading}
+        error={deleteError}
+      />
     </div>
   );
 }

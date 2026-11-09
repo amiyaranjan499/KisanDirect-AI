@@ -13,6 +13,11 @@ export default function NearbyFarmers({ onFarmer }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showMap, setShowMap] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalFarmers, setTotalFarmers] = useState(0);
+  const PAGE_SIZE = 6;
+
   const storedLoc = getStoredLocation();
   const [locationName, setLocationName] = useState(storedLoc?.formatted || "Nearby");
   const [userCoords, setUserCoords] = useState({
@@ -28,7 +33,7 @@ export default function NearbyFarmers({ onFarmer }) {
     }
   };
 
-  const fetchFarmersForCoords = useCallback(async (lat, lng, radiusKm = 10) => {
+  const fetchFarmersForCoords = useCallback(async (lat, lng, radiusKm = 15, pageNum = 1) => {
     setLoading(true);
     setError("");
     try {
@@ -36,11 +41,15 @@ export default function NearbyFarmers({ onFarmer }) {
         latitude: lat,
         longitude: lng,
         radius_km: radiusKm,
-        page: 1,
-        page_size: 24,
+        page: pageNum,
+        page_size: PAGE_SIZE,
       });
       const items = res?.items || (Array.isArray(res) ? res : []);
       setFarmers(items);
+      const total = res?.total != null ? res.total : items.length;
+      setTotalFarmers(total);
+      setTotalPages(res?.pages != null ? res.pages : Math.max(1, Math.ceil(total / PAGE_SIZE)));
+      setPage(pageNum);
     } catch (err) {
       console.warn("Error fetching nearby farmers:", err);
       setError(err.message || "Failed to load nearby farmers.");
@@ -48,6 +57,11 @@ export default function NearbyFarmers({ onFarmer }) {
       setLoading(false);
     }
   }, []);
+
+  const handlePageChange = (newPage) => {
+    if (newPage < 1 || newPage > totalPages || newPage === page) return;
+    fetchFarmersForCoords(userCoords.latitude, userCoords.longitude, 15, newPage);
+  };
 
   useEffect(() => {
     // 0. Listen to location changes from locationService
@@ -225,14 +239,14 @@ export default function NearbyFarmers({ onFarmer }) {
           Loading nearby farmers...
         </div>
       ) : farmers.length > 0 ? (
-        <div
-          className="grid-cards"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-            gap: "18px",
-          }}
-        >
+        <>
+          <div
+            className="consumer-farmers-grid"
+            style={{
+              display: "grid",
+              gap: "18px",
+            }}
+          >
           {farmers.map((farmer) => {
             const rawDp =
               farmer.profile_image ||
@@ -396,6 +410,34 @@ export default function NearbyFarmers({ onFarmer }) {
             );
           })}
         </div>
+
+        {/* Pagination Controls - only show when there is more than 1 page (totalFarmers > 6) */}
+        {totalPages > 1 && (
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "12px", marginTop: "28px" }}>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              disabled={page <= 1 || loading}
+              onClick={() => handlePageChange(page - 1)}
+              style={{ padding: "5px 14px", borderRadius: "6px" }}
+            >
+              Previous
+            </button>
+            <span style={{ fontSize: "13px", color: "var(--clay, #79705F)" }}>
+              Page {page} of {totalPages}
+            </span>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              disabled={page >= totalPages || loading}
+              onClick={() => handlePageChange(page + 1)}
+              style={{ padding: "5px 14px", borderRadius: "6px" }}
+            >
+              Next
+            </button>
+          </div>
+        )}
+      </>
       ) : (
         <div className="empty" style={{ padding: "40px", background: "#FFFFFF", borderRadius: "12px", border: "1px solid var(--line, #E4DFD1)", textAlign: "center" }}>
           <h3 style={{ color: "var(--forest, #1B6B34)", fontFamily: "var(--font-display, 'Fraunces', Georgia, serif)" }}>No farmers found near your location</h3>

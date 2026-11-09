@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AdminDataTable from "../components/AdminDataTable";
 import AdminFilterTabs from "../components/AdminFilterTabs";
 import AdminDetailDrawer from "../components/AdminDetailDrawer";
-import { listAdminPayments } from "../../services/adminApi";
+import AdminConfirmDialog from "../components/AdminConfirmDialog";
+import { listAdminPayments, deleteAdminPayment } from "../../services/adminApi";
 
 const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const formatDate = (value) =>
@@ -25,6 +26,11 @@ export default function AdminPaymentsPage() {
 
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [paymentToDelete, setPaymentToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const loadPayments = useCallback(async () => {
     setLoading(true);
@@ -61,6 +67,29 @@ export default function AdminPaymentsPage() {
     if (e) e.stopPropagation();
     setSelectedPayment(payment);
     setDrawerOpen(true);
+  };
+
+  const handleOpenDelete = (payment, e) => {
+    if (e) e.stopPropagation();
+    setPaymentToDelete(payment);
+    setDeleteError("");
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!paymentToDelete) return;
+    setDeleteLoading(true);
+    setDeleteError("");
+    try {
+      await deleteAdminPayment(paymentToDelete.id);
+      setPayments((prev) => prev.filter((p) => p.id !== paymentToDelete.id));
+      setDeleteModalOpen(false);
+      setPaymentToDelete(null);
+    } catch (err) {
+      setDeleteError(err.message || "Failed to permanently delete payment record.");
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const columns = [
@@ -130,16 +159,26 @@ export default function AdminPaymentsPage() {
     {
       key: "actions",
       label: "Actions",
-      width: "100px",
+      width: "140px",
       align: "right",
       render: (p) => (
-        <button
-          type="button"
-          className="admin-table-action-btn"
-          onClick={(e) => handleView(p, e)}
-        >
-          <i className="bi bi-eye" /> View
-        </button>
+        <div className="d-flex align-items-center justify-content-end gap-1">
+          <button
+            type="button"
+            className="admin-table-action-btn"
+            onClick={(e) => handleView(p, e)}
+          >
+            <i className="bi bi-eye" /> View
+          </button>
+          <button
+            type="button"
+            className="admin-table-action-btn text-danger"
+            onClick={(e) => handleOpenDelete(p, e)}
+            title="Permanently delete payment record"
+          >
+            <i className="bi bi-trash" />
+          </button>
+        </div>
       ),
     },
   ];
@@ -258,6 +297,24 @@ export default function AdminPaymentsPage() {
           </>
         )}
       </AdminDetailDrawer>
+
+      <AdminConfirmDialog
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          if (!deleteLoading) {
+            setDeleteModalOpen(false);
+            setPaymentToDelete(null);
+          }
+        }}
+        onConfirm={handleConfirmDelete}
+        title="Permanently Delete Payment Record"
+        message={`Are you sure you want to permanently delete payment record ${String(paymentToDelete?.id || "").slice(0, 8).toUpperCase()} for ${money(paymentToDelete?.amount || 0)}? This will permanently delete the payment transaction record from the database.`}
+        confirmLabel="Delete Payment"
+        confirmVariant="danger"
+        requireReason={false}
+        loading={deleteLoading}
+        error={deleteError}
+      />
     </div>
   );
 }

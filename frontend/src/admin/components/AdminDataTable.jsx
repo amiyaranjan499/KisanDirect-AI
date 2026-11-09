@@ -236,7 +236,7 @@ export default function AdminDataTable({
       </div>
 
       {/* Pagination Footer */}
-      {!loading && effectiveTotal > 0 && (
+      {!loading && effectiveTotal > pageSize && (
         <div className="admin-pagination-bar">
           <div className="admin-pagination-info">
             Showing <b>{Math.min(effectiveTotal, (currentPage - 1) * pageSize + 1)}</b> to{" "}

@@ -539,7 +539,15 @@ export default function RiderDashboardPage() {
             {/* Pickup Stop */}
             <div className="rider-stop-box">
               <div className="rider-stop-title">
-                <i className="bi bi-building" /> Step 1: Pickup from Kisan Hub
+                {shipment.pickup_type === "FARM" ? (
+                  <>
+                    <i className="bi bi-tree me-1" /> Step 1: Pickup from Farm
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-building me-1" /> Step 1: Pickup from Kisan Hub
+                  </>
+                )}
               </div>
               <div className="rider-stop-addr">{shipment.hub_name}</div>
               <div className="text-muted small mb-2">{shipment.pickup_address}</div>
@@ -550,7 +558,7 @@ export default function RiderDashboardPage() {
                   rel="noreferrer"
                   className="rider-map-link"
                 >
-                  <i className="bi bi-geo-alt" /> Open Hub in Google Maps
+                  <i className="bi bi-geo-alt" /> {shipment.pickup_type === "FARM" ? "Open Farm in Google Maps" : "Open Hub in Google Maps"}
                 </a>
               )}
             </div>
@@ -678,8 +686,18 @@ export default function RiderDashboardPage() {
                 <div className="rider-offer-card" key={offer.id}>
                   <div>
                     <div className="rider-offer-hub">
-                      <i className="bi bi-geo-alt-fill me-1" />
-                      {offer.hub_name}
+                      {offer.pickup_type === "FARM" ? (
+                        <>
+                          <i className="bi bi-tree-fill me-1 text-success" />
+                          <span>{offer.hub_name}</span>
+                          <span className="badge bg-success-subtle text-success border border-success-subtle ms-2" style={{ fontSize: "11px" }}>Farm Pickup</span>
+                        </>
+                      ) : (
+                        <>
+                          <i className="bi bi-geo-alt-fill me-1" />
+                          <span>{offer.hub_name}</span>
+                        </>
+                      )}
                     </div>
                     <div className="rider-offer-details">
                       <div>
@@ -729,7 +747,7 @@ export default function RiderDashboardPage() {
                 <span className="fw-semibold small">Online & Scanning for New Orders</span>
               </div>
               <p className="text-muted small mb-0">
-                You will hear an alert as soon as a Kisan Hub assigns a delivery offer near you.
+                You will hear an alert as soon as a delivery offer near you is available.
               </p>
             </div>
           )}

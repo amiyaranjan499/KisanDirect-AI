@@ -32,24 +32,24 @@ export default function ConsumerHome({ user: propUser }) {
     }
     getConsumerProfile().then(setConsumerProfile).catch(() => null);
 
-    // Fetch real crop listings for "Fresh crops near you"
+    // Fetch real crop listings for "Fresh crops near you" (maximum 8 crops)
     listListings({ page: 1, page_size: 8 })
       .then((res) => {
         const items = Array.isArray(res) ? res : res?.items || [];
-        setListings(items);
+        setListings(items.slice(0, 8));
       })
       .catch((err) => console.warn("Failed to load listings:", err))
       .finally(() => setLoadingListings(false));
   }, []);
 
   useEffect(() => {
-    // Fetch real nearby farmers
+    // Fetch real nearby farmers (maximum 3 farmers)
     const lat = liveLocation?.latitude || consumerProfile?.location?.latitude || 19.9975;
     const lng = liveLocation?.longitude || consumerProfile?.location?.longitude || 73.7898;
-    nearbyFarmers({ latitude: lat, longitude: lng, radius_km: 25, page: 1, page_size: 4 })
+    nearbyFarmers({ latitude: lat, longitude: lng, radius_km: 25, page: 1, page_size: 3 })
       .then((res) => {
         const items = res?.items || (Array.isArray(res) ? res : []);
-        setFarmers(items);
+        setFarmers(items.slice(0, 3));
       })
       .catch((err) => console.warn("Failed to load nearby farmers:", err))
       .finally(() => setLoadingFarmers(false));
@@ -76,10 +76,8 @@ export default function ConsumerHome({ user: propUser }) {
     { name: "Fruits", emoji: "🍊" },
     { name: "Grains", emoji: "🌾" },
     { name: "Pulses", emoji: "🫘" },
-    { name: "Roots & Tubers", emoji: "🥔" },
     { name: "Spices", emoji: "🌶️" },
     { name: "Millets", emoji: "🌱" },
-    { name: "Organic", emoji: "🍃" },
   ];
 
 
@@ -321,9 +319,14 @@ export default function ConsumerHome({ user: propUser }) {
             className="farmer-row-grid"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+              gridTemplateColumns:
+                farmers.length === 1
+                  ? "minmax(280px, 360px)"
+                  : farmers.length === 2
+                  ? "repeat(2, minmax(280px, 1fr))"
+                  : "repeat(auto-fit, minmax(280px, 1fr))",
               gap: "16px",
-              maxWidth: farmers.length === 1 ? "320px" : farmers.length === 2 ? "680px" : "100%",
+              width: "100%",
             }}
           >
             {farmers.map((farmer) => {

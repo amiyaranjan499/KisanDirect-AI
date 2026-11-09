@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AdminDataTable from "../components/AdminDataTable";
 import AdminFilterTabs from "../components/AdminFilterTabs";
 import AdminDetailDrawer from "../components/AdminDetailDrawer";
-import { listAdminOrders } from "../../services/adminApi";
+import AdminConfirmDialog from "../components/AdminConfirmDialog";
+import { listAdminOrders, deleteAdminOrder } from "../../services/adminApi";
 
 const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const formatDate = (value) =>
@@ -25,6 +26,11 @@ export default function AdminOrdersPage() {
 
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -61,6 +67,29 @@ export default function AdminOrdersPage() {
     if (e) e.stopPropagation();
     setSelectedOrder(order);
     setDrawerOpen(true);
+  };
+
+  const handleOpenDelete = (order, e) => {
+    if (e) e.stopPropagation();
+    setOrderToDelete(order);
+    setDeleteError("");
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!orderToDelete) return;
+    setDeleteLoading(true);
+    setDeleteError("");
+    try {
+      await deleteAdminOrder(orderToDelete.id);
+      setOrders((prev) => prev.filter((item) => item.id !== orderToDelete.id));
+      setDeleteModalOpen(false);
+      setOrderToDelete(null);
+    } catch (err) {
+      setDeleteError(err.message || "Failed to delete order.");
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const columns = [
@@ -139,16 +168,26 @@ export default function AdminOrdersPage() {
     {
       key: "actions",
       label: "Actions",
-      width: "100px",
+      width: "140px",
       align: "right",
       render: (o) => (
-        <button
-          type="button"
-          className="admin-table-action-btn"
-          onClick={(e) => handleView(o, e)}
-        >
-          <i className="bi bi-eye" /> View
-        </button>
+        <div className="d-flex align-items-center justify-content-end gap-1">
+          <button
+            type="button"
+            className="admin-table-action-btn"
+            onClick={(e) => handleView(o, e)}
+          >
+            <i className="bi bi-eye" /> View
+          </button>
+          <button
+            type="button"
+            className="admin-table-action-btn text-danger"
+            onClick={(e) => handleOpenDelete(o, e)}
+            title="Permanently delete order"
+          >
+            <i className="bi bi-trash" />
+          </button>
+        </div>
       ),
     },
   ];
@@ -203,7 +242,7 @@ export default function AdminOrdersPage() {
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search orders by reference ID, customer name, or status..."
-        pageSize={12}
+        pageSize={5}
         emptyTitle="No orders found"
         emptyDescription="There are no consumer orders matching your active filter criteria."
         onRowClick={handleView}
@@ -275,6 +314,24 @@ export default function AdminOrdersPage() {
           </>
         )}
       </AdminDetailDrawer>
+
+      <AdminConfirmDialog
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          if (!deleteLoading) {
+            setDeleteModalOpen(false);
+            setOrderToDelete(null);
+          }
+        }}
+        onConfirm={handleConfirmDelete}
+        title="Permanently Delete Order"
+        message={`Are you sure you want to permanently delete order ORD-${String(orderToDelete?.id || "").slice(0, 8).toUpperCase()}? This will permanently delete the order and associated records from the database.`}
+        confirmLabel="Delete Order"
+        confirmVariant="danger"
+        requireReason={false}
+        loading={deleteLoading}
+        error={deleteError}
+      />
     </div>
   );
 }

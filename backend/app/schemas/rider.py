@@ -39,6 +39,8 @@ class RiderOfferResponse(BaseModel):
     hub_name: str
     pickup_address: str
     dropoff_address: str
+    pickup_type: str = "HUB"
+    farm_name: str | None = None
 
 
 class RiderOfferActionResponse(BaseModel):
@@ -59,8 +61,10 @@ class RiderShipmentResponse(BaseModel):
     dropoff_address: str
     promised_window_start: datetime
     promised_window_end: datetime
-    payment_method: str | None
-    payment_status: str | None
+    payment_method: str | None = None
+    payment_status: str | None = None
+    pickup_type: str = "HUB"
+    farm_name: str | None = None
 
 
 class RiderShipmentStatusUpdate(BaseModel):
@@ -72,6 +76,8 @@ class RiderCompletedShipmentResponse(BaseModel):
     order_id: UUID
     hub_name: str
     delivered_at: datetime
+    pickup_type: str = "HUB"
+    farm_name: str | None = None
 
 
 class RiderHistoryResponse(BaseModel):

@@ -169,6 +169,10 @@ class AdminService:
         farmers = await self.repository.list_farmers()
         responses = []
         for farmer in farmers:
+            current_listings = [
+                listing for listing in farmer.listings
+                if listing.availability_status != AvailabilityStatus.UNAVAILABLE
+            ]
             responses.append(
                 AdminFarmerResponse(
                     id=farmer.id,
@@ -178,8 +182,8 @@ class AdminService:
                     phone=farmer.phone,
                     address=farmer.address,
                     is_active=farmer.user.is_active,
-                    listing_count=len(farmer.listings),
-                    active_listing_count=sum(1 for listing in farmer.listings if listing.availability_status == AvailabilityStatus.AVAILABLE),
+                    listing_count=len(current_listings),
+                    active_listing_count=sum(1 for listing in current_listings if listing.availability_status == AvailabilityStatus.AVAILABLE),
                     order_count=await self.repository.count_orders_for_farmer(farmer.id),
                     total_sales=await self.repository.total_sales_for_farmer(farmer.id),
                     created_at=farmer.created_at,
@@ -649,7 +653,7 @@ class AdminService:
                     else None
                 ),
                 hub_id=shipment.hub_id,
-                hub_name=shipment.hub.name,
+                hub_name=shipment.hub.name if shipment.hub is not None else "Direct Farm Pickup",
                 pickup_address=shipment.pickup_address_snapshot,
                 delivery_address=shipment.dropoff_address_snapshot,
                 eta_start=shipment.promised_window_start,
@@ -719,3 +723,52 @@ class AdminService:
             sort_keys=True,
             default=lambda item: item.value if isinstance(item, Enum) else str(item),
         )
+
+    async def delete_order(self, order_id: UUID, actor: LifecycleActor) -> None:
+        await self._require_admin(actor)
+        deleted = await self.repository.delete_order(order_id)
+        if not deleted:
+            raise LifecycleNotFound(f"Order {order_id} not found")
+        await self._audit(actor, "DELETE", "order", order_id, None, None, "Admin permanently deleted order")
+
+    async def delete_farmer(self, farmer_id: UUID, actor: LifecycleActor) -> None:
+        await self._require_admin(actor)
+        deleted = await self.repository.delete_farmer(farmer_id)
+        if not deleted:
+            raise LifecycleNotFound(f"Farmer {farmer_id} not found")
+        await self._audit(actor, "DELETE", "farmer", farmer_id, None, None, "Admin permanently deleted farmer account")
+
+    async def delete_listing(self, listing_id: UUID, actor: LifecycleActor) -> None:
+        await self._require_admin(actor)
+        deleted = await self.repository.delete_listing(listing_id)
+        if not deleted:
+            raise LifecycleNotFound(f"Crop listing {listing_id} not found")
+        await self._audit(actor, "DELETE", "crop_listing", listing_id, None, None, "Admin permanently deleted crop listing")
+
+    async def delete_hub_staff(self, user_id: UUID, actor: LifecycleActor) -> None:
+        await self._require_admin(actor)
+        deleted = await self.repository.delete_hub_staff(user_id)
+        if not deleted:
+            raise LifecycleNotFound(f"Hub staff {user_id} not found")
+        await self._audit(actor, "DELETE", "hub_staff", user_id, None, None, "Admin permanently deleted hub staff account")
+
+    async def delete_rider(self, rider_id: UUID, actor: LifecycleActor) -> None:
+        await self._require_admin(actor)
+        deleted = await self.repository.delete_rider(rider_id)
+        if not deleted:
+            raise LifecycleNotFound(f"Rider {rider_id} not found")
+        await self._audit(actor, "DELETE", "rider", rider_id, None, None, "Admin permanently deleted rider")
+
+    async def delete_shipment(self, shipment_id: UUID, actor: LifecycleActor) -> None:
+        await self._require_admin(actor)
+        deleted = await self.repository.delete_shipment(shipment_id)
+        if not deleted:
+            raise LifecycleNotFound(f"Shipment {shipment_id} not found")
+        await self._audit(actor, "DELETE", "shipment", shipment_id, None, None, "Admin permanently deleted shipment")
+
+    async def delete_payment(self, payment_id: UUID, actor: LifecycleActor) -> None:
+        await self._require_admin(actor)
+        deleted = await self.repository.delete_payment(payment_id)
+        if not deleted:
+            raise LifecycleNotFound(f"Payment {payment_id} not found")
+        await self._audit(actor, "DELETE", "payment", payment_id, None, None, "Admin permanently deleted payment record")

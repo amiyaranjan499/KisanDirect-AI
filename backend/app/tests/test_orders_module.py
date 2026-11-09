@@ -883,3 +883,48 @@ def test_delivery_slots_promised_windows_and_slot_capacity_lifecycle():
     finally:
         asyncio.run(cleanup_extra_slots_and_hubs())
         cleanup(data)
+
+
+def test_checkout_order_without_hub_succeeds():
+    data = seed()
+    consumer, _, _, _, _, listing, _, _ = data
+    try:
+        with TestClient(create_app()) as client:
+            add_item = client.post(
+                "/api/v1/cart/items",
+                headers=header(consumer),
+                json={"listing_id": str(listing.id), "quantity": "2"},
+            )
+            assert add_item.status_code == 201
+
+            # Order placed without a hub
+            order_res = client.post(
+                "/api/v1/orders",
+                headers=header(consumer),
+                json={
+                    "latitude": 20.3,
+                    "longitude": 85.8,
+                    "address": "45 Farmer Lane, Bhubaneswar",
+                },
+            )
+            assert order_res.status_code == 201
+            order_data = order_res.json()
+            assert order_data["hub_id"] is None
+            assert len(order_data["items"]) == 1
+            assert order_data["items"][0]["quantity"] == "2.000"
+            assert order_data["delivery_address"] == "45 Farmer Lane, Bhubaneswar"
+            assert order_data["status"] == "PENDING"
+
+            # Cart should now be empty
+            cart_res = client.get("/api/v1/cart", headers=header(consumer))
+            assert cart_res.status_code == 200
+            assert len(cart_res.json()["items"]) == 0
+
+            # Order should appear immediately in My Orders
+            history = client.get("/api/v1/orders", headers=header(consumer))
+            assert history.status_code == 200
+            assert history.json()["total"] == 1
+            assert history.json()["items"][0]["id"] == order_data["id"]
+    finally:
+        cleanup(data)
+

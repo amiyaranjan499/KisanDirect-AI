@@ -22,16 +22,16 @@ export default function ConsumerMarketplace({ user }) {
   const [loading, setLoading] = useState(true);
   const [statusMsg, setStatusMsg] = useState("");
 
+  const PAGE_SIZE = 8;
+
   const categories = [
     "All",
     "Vegetables",
     "Fruits",
     "Grains",
     "Pulses",
-    "Roots & Tubers",
     "Spices",
     "Millets",
-    "Organic",
   ];
 
   // Fetch listings from backend
@@ -39,7 +39,7 @@ export default function ConsumerMarketplace({ user }) {
     setLoading(true);
     const params = {
       page,
-      page_size: 16,
+      page_size: PAGE_SIZE,
     };
     if (search.trim()) params.search = search.trim();
     if (selectedCategory && selectedCategory !== "All") params.category = selectedCategory;
@@ -52,7 +52,8 @@ export default function ConsumerMarketplace({ user }) {
       .then((res) => {
         const items = Array.isArray(res) ? res : res?.items || [];
         setListings(items);
-        setTotalPages(res?.pages || 1);
+        const totalCount = res?.total != null ? res.total : items.length;
+        setTotalPages(res?.pages != null ? res.pages : Math.max(1, Math.ceil(totalCount / PAGE_SIZE)));
       })
       .catch((err) => setStatusMsg(err.message || "Failed to load listings."))
       .finally(() => setLoading(false));

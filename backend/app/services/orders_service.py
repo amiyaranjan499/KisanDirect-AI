@@ -55,19 +55,44 @@ class OrdersService:
             raise LookupError("Consumer profile not found")
         return consumer.id
 
-    @staticmethod
-    def cart_response(cart) -> CartResponse:
+    def cart_response(self, cart) -> CartResponse:
         items = []
-        subtotal = Decimal("0")
+        subtotal = Decimal("0.00")
         total_quantity = Decimal("0")
         for item in cart.items:
             listing = item.listing
-            item_subtotal = (Decimal(listing.asking_price) * Decimal(item.quantity)).quantize(Decimal("0.01"))
+            unit_price = Decimal(listing.asking_price).quantize(Decimal("0.01"))
+            item_subtotal = (unit_price * Decimal(item.quantity)).quantize(Decimal("0.01"))
             subtotal += item_subtotal
             total_quantity += item.quantity
             image_url = listing.images[0].storage_url if getattr(listing, 'images', None) else None
-            items.append(CartItemResponse(id=item.id, listing_id=listing.id, crop_name=listing.crop.name, farmer_name=listing.farmer.name, quantity=item.quantity, available_quantity=listing.quantity, minimum_order_quantity=listing.minimum_order_quantity, unit=listing.unit, unit_price=listing.asking_price, subtotal=item_subtotal, image_url=image_url))
-        return CartResponse(id=cart.id, items=items, subtotal=subtotal, total_quantity=total_quantity)
+            items.append(
+                CartItemResponse(
+                    id=item.id,
+                    listing_id=listing.id,
+                    crop_name=listing.crop.name,
+                    farmer_name=listing.farmer.name,
+                    quantity=item.quantity,
+                    available_quantity=listing.quantity,
+                    minimum_order_quantity=listing.minimum_order_quantity,
+                    unit=listing.unit,
+                    unit_price=unit_price,
+                    subtotal=item_subtotal,
+                    image_url=image_url,
+                )
+            )
+        delivery_fee = self.settings.delivery_fee.quantize(Decimal("0.01")) if subtotal > 0 else Decimal("0.00")
+        platform_fee = self.settings.platform_fee.quantize(Decimal("0.01")) if subtotal > 0 else Decimal("0.00")
+        total = (subtotal + delivery_fee + platform_fee).quantize(Decimal("0.01"))
+        return CartResponse(
+            id=cart.id,
+            items=items,
+            subtotal=subtotal.quantize(Decimal("0.01")),
+            delivery_fee=delivery_fee,
+            platform_fee=platform_fee,
+            total=total,
+            total_quantity=total_quantity,
+        )
 
     @staticmethod
     def order_response(order: Order, farmer_user_id: UUID | None = None) -> OrderResponse:
@@ -75,18 +100,39 @@ class OrdersService:
         for item in order.items:
             if farmer_user_id is not None and item.listing.farmer.user_id != farmer_user_id:
                 continue
-            items.append(OrderItemResponse(id=item.id, listing_id=item.listing_id, crop_name=item.listing.crop.name, farmer_name=item.listing.farmer.name, quantity=item.quantity, unit=item.listing.unit, unit_price=item.unit_price, subtotal=item.subtotal))
+            items.append(
+                OrderItemResponse(
+                    id=item.id,
+                    listing_id=item.listing_id,
+                    crop_name=item.listing.crop.name,
+                    farmer_name=item.listing.farmer.name,
+                    quantity=item.quantity,
+                    unit=item.listing.unit,
+                    unit_price=Decimal(item.unit_price).quantize(Decimal("0.01")),
+                    subtotal=Decimal(item.subtotal).quantize(Decimal("0.01")),
+                )
+            )
         payment = None
         if order.payment is not None:
-            payment = PaymentResponse(id=order.payment.id, order_id=order.payment.order_id, provider_reference=order.payment.provider_reference, amount=order.payment.amount, status=order.payment.status.value.lower(), payment_method=order.payment.payment_method, is_test=order.payment.is_test, created_at=order.payment.created_at, updated_at=order.payment.updated_at)
+            payment = PaymentResponse(
+                id=order.payment.id,
+                order_id=order.payment.order_id,
+                provider_reference=order.payment.provider_reference,
+                amount=Decimal(order.payment.amount).quantize(Decimal("0.01")),
+                status=order.payment.status.value.lower(),
+                payment_method=order.payment.payment_method,
+                is_test=order.payment.is_test,
+                created_at=order.payment.created_at,
+                updated_at=order.payment.updated_at,
+            )
         return OrderResponse(
             id=order.id,
             consumer_id=order.consumer_id,
             status=order.status.value,
-            subtotal=order.subtotal,
-            delivery_fee=order.delivery_fee,
-            platform_fee=order.platform_fee,
-            total_amount=order.total_amount,
+            subtotal=Decimal(order.subtotal).quantize(Decimal("0.01")),
+            delivery_fee=Decimal(order.delivery_fee).quantize(Decimal("0.01")),
+            platform_fee=Decimal(order.platform_fee).quantize(Decimal("0.01")),
+            total_amount=Decimal(order.total_amount).quantize(Decimal("0.01")),
             hub_id=order.hub_id,
             delivery_address=order.delivery_address,
             delivery_slot_id=order.delivery_slot_id,
@@ -126,10 +172,21 @@ class OrdersService:
         cart_items = cart.items if cart is not None else []
         subtotal = sum(
             (
-                Decimal(item.listing.asking_price) * item.quantity
+                Decimal(item.listing.asking_price).quantize(Decimal("0.01")) * Decimal(item.quantity)
             ).quantize(Decimal("0.01"))
             for item in cart_items
+        ).quantize(Decimal("0.01")) if cart_items else Decimal("0.00")
+        delivery_fee = (
+            self.settings.delivery_fee.quantize(Decimal("0.01"))
+            if subtotal > 0
+            else Decimal("0.00")
         )
+        platform_fee = (
+            self.settings.platform_fee.quantize(Decimal("0.01"))
+            if subtotal > 0
+            else Decimal("0.00")
+        )
+        total = (subtotal + delivery_fee + platform_fee).quantize(Decimal("0.01"))
         hubs = await self.repository.checkout_hub_options(
             latitude,
             longitude,
@@ -184,13 +241,9 @@ class OrdersService:
         return CheckoutOptionsResponse(
             item_count=len(cart_items),
             subtotal=subtotal,
-            delivery_fee=self.settings.delivery_fee.quantize(Decimal("0.01")),
-            platform_fee=self.settings.platform_fee.quantize(Decimal("0.01")),
-            total=(
-                subtotal
-                + self.settings.delivery_fee.quantize(Decimal("0.01"))
-                + self.settings.platform_fee.quantize(Decimal("0.01"))
-            ),
+            delivery_fee=delivery_fee,
+            platform_fee=platform_fee,
+            total=total,
             reservation_ttl_minutes=self.settings.reservation_ttl_minutes,
             hubs=hub_options,
         )
@@ -215,6 +268,12 @@ class OrdersService:
     async def consumer_orders(self, user_id: UUID, page: int, page_size: int) -> OrderPage:
         orders, total = await self.repository.consumer_orders(await self.consumer_id(user_id), page, page_size)
         return OrderPage(items=[self.order_response(order) for order in orders], page=page, page_size=page_size, total=total, pages=ceil(total / page_size) if total else 0)
+
+    async def delete_consumer_order(self, user_id: UUID, order_id: UUID) -> None:
+        consumer_id = await self.consumer_id(user_id)
+        deleted = await self.repository.delete_consumer_order(consumer_id, order_id)
+        if not deleted:
+            raise LookupError("Order not found or does not belong to you")
 
     async def farmer_orders(self, user_id: UUID, page: int, page_size: int) -> OrderPage:
         orders, total = await self.repository.farmer_orders(user_id, page, page_size)
@@ -246,6 +305,7 @@ class OrdersService:
         is_hub_staff = (
             role is UserRole.HUB_STAFF
             and shipment is not None
+            and shipment.hub_id is not None
             and await self.repository.has_hub_staff_access(shipment.hub_id, actor_id)
         )
         is_admin = role is UserRole.ADMIN
@@ -270,7 +330,7 @@ class OrdersService:
         if shipment is not None:
             hub_coordinates = (
                 await self.repository.hub_coordinates(shipment.hub_id)
-                if can_view_order_details
+                if (can_view_order_details and shipment.hub_id is not None)
                 else None
             )
             if hub_coordinates is not None:
