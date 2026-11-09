@@ -5,6 +5,7 @@ pydantic-settings>=2.6,<3
 PyJWT[crypto]>=2.9,<3
 pwdlib[argon2]>=0.2,<1
 SQLAlchemy>=2.0,<3
+greenlet>=3.0,<4
 GeoAlchemy2>=0.15,<1
 psycopg[binary]>=3.2,<4
 alembic>=1.13,<2
