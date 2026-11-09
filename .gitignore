@@ -28,6 +28,9 @@ ml/models/*
 !ml/models/.gitkeep
 ml/datasets/*
 !ml/datasets/.gitkeep
+!ml/datasets/ten_crops/
+ml/datasets/ten_crops/*
+!ml/datasets/ten_crops/demo_test_images/
 
 # Uploaded farmer media
 backend/storage/uploads/*

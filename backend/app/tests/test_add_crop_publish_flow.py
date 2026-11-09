@@ -212,7 +212,7 @@ def test_critical_potato_accuracy_and_apple_non_confusion():
     try:
         test_images = [
             PROJECT_ROOT / "frontend" / "public" / "assets" / "images" / "potato.png",
-            PROJECT_ROOT / "backend" / "storage" / "uploads" / "9daf2023-25cc-4702-8f03-93c02cdec1b1" / "0970e722-032d-4734-94ec-af5aee5b0295.jpg",
+            PROJECT_ROOT / "frontend" / "public" / "assets" / "images" / "potao.png",
         ]
 
         for img_path in test_images:
@@ -272,7 +272,7 @@ def test_change_photo_creates_zero_listings():
         assert asyncio.run(count_farmer_listings(farmer_profile.id)) == 0
 
         img_path1 = PROJECT_ROOT / "frontend" / "public" / "assets" / "images" / "potato.png"
-        img_path2 = PROJECT_ROOT / "backend" / "storage" / "uploads" / "9daf2023-25cc-4702-8f03-93c02cdec1b1" / "0970e722-032d-4734-94ec-af5aee5b0295.jpg"
+        img_path2 = PROJECT_ROOT / "frontend" / "public" / "assets" / "images" / "potao.png"
 
         with open(img_path1, "rb") as f:
             client.post("/api/v1/ai/crop/classify", headers=auth_header(farmer_user), files={"image": ("potato.png", f, "image/png")})
