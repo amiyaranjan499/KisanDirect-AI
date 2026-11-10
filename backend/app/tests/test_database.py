@@ -81,3 +81,41 @@ def test_postgis_and_location_columns() -> None:
     postgis_available, location_tables = asyncio.run(check())
     assert postgis_available
     assert set(location_tables) == {"farmers", "crop_listings", "hubs", "rider_locations"}
+
+
+@pytest.mark.parametrize(
+    ("raw_url", "expected_url"),
+    [
+        (
+            "postgresql+psycopg://user:pass@localhost:5432/kisandirect",
+            "postgresql+psycopg://user:pass@localhost:5432/kisandirect",
+        ),
+        (
+            "postgresql+psycopg2://user:pass@localhost:5432/kisandirect",
+            "postgresql+psycopg://user:pass@localhost:5432/kisandirect",
+        ),
+        (
+            "postgresql+psycopg3://user:pass@localhost:5432/kisandirect",
+            "postgresql+psycopg://user:pass@localhost:5432/kisandirect",
+        ),
+        (
+            "postgresql://user:pass@localhost:5432/kisandirect",
+            "postgresql+psycopg://user:pass@localhost:5432/kisandirect",
+        ),
+        (
+            "postgres://user:pass@localhost:5432/kisandirect",
+            "postgresql+psycopg://user:pass@localhost:5432/kisandirect",
+        ),
+        (
+            "  'postgresql+psycopg2://user:pass@localhost:5432/kisandirect'  ",
+            "postgresql+psycopg://user:pass@localhost:5432/kisandirect",
+        ),
+        (
+            '  "postgres://user:pass@localhost:5432/kisandirect"  ',
+            "postgresql+psycopg://user:pass@localhost:5432/kisandirect",
+        ),
+    ],
+)
+def test_database_url_normalization(raw_url: str, expected_url: str) -> None:
+    assert Settings.assemble_database_url(raw_url) == expected_url
+

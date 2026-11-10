@@ -56,8 +56,13 @@ class Settings(BaseSettings):
     @classmethod
     def assemble_database_url(cls, v: str) -> str:
         if v:
+            v = v.strip().strip("'\"")
             if v.startswith("postgres://"):
                 v = "postgresql+psycopg://" + v[len("postgres://"):]
+            elif v.startswith("postgresql+psycopg2://"):
+                v = "postgresql+psycopg://" + v[len("postgresql+psycopg2://"):]
+            elif v.startswith("postgresql+psycopg3://"):
+                v = "postgresql+psycopg://" + v[len("postgresql+psycopg3://"):]
             elif v.startswith("postgresql://") and not v.startswith("postgresql+"):
                 v = "postgresql+psycopg://" + v[len("postgresql://"):]
         return v
