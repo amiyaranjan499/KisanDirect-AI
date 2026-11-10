@@ -16,10 +16,19 @@ export default function RegisterPage({ language, setLanguage, t = (key) => key }
   async function submit(event) {
     event.preventDefault();
     setError("");
+
+    if (role === "RIDER") {
+      const trimmedName = displayName.trim();
+      if (trimmedName.length < 2) {
+        setError("Rider name must be at least 2 characters.");
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       await registerUser({
-        email,
+        email: email.trim(),
         password,
         role,
         ...(role === "RIDER" ? { display_name: displayName.trim() } : {}),

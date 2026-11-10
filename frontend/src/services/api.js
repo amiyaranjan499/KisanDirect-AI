@@ -29,7 +29,17 @@ async function request(path, options = {}) {
 
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
-      throw new Error(payload.detail || payload.message || `Request failed (${response.status})`);
+
+      const message = Array.isArray(payload.detail)
+        ? payload.detail
+            .map((item) => item.msg || item.message)
+            .filter(Boolean)
+            .join(", ")
+        : typeof payload.detail === "string"
+          ? payload.detail
+          : payload.message;
+
+      throw new Error(message || `Request failed (${response.status})`);
     }
 
     if (response.status === 204) {
