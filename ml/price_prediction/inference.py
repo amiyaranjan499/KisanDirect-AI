@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import threading
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -41,6 +42,7 @@ class FairPriceInference:
     """Inference engine using trained RandomForestRegressor pipeline for fair produce pricing."""
 
     _cached_pipeline = None
+    _lock = threading.Lock()
 
     def __init__(self, model_path: Path | str | None = None) -> None:
         self.model_path = Path(model_path) if model_path is not None else DEFAULT_MODEL_PATH
@@ -53,18 +55,23 @@ class FairPriceInference:
             self.pipeline = FairPriceInference._cached_pipeline
             return
 
-        if not self.model_path.is_file():
-            self.init_error = f"Model artifact not found at {self.model_path}"
-            return
+        with FairPriceInference._lock:
+            if FairPriceInference._cached_pipeline is not None:
+                self.pipeline = FairPriceInference._cached_pipeline
+                return
 
-        try:
-            self.pipeline = joblib.load(self.model_path)
-            FairPriceInference._cached_pipeline = self.pipeline
-            self.init_error = None
-        except Exception as exc:
-            logger.error("Failed loading fair price pipeline artifact: %s", exc)
-            self.init_error = str(exc)
-            self.pipeline = None
+            if not self.model_path.is_file():
+                self.init_error = f"Model artifact not found at {self.model_path}"
+                return
+
+            try:
+                self.pipeline = joblib.load(self.model_path)
+                FairPriceInference._cached_pipeline = self.pipeline
+                self.init_error = None
+            except Exception as exc:
+                logger.error("Failed loading fair price pipeline artifact: %s", exc)
+                self.init_error = str(exc)
+                self.pipeline = None
 
     def predict(self, features: dict[str, Any]) -> PricePrediction:
         if self.pipeline is None:

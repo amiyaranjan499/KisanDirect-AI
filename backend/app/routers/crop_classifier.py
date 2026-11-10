@@ -1,4 +1,5 @@
 import logging
+import threading
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -22,13 +23,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai/crop", tags=["ai-crop-classification"])
 
 _inference_engine: CropClassifierInference | None = None
+_crop_inference_lock = threading.Lock()
 _gemini_service: GeminiVisionService | None = None
 
 
 def get_crop_inference() -> CropClassifierInference:
     global _inference_engine
     if _inference_engine is None:
-        _inference_engine = CropClassifierInference()
+        with _crop_inference_lock:
+            if _inference_engine is None:
+                _inference_engine = CropClassifierInference()
     return _inference_engine
 
 

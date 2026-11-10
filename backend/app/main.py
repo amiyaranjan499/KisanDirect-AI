@@ -42,25 +42,6 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        # Pre-warm AI inference engines & APMC data feeds once at startup
-        try:
-            crop_classifier.get_crop_inference()
-        except Exception:
-            pass
-        try:
-            quality.get_quality_inference()
-        except Exception:
-            pass
-        try:
-            market_prices.get_market_price_service()
-        except Exception:
-            pass
-        try:
-            from ml.price_prediction.inference import FairPriceInference
-            FairPriceInference()
-        except Exception:
-            pass
-
         yield
         await dispose_engine(settings)
 

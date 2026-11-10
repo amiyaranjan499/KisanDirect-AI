@@ -1,3 +1,4 @@
+import threading
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -10,12 +11,15 @@ from backend.app.services.market_price_service import MarketPriceService
 router = APIRouter(prefix="/market-prices", tags=["market-prices"])
 
 _market_service: MarketPriceService | None = None
+_market_service_lock = threading.Lock()
 
 
 def get_market_price_service() -> MarketPriceService:
     global _market_service
     if _market_service is None:
-        _market_service = MarketPriceService()
+        with _market_service_lock:
+            if _market_service is None:
+                _market_service = MarketPriceService()
     return _market_service
 
 

@@ -1,3 +1,4 @@
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
@@ -19,12 +20,15 @@ from ml.crop_quality.inference import CropQualityInference
 router = APIRouter(prefix="/ai/quality", tags=["ai-quality"])
 
 _quality_inference: CropQualityInference | None = None
+_quality_inference_lock = threading.Lock()
 
 
 def get_quality_inference() -> CropQualityInference:
     global _quality_inference
     if _quality_inference is None:
-        _quality_inference = CropQualityInference()
+        with _quality_inference_lock:
+            if _quality_inference is None:
+                _quality_inference = CropQualityInference()
     return _quality_inference
 
 
